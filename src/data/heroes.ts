@@ -1,6 +1,7 @@
 import { Hero } from '../types';
+import { getHeroIconUrl } from './mlbbHeroIcons';
 
-export const MLBB_HEROES: Hero[] = [
+const RAW_HEROES: Omit<Hero, 'avatar_url'>[] = [
   { id: 1, name: 'Aamon', role_primary: 'Assassin' },
   { id: 2, name: 'Akai', role_primary: 'Tank' },
   { id: 3, name: 'Aldous', role_primary: 'Fighter' },
@@ -135,3 +136,8 @@ export const MLBB_HEROES: Hero[] = [
   { id: 132, name: 'Zhuxin', role_primary: 'Mage' },
   { id: 133, name: 'Zilong', role_primary: 'Fighter', role_secondary: 'Assassin' },
 ];
+
+export const MLBB_HEROES: Hero[] = RAW_HEROES.map((h) => ({
+  ...h,
+  avatar_url: getHeroIconUrl(h.name),
+}));

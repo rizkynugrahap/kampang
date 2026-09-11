@@ -226,6 +226,7 @@ export default function App() {
     name: string;
     status: 'Aktif' | 'Cabutan';
     tier: string;
+    avatar_url?: string;
   }): Promise<boolean> => {
     try {
       const res = await fetch('/api/players', {

@@ -21,6 +21,7 @@ export interface Player {
   tier: string;
   total_match: number;
   medals: PlayerMedals;
+  avatar_url?: string;
 }
 
 export interface Hero {
@@ -28,6 +29,7 @@ export interface Hero {
   name: string;
   role_primary: HeroRole;
   role_secondary?: HeroRole | '';
+  avatar_url?: string;
 }
 
 export interface MatchPlayerDetail {
@@ -96,6 +98,7 @@ export interface TournamentPlayerStanding {
   silver: number;
   coklat: number;
   points: number;
+  avatar_url?: string;
 }
 
 export interface TournamentFixture {
@@ -134,6 +137,7 @@ export interface LagaAmalPlayerStat {
   score: number; // Sum of Score
   winRate: number; // e.g. 78.95
   avgScore: number; // e.g. 8.65
+  avatar_url?: string;
 }
 
 export interface LagaAmalHeroPick {

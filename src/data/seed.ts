@@ -1,4 +1,5 @@
 import { Player, Match } from '../types';
+import { getPlayerAvatarUrl } from './playerAvatars';
 
 export const INITIAL_PLAYERS: Player[] = [
   {
@@ -8,6 +9,7 @@ export const INITIAL_PLAYERS: Player[] = [
     tier: 'Mythic',
     total_match: 20,
     medals: { MVP: 9, Gold: 6, Silver: 4, Coklat: 1 },
+    avatar_url: getPlayerAvatarUrl('Mandor'),
   },
   {
     id: 2,
@@ -16,6 +18,7 @@ export const INITIAL_PLAYERS: Player[] = [
     tier: 'Legend',
     total_match: 20,
     medals: { MVP: 5, Gold: 8, Silver: 5, Coklat: 2 },
+    avatar_url: getPlayerAvatarUrl('Kelung'),
   },
   {
     id: 3,
@@ -24,6 +27,7 @@ export const INITIAL_PLAYERS: Player[] = [
     tier: 'Mythic',
     total_match: 19,
     medals: { MVP: 4, Gold: 5, Silver: 7, Coklat: 3 },
+    avatar_url: getPlayerAvatarUrl('Gil'),
   },
   {
     id: 4,
@@ -32,6 +36,7 @@ export const INITIAL_PLAYERS: Player[] = [
     tier: 'Epic',
     total_match: 17,
     medals: { MVP: 1, Gold: 2, Silver: 6, Coklat: 8 },
+    avatar_url: getPlayerAvatarUrl('Ven'),
   },
   {
     id: 5,
@@ -40,6 +45,7 @@ export const INITIAL_PLAYERS: Player[] = [
     tier: 'Legend',
     total_match: 19,
     medals: { MVP: 2, Gold: 4, Silver: 9, Coklat: 4 },
+    avatar_url: getPlayerAvatarUrl('Hees'),
   },
   {
     id: 6,
@@ -48,6 +54,7 @@ export const INITIAL_PLAYERS: Player[] = [
     tier: 'Epic',
     total_match: 14,
     medals: { MVP: 0, Gold: 3, Silver: 5, Coklat: 6 },
+    avatar_url: getPlayerAvatarUrl('Doni'),
   },
 ];
 

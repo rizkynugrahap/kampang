@@ -175,7 +175,7 @@ app.get('/api/players', (req, res) => {
 
 // POST /api/players (Add new player)
 app.post('/api/players', (req, res) => {
-  const { name, status, tier } = req.body;
+  const { name, status, tier, avatar_url } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Nama pemain wajib diisi' });
   }
@@ -193,6 +193,7 @@ app.post('/api/players', (req, res) => {
     tier: tier || 'Legend',
     total_match: 0,
     medals: { MVP: 0, Gold: 0, Silver: 0, Coklat: 0 },
+    avatar_url: avatar_url || undefined,
   };
 
   store.players.push(newPlayer);

@@ -2,6 +2,7 @@ import React from 'react';
 import { Trophy, Award, AlertTriangle, ShieldCheck, ChevronRight } from 'lucide-react';
 import { Player } from '../types';
 import { sortKelasSemen } from '../utils/stats';
+import { PlayerAvatar } from './PlayerAvatar';
 
 interface KelasSemenTableProps {
   players: Player[];
@@ -89,20 +90,31 @@ export const KelasSemenTable: React.FC<KelasSemenTableProps> = ({
 
                 {/* Player details */}
                 <div className="col-span-5 pr-2 sm:col-span-4">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate font-semibold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D]">
-                      {player.name}
-                    </span>
-                    {player.status === 'Cabutan' && (
-                      <span className="rounded bg-[#332C25] px-1.5 py-0.2 text-[10px] text-[#9C948A]">
-                        Cabutan
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-[#9C948A]">
-                    <span>{player.tier}</span>
-                    <span>·</span>
-                    <span>{player.total_match} match</span>
+                  <div className="flex items-center gap-2.5">
+                    <PlayerAvatar
+                      name={player.name}
+                      avatarUrl={player.avatar_url}
+                      size="sm"
+                      status={player.status}
+                      showStatusDot
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-semibold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D]">
+                          {player.name}
+                        </span>
+                        {player.status === 'Cabutan' && (
+                          <span className="rounded bg-[#332C25] px-1.5 py-0.2 text-[10px] text-[#9C948A]">
+                            Cabutan
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-[#9C948A]">
+                        <span>{player.tier}</span>
+                        <span>·</span>
+                        <span>{player.total_match} match</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

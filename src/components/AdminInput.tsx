@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { firebaseConfig } from '../lib/firebase';
 import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, TournamentData } from '../types';
+import { PlayerAvatar } from './PlayerAvatar';
+import { HeroAvatar } from './HeroAvatar';
 import {
   downloadCsvFile,
   generatePlayersCsv,
@@ -35,7 +37,7 @@ interface AdminInputProps {
   isAdmin: boolean;
   onOpenLogin: () => void;
   onSaveMatch: (matchData: any) => Promise<boolean>;
-  onAddPlayer: (player: { name: string; status: 'Aktif' | 'Cabutan'; tier: string }) => Promise<boolean>;
+  onAddPlayer: (player: { name: string; status: 'Aktif' | 'Cabutan'; tier: string; avatar_url?: string }) => Promise<boolean>;
   onOpenExport?: () => void;
 }
 
@@ -85,6 +87,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   // Add new player modal state
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerAvatarUrl, setNewPlayerAvatarUrl] = useState('');
   const [newPlayerStatus, setNewPlayerStatus] = useState<'Aktif' | 'Cabutan'>('Aktif');
   const [newPlayerTier, setNewPlayerTier] = useState('Legend');
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
@@ -230,9 +233,11 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         name: newPlayerName.trim(),
         status: newPlayerStatus,
         tier: newPlayerTier,
+        avatar_url: newPlayerAvatarUrl.trim() ? newPlayerAvatarUrl.trim() : undefined,
       });
       if (ok) {
         setNewPlayerName('');
+        setNewPlayerAvatarUrl('');
         setShowAddPlayer(false);
       }
     } finally {
@@ -346,9 +351,10 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                 key={p.id}
                 draggable
                 onDragStart={() => handleDragStart(p.name)}
-                className="group flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 text-xs font-medium text-[#F2EDE4] shadow-xs hover:border-[#E8B33D]/50"
+                className="group flex items-center gap-2 rounded-lg border border-[#332C25] bg-[#241F1B] px-2.5 py-1.5 text-xs font-medium text-[#F2EDE4] shadow-xs hover:border-[#E8B33D]/50"
               >
-                <span className="cursor-grab select-none">{p.name}</span>
+                <PlayerAvatar name={p.name} avatarUrl={p.avatar_url} size="xs" />
+                <span className="cursor-grab select-none font-semibold">{p.name}</span>
                 <span className="text-[10px] text-[#9C948A]">({p.tier})</span>
 
                 {/* Quick assign buttons for mobile & fast click */}
@@ -405,16 +411,28 @@ export const AdminInput: React.FC<AdminInputProps> = ({
             ) : (
               pohonPlayers.map((name) => {
                 const conf = playerConfig[name] || { hero: 'Kadita', medal: 'Silver' };
+                const playerObj = players.find((p) => p.name === name);
                 return (
                   <div
                     key={name}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#332C25] bg-[#241F1B] p-2.5"
                   >
-                    <span className="w-20 truncate font-semibold text-xs text-[#F2EDE4]">
-                      {name}
-                    </span>
+                    <div className="flex items-center gap-2 min-w-0 w-28">
+                      <PlayerAvatar
+                        name={name}
+                        avatarUrl={playerObj?.avatar_url}
+                        team="Pohon"
+                        size="xs"
+                      />
+                      <span className="truncate font-semibold text-xs text-[#F2EDE4]">
+                        {name}
+                      </span>
+                    </div>
 
-                    <div className="flex flex-1 items-center gap-1.5">
+                    <div className="flex flex-1 items-center gap-1.5 min-w-[200px]">
+                      {/* Hero icon preview */}
+                      <HeroAvatar heroName={conf.hero} size="xs" shape="rounded" />
+
                       {/* Hero selector */}
                       <select
                         value={conf.hero}
@@ -494,16 +512,28 @@ export const AdminInput: React.FC<AdminInputProps> = ({
             ) : (
               lobbyPlayers.map((name) => {
                 const conf = playerConfig[name] || { hero: 'Chou', medal: 'Silver' };
+                const playerObj = players.find((p) => p.name === name);
                 return (
                   <div
                     key={name}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#332C25] bg-[#241F1B] p-2.5"
                   >
-                    <span className="w-20 truncate font-semibold text-xs text-[#F2EDE4]">
-                      {name}
-                    </span>
+                    <div className="flex items-center gap-2 min-w-0 w-28">
+                      <PlayerAvatar
+                        name={name}
+                        avatarUrl={playerObj?.avatar_url}
+                        team="Lobby"
+                        size="xs"
+                      />
+                      <span className="truncate font-semibold text-xs text-[#F2EDE4]">
+                        {name}
+                      </span>
+                    </div>
 
-                    <div className="flex flex-1 items-center gap-1.5">
+                    <div className="flex flex-1 items-center gap-1.5 min-w-[200px]">
+                      {/* Hero icon preview */}
+                      <HeroAvatar heroName={conf.hero} size="xs" shape="rounded" />
+
                       {/* Hero selector */}
                       <select
                         value={conf.hero}
@@ -798,6 +828,24 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl">
             <h3 className="font-bold text-base text-[#F2EDE4]">Tambah Pemain Baru</h3>
+
+            {/* Live Avatar Preview */}
+            <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#332C25] bg-[#241F1B] p-3">
+              <PlayerAvatar
+                name={newPlayerName.trim() || 'Pemain'}
+                avatarUrl={newPlayerAvatarUrl.trim() || undefined}
+                size="md"
+              />
+              <div className="min-w-0 flex-1">
+                <span className="block font-bold text-sm text-[#F2EDE4] truncate">
+                  {newPlayerName.trim() || 'Nama Pemain'}
+                </span>
+                <span className="block text-[11px] text-[#9C948A]">
+                  {newPlayerAvatarUrl.trim() ? 'Menggunakan URL Foto kustom' : 'Avatar otomatis dari nama pemain'}
+                </span>
+              </div>
+            </div>
+
             <form onSubmit={handleCreatePlayer} className="mt-4 space-y-3">
               <div>
                 <label className="mb-1 block text-xs text-[#9C948A]">
@@ -809,6 +857,19 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                   value={newPlayerName}
                   onChange={(e) => setNewPlayerName(e.target.value)}
                   placeholder="Contoh: Bogi"
+                  className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-[#9C948A]">
+                  URL Foto / Avatar (Opsional)
+                </label>
+                <input
+                  type="url"
+                  value={newPlayerAvatarUrl}
+                  onChange={(e) => setNewPlayerAvatarUrl(e.target.value)}
+                  placeholder="https://... (kosongkan untuk avatar bawaan)"
                   className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
                 />
               </div>

@@ -24,6 +24,8 @@ import {
 import { LagaAmalSeasonData, LagaAmalPlayerStat, LagaAmalHeroPick } from '../types';
 import { INITIAL_LAGA_AMAL_S41, parseLagaAmalCsv, exportLagaAmalCsv } from '../data/lagaAmalS41Data';
 import { syncLagaAmalToFirestore } from '../services/firestoreSync';
+import { PlayerAvatar } from './PlayerAvatar';
+import { HeroAvatar } from './HeroAvatar';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
 type SortField = 'score' | 'mvp' | 'antam' | 'silver' | 'coklat' | 'matches' | 'winRate' | 'avgScore';
@@ -268,11 +270,12 @@ export const LagaAmalView: React.FC = () => {
           </div>
 
           {/* Top Coklat */}
-          <div className="rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#b8764a] uppercase tracking-wider mb-1">
+          <div className="rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center flex flex-col items-center">
+            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#b8764a] uppercase tracking-wider mb-1.5">
               <span>🥉 Top Coklat</span>
             </div>
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate" title={seasonData.topCoklat.player}>
+            <PlayerAvatar name={seasonData.topCoklat.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={seasonData.topCoklat.player}>
               {seasonData.topCoklat.player}
             </span>
             <span className="text-[10px] font-semibold text-[#b8764a] mt-0.5 block">
@@ -281,11 +284,12 @@ export const LagaAmalView: React.FC = () => {
           </div>
 
           {/* Top Silver */}
-          <div className="rounded-xl border border-[#7D766D]/40 bg-[#1D1B19] p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#B9B2A8] uppercase tracking-wider mb-1">
+          <div className="rounded-xl border border-[#7D766D]/40 bg-[#1D1B19] p-3 text-center flex flex-col items-center">
+            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#B9B2A8] uppercase tracking-wider mb-1.5">
               <span>🥈 Top Silver</span>
             </div>
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate" title={seasonData.topSilver.player}>
+            <PlayerAvatar name={seasonData.topSilver.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={seasonData.topSilver.player}>
               {seasonData.topSilver.player}
             </span>
             <span className="text-[10px] font-semibold text-[#B9B2A8] mt-0.5 block">
@@ -294,11 +298,12 @@ export const LagaAmalView: React.FC = () => {
           </div>
 
           {/* Top Antam */}
-          <div className="rounded-xl border border-[#E8B33D]/40 bg-[#252014] p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1">
+          <div className="rounded-xl border border-[#E8B33D]/40 bg-[#252014] p-3 text-center flex flex-col items-center">
+            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1.5">
               <span>🥇 Top Antam</span>
             </div>
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate" title={seasonData.topAntam.player}>
+            <PlayerAvatar name={seasonData.topAntam.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={seasonData.topAntam.player}>
               {seasonData.topAntam.player}
             </span>
             <span className="text-[10px] font-semibold text-[#E8B33D] mt-0.5 block">
@@ -307,12 +312,13 @@ export const LagaAmalView: React.FC = () => {
           </div>
 
           {/* Top MVP */}
-          <div className="rounded-xl border border-amber-500/50 bg-[#2D2111] p-3 text-center shadow-xs">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-1">
+          <div className="rounded-xl border border-amber-500/50 bg-[#2D2111] p-3 text-center shadow-xs flex flex-col items-center">
+            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-1.5">
               <Crown size={12} className="text-amber-400" />
               <span>MVP 👑</span>
             </div>
-            <span className="text-xs font-black text-[#F2EDE4] block truncate" title={seasonData.topMvp.player}>
+            <PlayerAvatar name={seasonData.topMvp.player} size="sm" className="mb-1" />
+            <span className="text-xs font-black text-[#F2EDE4] block truncate w-full" title={seasonData.topMvp.player}>
               {seasonData.topMvp.player}
             </span>
             <span className="text-[10px] font-bold text-amber-400 mt-0.5 block">
@@ -524,15 +530,24 @@ export const LagaAmalView: React.FC = () => {
 
                       {/* Nickname */}
                       <td className="py-3 px-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">
-                            {player.nickname}
-                          </span>
-                          {player.mvp >= 20 && (
-                            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
-                              MVP King
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          <PlayerAvatar
+                            name={player.nickname}
+                            avatarUrl={player.avatar_url}
+                            size="sm"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">
+                                {player.nickname}
+                              </span>
+                              {player.mvp >= 20 && (
+                                <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                                  MVP King
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </td>
 
@@ -650,9 +665,17 @@ export const LagaAmalView: React.FC = () => {
                 <tbody className="divide-y divide-[#332C25]/50">
                   {filteredHeroPicks.map((pick, i) => (
                     <tr key={`${pick.player}-${pick.hero}-${i}`} className="hover:bg-[#241F1B]/60 transition-colors">
-                      <td className="py-2.5 px-4 font-bold text-[#F2EDE4]">{pick.player}</td>
                       <td className="py-2.5 px-4">
-                        <span className="font-semibold text-[#E8B33D]">{pick.hero}</span>
+                        <div className="flex items-center gap-2">
+                          <PlayerAvatar name={pick.player} size="xs" />
+                          <span className="font-bold text-[#F2EDE4]">{pick.player}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <HeroAvatar heroName={pick.hero} size="xs" shape="rounded" />
+                          <span className="font-semibold text-[#E8B33D]">{pick.hero}</span>
+                        </div>
                       </td>
                       <td className="py-2.5 px-3 text-center text-[#b8764a]">
                         {pick.coklat > 0 ? pick.coklat : '-'}
@@ -705,7 +728,7 @@ export const LagaAmalView: React.FC = () => {
                 return (
                   <div
                     key={h.hero}
-                    className={`rounded-xl border p-3 flex items-center justify-between transition-all ${
+                    className={`rounded-xl border p-2.5 flex items-center justify-between gap-2 transition-all ${
                       isTopPick
                         ? 'border-[#E8B33D]/40 bg-[#252014]'
                         : h.picked > 0
@@ -713,13 +736,16 @@ export const LagaAmalView: React.FC = () => {
                         : 'border-[#332C25]/40 bg-[#161311] opacity-60'
                     }`}
                   >
-                    <div>
-                      <span className="font-bold text-xs text-[#F2EDE4] block truncate">
-                        {h.hero}
-                      </span>
-                      <span className="text-[10px] text-[#9C948A]">
-                        #{index + 1}
-                      </span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <HeroAvatar heroName={h.hero} size="sm" shape="rounded" />
+                      <div className="min-w-0">
+                        <span className="font-bold text-xs text-[#F2EDE4] block truncate">
+                          {h.hero}
+                        </span>
+                        <span className="text-[10px] text-[#9C948A]">
+                          #{index + 1}
+                        </span>
+                      </div>
                     </div>
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs font-mono font-bold ${
@@ -835,11 +861,18 @@ export const LagaAmalView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
           <div className="relative w-full max-w-xl rounded-2xl border border-[#332C25] bg-[#1D1916] p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
-              <div>
-                <span className="text-xs font-bold text-[#E8B33D] uppercase">
-                  Rincian Performa Pemain · S41
-                </span>
-                <h3 className="text-lg font-black text-[#F2EDE4]">{detailPlayer.nickname}</h3>
+              <div className="flex items-center gap-3">
+                <PlayerAvatar
+                  name={detailPlayer.nickname}
+                  avatarUrl={detailPlayer.avatar_url}
+                  size="md"
+                />
+                <div>
+                  <span className="text-xs font-bold text-[#E8B33D] uppercase">
+                    Rincian Performa Pemain · S41
+                  </span>
+                  <h3 className="text-lg font-black text-[#F2EDE4]">{detailPlayer.nickname}</h3>
+                </div>
               </div>
               <button
                 onClick={() => setDetailPlayer(null)}
@@ -903,7 +936,10 @@ export const LagaAmalView: React.FC = () => {
                         key={hp.hero}
                         className="flex items-center justify-between rounded-lg border border-[#332C25]/60 bg-[#241F1B] px-3 py-2 text-xs"
                       >
-                        <span className="font-bold text-[#F2EDE4]">{hp.hero}</span>
+                        <div className="flex items-center gap-2">
+                          <HeroAvatar heroName={hp.hero} size="xs" shape="rounded" />
+                          <span className="font-bold text-[#F2EDE4]">{hp.hero}</span>
+                        </div>
                         <div className="flex items-center gap-2.5 text-[11px]">
                           {hp.mvp > 0 && <span className="text-amber-400 font-bold">{hp.mvp} MVP</span>}
                           {hp.antam > 0 && <span className="text-[#E8B33D] font-semibold">{hp.antam} Antam</span>}

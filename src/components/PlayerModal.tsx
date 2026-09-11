@@ -2,6 +2,8 @@ import React from 'react';
 import { X, Trophy, Sparkles, Shield, User } from 'lucide-react';
 import { Player, Match } from '../types';
 import { getPlayerTopHeroes } from '../utils/stats';
+import { PlayerAvatar } from './PlayerAvatar';
+import { HeroAvatar } from './HeroAvatar';
 
 interface PlayerModalProps {
   player: Player | null;
@@ -40,9 +42,13 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between border-b border-[#332C25] pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#241F1B] text-[#E8B33D]">
-              <User size={22} />
-            </div>
+            <PlayerAvatar
+              name={player.name}
+              avatarUrl={player.avatar_url}
+              size="lg"
+              status={player.status}
+              showStatusDot
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-lg text-[#F2EDE4]">{player.name}</h3>
@@ -117,10 +123,11 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
                 className="rounded-lg border border-[#332C25] bg-[#241F1B] p-3"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <span className="flex h-5 w-5 items-center justify-center rounded bg-[#1D1916] font-bold text-xs text-[#9C948A]">
                       {i + 1}
                     </span>
+                    <HeroAvatar heroName={heroStat.hero} size="sm" shape="rounded" />
                     <span className="font-semibold text-sm text-[#F2EDE4]">
                       {heroStat.hero}
                     </span>

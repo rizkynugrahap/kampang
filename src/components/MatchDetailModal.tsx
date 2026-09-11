@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, Sparkles, Trophy, Calendar, RefreshCw, Bot } from 'lucide-react';
 import { Match, Medal } from '../types';
+import { HeroAvatar } from './HeroAvatar';
+import { PlayerAvatar } from './PlayerAvatar';
 
 interface MatchDetailModalProps {
   match: Match | null;
@@ -99,19 +101,25 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 {match.pohon.length} Pemain
               </span>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {match.pohon.map((p, idx) => {
                 const badge = MEDAL_BADGES[p.medal] || MEDAL_BADGES.Silver;
                 return (
                   <div
                     key={p.id || idx}
-                    className="flex items-center justify-between rounded-lg bg-[#191513]/70 px-3 py-2 text-xs"
+                    className="flex items-center justify-between rounded-lg bg-[#191513]/80 px-3 py-2 text-xs border border-[#2A231D]"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-[#F2EDE4]">
-                        {p.player_name}
-                      </span>
-                      <span className="text-[#9C948A]">({p.hero_name})</span>
+                    <div className="flex items-center gap-2.5">
+                      <PlayerAvatar name={p.player_name} size="sm" team="Pohon" />
+                      <div>
+                        <span className="font-semibold text-[#F2EDE4] block">
+                          {p.player_name}
+                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <HeroAvatar heroName={p.hero_name} size="xs" shape="circle" />
+                          <span className="text-[11px] text-[#9C948A]">{p.hero_name}</span>
+                        </div>
+                      </div>
                     </div>
                     <span
                       className={`rounded px-2 py-0.5 font-bold text-[10px] tracking-wide uppercase ${badge.bg} ${badge.text}`}
@@ -140,19 +148,25 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 {match.lobby.length} Pemain
               </span>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {match.lobby.map((p, idx) => {
                 const badge = MEDAL_BADGES[p.medal] || MEDAL_BADGES.Silver;
                 return (
                   <div
                     key={p.id || idx}
-                    className="flex items-center justify-between rounded-lg bg-[#191513]/70 px-3 py-2 text-xs"
+                    className="flex items-center justify-between rounded-lg bg-[#191513]/80 px-3 py-2 text-xs border border-[#2A231D]"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-[#F2EDE4]">
-                        {p.player_name}
-                      </span>
-                      <span className="text-[#9C948A]">({p.hero_name})</span>
+                    <div className="flex items-center gap-2.5">
+                      <PlayerAvatar name={p.player_name} size="sm" team="Lobby" />
+                      <div>
+                        <span className="font-semibold text-[#F2EDE4] block">
+                          {p.player_name}
+                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <HeroAvatar heroName={p.hero_name} size="xs" shape="circle" />
+                          <span className="text-[11px] text-[#9C948A]">{p.hero_name}</span>
+                        </div>
+                      </div>
                     </div>
                     <span
                       className={`rounded px-2 py-0.5 font-bold text-[10px] tracking-wide uppercase ${badge.bg} ${badge.text}`}

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Flame, Calendar, Sparkles, ChevronRight } from 'lucide-react';
 import { Match } from '../types';
+import { HeroAvatar } from './HeroAvatar';
+import { PlayerAvatar } from './PlayerAvatar';
 
 interface MatchFeedProps {
   matches: Match[];
@@ -66,16 +68,59 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
                 </span>
               </div>
 
+              {/* Draft Lineups Preview */}
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#2B241E] bg-[#161210] p-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-[#4F7942] uppercase tracking-wider">
+                    Pohon
+                  </span>
+                  <div className="flex -space-x-1">
+                    {match.pohon.map((p, i) => (
+                      <div
+                        key={i}
+                        className="transition-transform hover:z-10 hover:scale-110"
+                        title={`${p.player_name} · ${p.hero_name} (${p.medal})`}
+                      >
+                        <HeroAvatar heroName={p.hero_name} size="xs" shape="circle" medal={p.medal} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-[#C97A3D] uppercase tracking-wider">
+                    Lobby
+                  </span>
+                  <div className="flex -space-x-1">
+                    {match.lobby.map((p, i) => (
+                      <div
+                        key={i}
+                        className="transition-transform hover:z-10 hover:scale-110"
+                        title={`${p.player_name} · ${p.hero_name} (${p.medal})`}
+                      >
+                        <HeroAvatar heroName={p.hero_name} size="xs" shape="circle" medal={p.medal} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* Quick highlights */}
               <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-[#9C948A]">
                 {mvpPlayer && (
-                  <span className="inline-flex items-center gap-1 rounded bg-[#E8B33D]/10 px-2 py-0.5 text-[11px] font-semibold text-[#E8B33D]">
-                    ⭐ MVP: {mvpPlayer.player_name} ({mvpPlayer.hero_name})
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E8B33D]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#E8B33D] border border-[#E8B33D]/20">
+                    <PlayerAvatar name={mvpPlayer.player_name} size="xs" />
+                    <span>MVP: {mvpPlayer.player_name}</span>
+                    <HeroAvatar heroName={mvpPlayer.hero_name} size="xs" shape="circle" />
+                    <span className="text-[#9C948A]">({mvpPlayer.hero_name})</span>
                   </span>
                 )}
                 {coklatPlayer && (
-                  <span className="inline-flex items-center gap-1 rounded bg-[#6B4226]/20 px-2 py-0.5 text-[11px] font-medium text-[#b8764a]">
-                    🍫 Coklat: {coklatPlayer.player_name} ({coklatPlayer.hero_name})
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#6B4226]/20 px-2.5 py-0.5 text-[11px] font-medium text-[#b8764a] border border-[#6B4226]/30">
+                    <PlayerAvatar name={coklatPlayer.player_name} size="xs" />
+                    <span>Coklat: {coklatPlayer.player_name}</span>
+                    <HeroAvatar heroName={coklatPlayer.hero_name} size="xs" shape="circle" />
+                    <span className="text-[#9C948A]">({coklatPlayer.hero_name})</span>
                   </span>
                 )}
               </div>

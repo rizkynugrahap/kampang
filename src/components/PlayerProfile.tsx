@@ -21,6 +21,8 @@ import {
 } from 'recharts';
 import { Player, Match, Medal } from '../types';
 import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
+import { PlayerAvatar } from './PlayerAvatar';
+import { HeroAvatar } from './HeroAvatar';
 
 interface PlayerProfileProps {
   players: Player[];
@@ -109,13 +111,14 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
               key={p.id}
               id={`profile-selector-${p.id}`}
               onClick={() => handleSelect(p.id)}
-              className={`rounded-full px-4 py-1.5 font-medium text-xs transition-all ${
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 font-medium text-xs transition-all ${
                 isCurrent
-                  ? 'border border-[#E8B33D] bg-[#E8B33D] text-[#161311] shadow-md'
+                  ? 'border border-[#E8B33D] bg-[#E8B33D] text-[#161311] shadow-md font-bold'
                   : 'border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] hover:border-[#9C948A]'
               }`}
             >
-              {p.name}
+              <PlayerAvatar name={p.name} avatarUrl={p.avatar_url} size="xs" />
+              <span>{p.name}</span>
             </button>
           );
         })}
@@ -124,21 +127,30 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
       {/* Player overview card */}
       <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#332C25] pb-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h3 className="font-black text-2xl text-[#F2EDE4] tracking-tight">
-                {player.name}
-              </h3>
-              <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
-                {player.status}
-              </span>
-              <span className="rounded bg-[#E8B33D]/10 px-2 py-0.5 text-xs font-semibold text-[#E8B33D]">
-                {player.tier}
-              </span>
+          <div className="flex items-center gap-4">
+            <PlayerAvatar
+              name={player.name}
+              avatarUrl={player.avatar_url}
+              size="xl"
+              status={player.status}
+              showStatusDot
+            />
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h3 className="font-black text-2xl text-[#F2EDE4] tracking-tight">
+                  {player.name}
+                </h3>
+                <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
+                  {player.status}
+                </span>
+                <span className="rounded bg-[#E8B33D]/10 px-2 py-0.5 text-xs font-semibold text-[#E8B33D]">
+                  {player.tier}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#9C948A]">
+                Julukan Pantos: <span className="text-[#F2EDE4] font-medium italic">"{getPlayerTitle()}"</span>
+              </p>
             </div>
-            <p className="mt-1 text-xs text-[#9C948A]">
-              Julukan Pantos: <span className="text-[#F2EDE4] font-medium italic">"{getPlayerTitle()}"</span>
-            </p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -307,10 +319,11 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                 className="rounded-xl border border-[#332C25] bg-[#241F1B] p-3.5"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <span className="flex h-5 w-5 items-center justify-center rounded bg-[#161311] font-bold text-xs text-[#E8B33D]">
                       #{i + 1}
                     </span>
+                    <HeroAvatar heroName={h.hero} size="sm" shape="rounded" />
                     <span className="font-bold text-sm text-[#F2EDE4]">
                       {h.hero}
                     </span>
