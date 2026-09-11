@@ -84,6 +84,12 @@ export default function App() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin && tab === 'admin') {
+      setTab('dashboard');
+    }
+  }, [isAdmin, tab]);
+
   // Admin actions
   const handleSaveMatch = async (matchData: any): Promise<boolean> => {
     try {
@@ -168,13 +174,18 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('pantos_admin_token');
     setIsAdmin(false);
+    if (tab === 'admin') {
+      setTab('dashboard');
+    }
   };
 
   const tabs = [
     { id: 'dashboard' as ActiveTab, label: 'Dasbor', icon: Trophy },
     { id: 'lagaAmal' as ActiveTab, label: 'Klasemen Laga Amal', icon: FileSpreadsheet, badge: 'S41' },
     { id: 'tournament' as ActiveTab, label: 'Turnamen Tim', icon: Swords, badge: 'Musim 1' },
-    { id: 'admin' as ActiveTab, label: 'Input & Draft', icon: ClipboardList, badge: isAdmin ? 'Admin' : null },
+    ...(isAdmin
+      ? [{ id: 'admin' as ActiveTab, label: 'Input & Draft', icon: ClipboardList, badge: 'Admin' }]
+      : []),
     { id: 'profile' as ActiveTab, label: 'Profil Pemain', icon: UserRound },
   ];
 
@@ -312,8 +323,8 @@ export default function App() {
           />
         )}
 
-        {/* Tab 2: Input & Draft (Admin) */}
-        {tab === 'admin' && (
+        {/* Tab 2: Input & Draft (Hanya muncul jika admin sudah masuk) */}
+        {tab === 'admin' && isAdmin && (
           <AdminInput
             players={players}
             heroes={heroes}
