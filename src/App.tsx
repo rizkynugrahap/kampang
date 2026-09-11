@@ -8,6 +8,7 @@ import {
   Unlock,
   RotateCcw,
   Sparkles,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Player, Match, Hero, TournamentData } from './types';
 import { ScoreBanner } from './components/ScoreBanner';
@@ -18,12 +19,13 @@ import { PlayerModal } from './components/PlayerModal';
 import { AdminInput } from './components/AdminInput';
 import { PlayerProfile } from './components/PlayerProfile';
 import { TournamentView } from './components/TournamentView';
+import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { MLBB_HEROES } from './data/heroes';
 import { INITIAL_PLAYERS, INITIAL_MATCHES } from './data/seed';
 import { INITIAL_TOURNAMENTS } from './data/tournamentSeed';
 
-type ActiveTab = 'dashboard' | 'tournament' | 'admin' | 'profile';
+type ActiveTab = 'dashboard' | 'lagaAmal' | 'tournament' | 'admin' | 'profile';
 
 export default function App() {
   const [tab, setTab] = useState<ActiveTab>('dashboard');
@@ -170,7 +172,8 @@ export default function App() {
 
   const tabs = [
     { id: 'dashboard' as ActiveTab, label: 'Dasbor', icon: Trophy },
-    { id: 'tournament' as ActiveTab, label: 'Turnamen Klasemen', icon: Swords, badge: 'Musim 1' },
+    { id: 'lagaAmal' as ActiveTab, label: 'Klasemen Laga Amal', icon: FileSpreadsheet, badge: 'S41' },
+    { id: 'tournament' as ActiveTab, label: 'Turnamen Tim', icon: Swords, badge: 'Musim 1' },
     { id: 'admin' as ActiveTab, label: 'Input & Draft', icon: ClipboardList, badge: isAdmin ? 'Admin' : null },
     { id: 'profile' as ActiveTab, label: 'Profil Pemain', icon: UserRound },
   ];
@@ -293,6 +296,9 @@ export default function App() {
             />
           </div>
         )}
+
+        {/* Tab: Klasemen Laga Amal (From CSV Benchmark) */}
+        {tab === 'lagaAmal' && <LagaAmalView />}
 
         {/* Tab 2: Turnamen Klasemen */}
         {tab === 'tournament' && (

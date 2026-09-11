@@ -5,8 +5,9 @@ import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PLAYERS, INITIAL_MATCHES } from './src/data/seed.ts';
 import { INITIAL_TOURNAMENTS } from './src/data/tournamentSeed.ts';
+import { INITIAL_LAGA_AMAL_S41 } from './src/data/lagaAmalS41Data.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
-import { Match, Player, Medal, TournamentData, TournamentFixture, TournamentTeamStanding } from './src/types.ts';
+import { Match, Player, Medal, TournamentData, TournamentFixture, TournamentTeamStanding, LagaAmalSeasonData } from './src/types.ts';
 
 const app = express();
 const PORT = 3000;
@@ -21,6 +22,7 @@ interface StoreData {
   players: Player[];
   matches: Match[];
   tournaments: TournamentData[];
+  lagaAmalSeasons: LagaAmalSeasonData[];
 }
 
 function loadStore(): StoreData {
@@ -47,6 +49,9 @@ function loadStore(): StoreData {
           }
         });
       }
+      if (!parsed.lagaAmalSeasons || !Array.isArray(parsed.lagaAmalSeasons) || parsed.lagaAmalSeasons.length === 0) {
+        parsed.lagaAmalSeasons = [JSON.parse(JSON.stringify(INITIAL_LAGA_AMAL_S41))];
+      }
       return parsed;
     }
   } catch (err) {
@@ -56,6 +61,7 @@ function loadStore(): StoreData {
     players: JSON.parse(JSON.stringify(INITIAL_PLAYERS)),
     matches: JSON.parse(JSON.stringify(INITIAL_MATCHES)),
     tournaments: JSON.parse(JSON.stringify(INITIAL_TOURNAMENTS)),
+    lagaAmalSeasons: [JSON.parse(JSON.stringify(INITIAL_LAGA_AMAL_S41))],
   };
   saveStore(initialData);
   return initialData;
@@ -734,12 +740,50 @@ app.delete('/api/tournaments/:id/teams/:teamId', (req, res) => {
   res.json({ success: true, message: `Tim ${team.name} berhasil dihapus`, tournament });
 });
 
+// ----------------- LAGA AMAL (CSV BENCHMARK) ROUTES -----------------
+// GET /api/laga-amal (Get all seasons)
+app.get('/api/laga-amal', (req, res) => {
+  res.json(store.lagaAmalSeasons || [INITIAL_LAGA_AMAL_S41]);
+});
+
+// GET /api/laga-amal/:id (Get specific season by id)
+app.get('/api/laga-amal/:id', (req, res) => {
+  const season = (store.lagaAmalSeasons || []).find((s) => s.id === req.params.id);
+  if (!season) {
+    return res.status(404).json({ error: 'Musim Laga Amal tidak ditemukan' });
+  }
+  res.json(season);
+});
+
+// POST /api/laga-amal (Save or update a season from CSV import)
+app.post('/api/laga-amal', (req, res) => {
+  const newSeason: LagaAmalSeasonData = req.body;
+  if (!newSeason || !newSeason.id) {
+    return res.status(400).json({ error: 'Data musim tidak valid' });
+  }
+
+  if (!store.lagaAmalSeasons) {
+    store.lagaAmalSeasons = [];
+  }
+
+  const existingIdx = store.lagaAmalSeasons.findIndex((s) => s.id === newSeason.id);
+  if (existingIdx >= 0) {
+    store.lagaAmalSeasons[existingIdx] = newSeason;
+  } else {
+    store.lagaAmalSeasons.push(newSeason);
+  }
+
+  saveStore(store);
+  res.json({ success: true, season: newSeason });
+});
+
 // POST /api/reset-data
 app.post('/api/reset-data', (req, res) => {
   store = {
     players: JSON.parse(JSON.stringify(INITIAL_PLAYERS)),
     matches: JSON.parse(JSON.stringify(INITIAL_MATCHES)),
     tournaments: JSON.parse(JSON.stringify(INITIAL_TOURNAMENTS)),
+    lagaAmalSeasons: [JSON.parse(JSON.stringify(INITIAL_LAGA_AMAL_S41))],
   };
   saveStore(store);
   res.json({ success: true, message: 'Data berhasil direset ke seed awal' });

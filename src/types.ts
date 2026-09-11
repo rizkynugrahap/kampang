@@ -122,3 +122,66 @@ export interface TournamentData {
   fixtures: TournamentFixture[];
   ai_recap?: string;
 }
+
+// Laga Amal Season Types (from CSV benchmark)
+export interface LagaAmalPlayerStat {
+  nickname: string;
+  coklat: number;
+  silver: number;
+  antam: number; // Gold / Antam
+  mvp: number;
+  matches: number; // Count of Ikut Main
+  score: number; // Sum of Score
+  winRate: number; // e.g. 78.95
+  avgScore: number; // e.g. 8.65
+}
+
+export interface LagaAmalHeroPick {
+  player: string;
+  hero: string;
+  coklat: number;
+  silver: number;
+  antam: number;
+  mvp: number;
+  total: number;
+}
+
+export interface LagaAmalHeroPoolItem {
+  hero: string;
+  picked: number;
+}
+
+export interface LagaAmalMatchRow {
+  id: string;
+  date: string;
+  nickname: string;
+  hero: string;
+  coklat: number;
+  silver: number;
+  antam: number;
+  mvp: number;
+  result: 'VICTORY' | 'DEFEAT';
+  rating: string; // e.g. "3. ANTAM", "4. MVP"
+  score: number;
+  winRate: number;
+  count: number;
+}
+
+export interface LagaAmalSeasonData {
+  id: string;
+  title: string;
+  dateStr: string;
+  activePlayersCount: number;
+  topCoklat: { player: string; count: number };
+  topSilver: { player: string; count: number };
+  topAntam: { player: string; count: number };
+  topMvp: { player: string; count: number };
+  totalMatches: number;
+  totalScore: number;
+  avgWinRateTotal: number;
+  avgScoreTotal: number;
+  players: LagaAmalPlayerStat[];
+  heroPicksByUser: LagaAmalHeroPick[];
+  heroPool: LagaAmalHeroPoolItem[];
+  matchRows: LagaAmalMatchRow[];
+}
