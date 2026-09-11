@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { LagaAmalSeasonData, LagaAmalPlayerStat, LagaAmalHeroPick } from '../types';
 import { INITIAL_LAGA_AMAL_S41, parseLagaAmalCsv, exportLagaAmalCsv } from '../data/lagaAmalS41Data';
+import { syncLagaAmalToFirestore } from '../services/firestoreSync';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
 type SortField = 'score' | 'mvp' | 'antam' | 'silver' | 'coklat' | 'matches' | 'winRate' | 'avgScore';
@@ -69,7 +70,7 @@ export const LagaAmalView: React.FC = () => {
       .catch((err) => console.warn('Could not load from API, using cached/seed:', err));
   }, []);
 
-  // Save to localStorage & backend when seasonData changes
+  // Save to localStorage, backend & Cloud Firestore when seasonData changes
   const updateSeasonData = (newData: LagaAmalSeasonData) => {
     setSeasonData(newData);
     try {
@@ -77,6 +78,9 @@ export const LagaAmalView: React.FC = () => {
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
+    syncLagaAmalToFirestore(newData).catch((e) =>
+      console.warn('Failed to sync Laga Amal to Firestore:', e)
+    );
     fetch('/api/laga-amal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

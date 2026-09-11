@@ -12,25 +12,43 @@ import {
   ArrowRight,
   Shield,
   Lock,
+  Database,
+  Download,
+  FileSpreadsheet,
+  Cloud,
 } from 'lucide-react';
-import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName } from '../types';
+import { firebaseConfig } from '../lib/firebase';
+import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, TournamentData } from '../types';
+import {
+  downloadCsvFile,
+  generatePlayersCsv,
+  generateMatchesCsv,
+  generateMatchDetailsCsv,
+  generateAllInOneDatabaseCsv,
+} from '../utils/csvExport';
 
 interface AdminInputProps {
   players: Player[];
   heroes: Hero[];
+  matches?: Match[];
+  tournaments?: TournamentData[];
   isAdmin: boolean;
   onOpenLogin: () => void;
   onSaveMatch: (matchData: any) => Promise<boolean>;
   onAddPlayer: (player: { name: string; status: 'Aktif' | 'Cabutan'; tier: string }) => Promise<boolean>;
+  onOpenExport?: () => void;
 }
 
 export const AdminInput: React.FC<AdminInputProps> = ({
   players,
   heroes,
+  matches = [],
+  tournaments = [],
   isAdmin,
   onOpenLogin,
   onSaveMatch,
   onAddPlayer,
+  onOpenExport,
 }) => {
   // Assigned rosters
   const [pohonPlayers, setPohonPlayers] = useState<string[]>([]);
@@ -265,14 +283,27 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           </div>
         </div>
 
-        <button
-          id="btn-add-player"
-          onClick={() => setShowAddPlayer(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 font-medium text-xs text-[#F2EDE4] hover:bg-[#2c2621]"
-        >
-          <Plus size={14} />
-          <span>Tambah Pemain Baru</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onOpenExport && (
+            <button
+              id="btn-admin-export-csv"
+              onClick={onOpenExport}
+              className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-1.5 font-medium text-xs text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-colors"
+            >
+              <Database size={14} />
+              <span>Export Database (CSV)</span>
+            </button>
+          )}
+
+          <button
+            id="btn-add-player"
+            onClick={() => setShowAddPlayer(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 font-medium text-xs text-[#F2EDE4] hover:bg-[#2c2621]"
+          >
+            <Plus size={14} />
+            <span>Tambah Pemain Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Notification banner */}
@@ -633,6 +664,132 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           <p className="mt-2 text-center text-[11px] text-[#9C948A]">
             Analisis otomatis diproses di server menggunakan model Gemini dengan prompt analis e-sport khas Pantos.
           </p>
+        </div>
+      </div>
+
+      {/* Database Backup & Export Section */}
+      <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#332C25] pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2A241E] text-[#E8B33D]">
+              <Database size={17} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#F2EDE4]">
+                Manajemen & Ekspor Database ke CSV
+              </h3>
+              <p className="text-[11px] text-[#9C948A]">
+                Cadangkan data pemain, hasil laga, dan turnamen ke format spreadsheet (.csv)
+              </p>
+            </div>
+          </div>
+
+          {onOpenExport && (
+            <button
+              id="btn-admin-open-modal-export"
+              onClick={onOpenExport}
+              className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/50 bg-[#E8B33D]/10 px-3 py-1.5 text-xs font-semibold text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-all"
+            >
+              <FileSpreadsheet size={14} />
+              <span>Buka Menu Ekspor Lengkap</span>
+            </button>
+          )}
+        </div>
+
+        {/* Cloud Firestore Status Banner */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-4 py-2.5 text-xs text-emerald-300">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+            </span>
+            <Cloud size={15} className="text-emerald-400" />
+            <span className="font-semibold text-[#F2EDE4]">
+              Tersinkronisasi dengan Cloud Firestore:
+            </span>
+            <span className="font-mono text-[11px] text-[#E8B33D] hidden sm:inline">
+              {firebaseConfig.projectId} ({firebaseConfig.firestoreDatabaseId})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+              <CheckCircle2 size={13} /> Real-Time onSnapshot Aktif
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {/* Export Master */}
+          <div className="flex flex-col justify-between rounded-xl border border-[#E8B33D]/30 bg-[#251E17] p-3.5">
+            <div>
+              <div className="flex items-center justify-between text-xs font-bold text-[#E8B33D] mb-1">
+                <span>Master All-in-One</span>
+                <Sparkles size={14} />
+              </div>
+              <p className="text-[11px] text-[#C5BCAD]">
+                Semua data tabel digabung dalam 1 file master lengkap.
+              </p>
+            </div>
+            <button
+              id="btn-quick-export-master"
+              onClick={() => {
+                const csv = generateAllInOneDatabaseCsv({ players, matches, tournaments });
+                downloadCsvFile('pantos_master_database.csv', csv);
+              }}
+              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-[#E8B33D] py-1.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256]"
+            >
+              <Download size={13} />
+              <span>Unduh Master CSV</span>
+            </button>
+          </div>
+
+          {/* Export Players */}
+          <div className="flex flex-col justify-between rounded-xl border border-[#332C25] bg-[#191512] p-3.5">
+            <div>
+              <div className="flex items-center justify-between text-xs font-bold text-[#F2EDE4] mb-1">
+                <span>Data Pemain</span>
+                <span className="text-[10px] text-[#9C948A]">{players.length} Pemain</span>
+              </div>
+              <p className="text-[11px] text-[#9C948A]">
+                Nama, status, tier, perolehan medali, dan win rate.
+              </p>
+            </div>
+            <button
+              id="btn-quick-export-players"
+              onClick={() => {
+                const csv = generatePlayersCsv(players);
+                downloadCsvFile('pantos_database_pemain.csv', csv);
+              }}
+              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] py-1.5 text-xs font-medium text-[#F2EDE4] hover:bg-[#302822]"
+            >
+              <Download size={13} />
+              <span>Unduh Pemain CSV</span>
+            </button>
+          </div>
+
+          {/* Export Matches */}
+          <div className="flex flex-col justify-between rounded-xl border border-[#332C25] bg-[#191512] p-3.5">
+            <div>
+              <div className="flex items-center justify-between text-xs font-bold text-[#F2EDE4] mb-1">
+                <span>Riwayat Pertandingan</span>
+                <span className="text-[10px] text-[#9C948A]">{matches.length} Laga</span>
+              </div>
+              <p className="text-[11px] text-[#9C948A]">
+                Pemenang, MVP, susunan draft hero, medali, & AI.
+              </p>
+            </div>
+            <button
+              id="btn-quick-export-matches"
+              onClick={() => {
+                const csv = generateMatchesCsv(matches);
+                downloadCsvFile('pantos_riwayat_pertandingan.csv', csv);
+              }}
+              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] py-1.5 text-xs font-medium text-[#F2EDE4] hover:bg-[#302822]"
+            >
+              <Download size={13} />
+              <span>Unduh Pertandingan CSV</span>
+            </button>
+          </div>
         </div>
       </div>
 

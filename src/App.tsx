@@ -9,8 +9,10 @@ import {
   RotateCcw,
   Sparkles,
   FileSpreadsheet,
+  Database,
+  Download,
 } from 'lucide-react';
-import { Player, Match, Hero, TournamentData } from './types';
+import { Player, Match, Hero, TournamentData, LagaAmalSeasonData } from './types';
 import { ScoreBanner } from './components/ScoreBanner';
 import { KelasSemenTable } from './components/KelasSemenTable';
 import { MatchFeed } from './components/MatchFeed';
@@ -21,9 +23,22 @@ import { PlayerProfile } from './components/PlayerProfile';
 import { TournamentView } from './components/TournamentView';
 import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { ExportDatabaseModal } from './components/ExportDatabaseModal';
+import { FirestoreStatusBadge } from './components/FirestoreStatusBadge';
+import {
+  subscribeToPlayers,
+  subscribeToMatches,
+  subscribeToTournaments,
+  subscribeToLagaAmal,
+  seedFirestoreIfEmpty,
+  syncPlayerToFirestore,
+  syncMatchToFirestore,
+  forceSyncAllToFirestore,
+} from './services/firestoreSync';
 import { MLBB_HEROES } from './data/heroes';
 import { INITIAL_PLAYERS, INITIAL_MATCHES } from './data/seed';
 import { INITIAL_TOURNAMENTS } from './data/tournamentSeed';
+import { INITIAL_LAGA_AMAL_S41 } from './data/lagaAmalS41Data';
 
 type ActiveTab = 'dashboard' | 'lagaAmal' | 'tournament' | 'admin' | 'profile';
 
@@ -33,6 +48,7 @@ export default function App() {
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [heroes, setHeroes] = useState<Hero[]>(MLBB_HEROES);
   const [tournaments, setTournaments] = useState<TournamentData[]>(INITIAL_TOURNAMENTS);
+  const [lagaAmal, setLagaAmal] = useState<LagaAmalSeasonData>(INITIAL_LAGA_AMAL_S41);
 
   // Modals & active selections
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -42,17 +58,21 @@ export default function App() {
     return Boolean(localStorage.getItem('pantos_admin_token'));
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFirestoreConnected, setIsFirestoreConnected] = useState(true);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
 
-  // Fetch data from server
+  // Fetch data from server fallback
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [playersRes, matchesRes, heroesRes, tourneyRes] = await Promise.all([
+      const [playersRes, matchesRes, heroesRes, tourneyRes, lagaAmalRes] = await Promise.all([
         fetch('/api/players'),
         fetch('/api/matches'),
         fetch('/api/heroes'),
         fetch('/api/tournaments'),
+        fetch('/api/laga-amal'),
       ]);
 
       if (playersRes.ok) {
@@ -73,6 +93,12 @@ export default function App() {
           setTournaments(tData);
         }
       }
+      if (lagaAmalRes && lagaAmalRes.ok) {
+        const laData = await lagaAmalRes.json();
+        if (Array.isArray(laData) && laData.length > 0) {
+          setLagaAmal(laData[0]);
+        }
+      }
     } catch (err) {
       console.warn('Using local seed data fallback:', err);
     } finally {
@@ -80,8 +106,82 @@ export default function App() {
     }
   };
 
+  // Real-time Cloud Firestore Subscriptions & Auto-seed
   useEffect(() => {
+    // Initial fetch from server
     loadData();
+
+    // Auto-seed Firestore if collections are empty
+    seedFirestoreIfEmpty({
+      players: INITIAL_PLAYERS,
+      matches: INITIAL_MATCHES,
+      tournaments: INITIAL_TOURNAMENTS,
+      lagaAmal: INITIAL_LAGA_AMAL_S41,
+    })
+      .then((ok) => {
+        if (ok) {
+          setIsFirestoreConnected(true);
+          setLastSyncedAt(new Date());
+        }
+      })
+      .catch((err) => {
+        console.warn('Firestore seed check error:', err);
+      });
+
+    // Real-time listener for players
+    const unsubPlayers = subscribeToPlayers(
+      (newPlayers) => {
+        if (newPlayers && newPlayers.length > 0) {
+          setPlayers(newPlayers);
+        }
+        setIsFirestoreConnected(true);
+        setLastSyncedAt(new Date());
+      },
+      () => setIsFirestoreConnected(false)
+    );
+
+    // Real-time listener for matches
+    const unsubMatches = subscribeToMatches(
+      (newMatches) => {
+        if (newMatches && newMatches.length > 0) {
+          setMatches(newMatches);
+        }
+        setIsFirestoreConnected(true);
+        setLastSyncedAt(new Date());
+      },
+      () => setIsFirestoreConnected(false)
+    );
+
+    // Real-time listener for tournaments
+    const unsubTournaments = subscribeToTournaments(
+      (newTournaments) => {
+        if (newTournaments && newTournaments.length > 0) {
+          setTournaments(newTournaments);
+        }
+        setIsFirestoreConnected(true);
+        setLastSyncedAt(new Date());
+      },
+      () => setIsFirestoreConnected(false)
+    );
+
+    // Real-time listener for Laga Amal seasons
+    const unsubLagaAmal = subscribeToLagaAmal(
+      (seasons) => {
+        if (seasons && seasons.length > 0) {
+          setLagaAmal(seasons[0]);
+        }
+        setIsFirestoreConnected(true);
+        setLastSyncedAt(new Date());
+      },
+      () => setIsFirestoreConnected(false)
+    );
+
+    return () => {
+      unsubPlayers();
+      unsubMatches();
+      unsubTournaments();
+      unsubLagaAmal();
+    };
   }, []);
 
   useEffect(() => {
@@ -104,8 +204,16 @@ export default function App() {
         throw new Error(err.error || 'Gagal menyimpan pertandingan');
       }
 
-      const savedMatch = await res.json();
-      // Reload updated matches & player standings
+      const savedMatch: Match = await res.json();
+
+      // Sync saved match & updated standings to Firestore
+      try {
+        await syncMatchToFirestore(savedMatch);
+        setLastSyncedAt(new Date());
+      } catch (fErr) {
+        console.warn('Firestore sync error for new match:', fErr);
+      }
+
       await loadData();
       return true;
     } catch (err: any) {
@@ -131,6 +239,16 @@ export default function App() {
         throw new Error(err.error || 'Gagal menambahkan pemain');
       }
 
+      const addedPlayer: Player = await res.json();
+
+      // Sync new player to Firestore
+      try {
+        await syncPlayerToFirestore(addedPlayer);
+        setLastSyncedAt(new Date());
+      } catch (fErr) {
+        console.warn('Firestore sync error for new player:', fErr);
+      }
+
       await loadData();
       return true;
     } catch (err: any) {
@@ -146,9 +264,14 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        setMatches((prev) =>
-          prev.map((m) => (m.id === matchId ? { ...m, ai_analysis: data.ai_analysis } : m))
-        );
+        setMatches((prev) => {
+          const updated = prev.map((m) => (m.id === matchId ? { ...m, ai_analysis: data.ai_analysis } : m));
+          const target = updated.find((m) => m.id === matchId);
+          if (target) {
+            syncMatchToFirestore(target).catch((e) => console.warn('Sync reanalyze match:', e));
+          }
+          return updated;
+        });
         if (selectedMatch && selectedMatch.id === matchId) {
           setSelectedMatch((prev) => (prev ? { ...prev, ai_analysis: data.ai_analysis } : null));
         }
@@ -163,8 +286,15 @@ export default function App() {
     try {
       const res = await fetch('/api/reset-data', { method: 'POST' });
       if (res.ok) {
+        await forceSyncAllToFirestore({
+          players: INITIAL_PLAYERS,
+          matches: INITIAL_MATCHES,
+          tournaments: INITIAL_TOURNAMENTS,
+          lagaAmal: INITIAL_LAGA_AMAL_S41,
+        });
         await loadData();
-        alert('Data berhasil direset ke seed awal.');
+        setLastSyncedAt(new Date());
+        alert('Data berhasil direset dan disinkronkan ke Cloud Firestore.');
       }
     } catch (err) {
       console.error('Reset error:', err);
@@ -219,6 +349,29 @@ export default function App() {
 
           {/* Quick utility controls */}
           <div className="flex items-center gap-2">
+            <FirestoreStatusBadge
+              players={players}
+              matches={matches}
+              tournaments={tournaments}
+              lagaAmal={lagaAmal}
+              isConnected={isFirestoreConnected}
+              lastSyncedAt={lastSyncedAt}
+              onSyncSuccess={() => {
+                setLastSyncedAt(new Date());
+                loadData();
+              }}
+            />
+
+            <button
+              id="btn-open-export-csv"
+              onClick={() => setIsExportModalOpen(true)}
+              title="Export Database ke CSV"
+              className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 text-xs font-semibold text-[#F2EDE4] hover:border-[#E8B33D]/50 hover:bg-[#2c241e] transition-colors"
+            >
+              <Database size={13} className="text-[#E8B33D]" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </button>
+
             {isAdmin ? (
               <div className="flex items-center gap-2">
                 <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[#4F7942]/60 bg-[#4F7942]/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
@@ -328,10 +481,13 @@ export default function App() {
           <AdminInput
             players={players}
             heroes={heroes}
+            matches={matches}
+            tournaments={tournaments}
             isAdmin={isAdmin}
             onOpenLogin={() => setIsLoginModalOpen(true)}
             onSaveMatch={handleSaveMatch}
             onAddPlayer={handleAddPlayer}
+            onOpenExport={() => setIsExportModalOpen(true)}
           />
         )}
 
@@ -373,6 +529,16 @@ export default function App() {
           setIsAdmin(true);
           setTab('admin');
         }}
+      />
+
+      {/* 4. Modal Export Database ke CSV */}
+      <ExportDatabaseModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        players={players}
+        matches={matches}
+        tournaments={tournaments}
+        lagaAmal={lagaAmal}
       />
     </div>
   );

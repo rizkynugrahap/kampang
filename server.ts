@@ -8,6 +8,13 @@ import { INITIAL_TOURNAMENTS } from './src/data/tournamentSeed.ts';
 import { INITIAL_LAGA_AMAL_S41 } from './src/data/lagaAmalS41Data.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, TournamentData, TournamentFixture, TournamentTeamStanding, LagaAmalSeasonData } from './src/types.ts';
+import {
+  generatePlayersCsv,
+  generateMatchesCsv,
+  generateTournamentsCsv,
+  generateLagaAmalCsv,
+  generateAllInOneDatabaseCsv,
+} from './src/utils/csvExport.ts';
 
 const app = express();
 const PORT = 3000;
@@ -775,6 +782,58 @@ app.post('/api/laga-amal', (req, res) => {
 
   saveStore(store);
   res.json({ success: true, season: newSeason });
+});
+
+// GET /api/export/csv (Export database to CSV with UTF-8 BOM)
+app.get('/api/export/csv', (req, res) => {
+  const type = (req.query.type as string) || 'all';
+  const bom = '\uFEFF';
+  let csvData = '';
+  let filename = 'pantos_database.csv';
+
+  const lagaAmalSeason = (store.lagaAmalSeasons && store.lagaAmalSeasons[0]) || INITIAL_LAGA_AMAL_S41;
+
+  switch (type.toLowerCase()) {
+    case 'players':
+    case 'pemain':
+      csvData = generatePlayersCsv(store.players);
+      filename = 'pantos_database_pemain.csv';
+      break;
+
+    case 'matches':
+    case 'pertandingan':
+      csvData = generateMatchesCsv(store.matches);
+      filename = 'pantos_riwayat_pertandingan.csv';
+      break;
+
+    case 'tournaments':
+    case 'turnamen':
+      csvData = generateTournamentsCsv(store.tournaments);
+      filename = 'pantos_turnamen_klasemen.csv';
+      break;
+
+    case 'laga-amal':
+    case 'lagaamal':
+      csvData = generateLagaAmalCsv(lagaAmalSeason);
+      filename = `pantos_klasemen_laga_amal_${lagaAmalSeason.id}.csv`;
+      break;
+
+    case 'all':
+    default:
+      csvData = generateAllInOneDatabaseCsv({
+        players: store.players,
+        matches: store.matches,
+        tournaments: store.tournaments,
+        lagaAmal: lagaAmalSeason,
+      });
+      const dateStr = new Date().toISOString().split('T')[0];
+      filename = `pantos_database_master_${dateStr}.csv`;
+      break;
+  }
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(bom + csvData);
 });
 
 // POST /api/reset-data
