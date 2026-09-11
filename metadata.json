@@ -1,0 +1,6 @@
+{
+  "name": "Laga Amal Pantos",
+  "description": "Pelacak statistik pertandingan Mobile Legends internal Tim Pohon vs Tim Lobby dengan sistem penilaian berbasis medali, klasemen Kelas Semen, dan analisis pertandingan bertenaga AI Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
