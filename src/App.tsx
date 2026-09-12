@@ -28,6 +28,7 @@ import {
   subscribeToMatches,
   subscribeToLagaAmal,
   seedFirestoreIfEmpty,
+  seedAdminIfEmpty,
   syncPlayerToFirestore,
   syncMatchToFirestore,
   syncLagaAmalToFirestore,
@@ -68,6 +69,17 @@ export default function App() {
   const [players, setPlayers] = useState<Player[]>(() => buildPlayersFromSeason(activeSeason));
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [heroes, setHeroes] = useState<Hero[]>(MLBB_HEROES);
+
+  // Matches that belong to the currently selected Laga Amal season only.
+  // Joined by season number (e.g. "S41") rather than an exact string match,
+  // since a match's `season` label ("Season 41") and a season's `title`
+  // ("KELASEMEN LAGA AMAL - S41") aren't written identically.
+  const seasonMatches = useMemo(() => {
+    const extractSeasonNumber = (s?: string) => s?.match(/(\d+)/)?.[1];
+    const activeNum = extractSeasonNumber(activeSeason.title) || extractSeasonNumber(activeSeason.id);
+    if (!activeNum) return matches;
+    return matches.filter((m) => extractSeasonNumber(m.season) === activeNum);
+  }, [matches, activeSeason]);
 
   // Modals & active selections
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -161,6 +173,9 @@ export default function App() {
       matches: INITIAL_MATCHES,
       seasons: ALL_INITIAL_SEASONS,
     }).catch((e) => console.warn('Firestore seeding check:', e));
+
+    // Auto-seed the default admin login account if Firestore has none yet
+    seedAdminIfEmpty().catch((e) => console.warn('Firestore admin seeding check:', e));
 
     const unsubLagaAmal = subscribeToLagaAmal(
       (remoteSeasons) => {
@@ -636,7 +651,7 @@ export default function App() {
         {tab === 'dashboard' && (
           <div className="space-y-6">
             {/* Split score banner */}
-            <ScoreBanner matches={matches} seasonTitle={activeSeason.title} />
+            <ScoreBanner matches={seasonMatches} seasonTitle={activeSeason.title} />
 
             {/* Grid: Kelas Semen Leaderboard & Recent Match Feed */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

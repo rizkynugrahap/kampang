@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, KeyRound, ShieldAlert, Check } from 'lucide-react';
+import { verifyAdminLogin } from '../services/firestoreSync';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -25,21 +26,16 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        localStorage.setItem('pantos_admin_token', data.token);
+      const result = await verifyAdminLogin(email, password);
+      if (result.success) {
+        localStorage.setItem('pantos_admin_token', 'admin-pantos-token-' + Date.now());
         onLoginSuccess();
         onClose();
       } else {
-        setError(data.error || 'Password atau email admin salah');
+        setError(result.error || 'Password atau email admin salah');
       }
     } catch (err: any) {
-      setError('Gagal menghubungkan ke server.');
+      setError('Gagal menghubungkan ke Firestore.');
     } finally {
       setLoading(false);
     }

@@ -11,6 +11,18 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
   const lobbyWins = matches.filter((m) => m.winner === 'Tim Lobby').length;
   const total = matches.length;
 
+  // Proportional split: the side with more wins gets a wider bar.
+  // e.g. Pohon 4 vs Lobby 2 -> Pohon ~66.7%, Lobby ~33.3%.
+  // Falls back to an even 50/50 split when there's no data yet.
+  const pohonPct = total > 0 ? (pohonWins / total) * 100 : 50;
+  const lobbyPct = total > 0 ? 100 - pohonPct : 50;
+
+  // Keep each side from collapsing to nothing so its label stays readable
+  // even at a lopsided score (e.g. 6-0).
+  const MIN_PCT = 18;
+  const pohonWidth = total > 0 ? Math.max(MIN_PCT, Math.min(100 - MIN_PCT, pohonPct)) : 50;
+  const lobbyWidth = 100 - pohonWidth;
+
   return (
     <div
       id="score-banner-container"
@@ -31,15 +43,16 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
         </span>
       </div>
 
-      {/* Diagonal split score banner */}
-      <div className="relative grid grid-cols-2">
+      {/* Diagonal split score banner — bar width tracks each team's win share */}
+      <div className="relative flex">
         {/* Tim Pohon Left Wing */}
         <div
           id="banner-team-pohon"
-          className="relative flex flex-col items-start justify-center py-8 pl-5 pr-8 sm:py-10 sm:pl-8 sm:pr-12"
+          className="relative flex flex-col items-start justify-center py-8 pl-5 pr-8 transition-[width] duration-700 ease-out sm:py-10 sm:pl-8 sm:pr-12"
           style={{
+            width: `${pohonWidth}%`,
             background: 'linear-gradient(135deg, #4F7942 0%, #35532c 100%)',
-            clipPath: 'polygon(0 0, 100% 0, 84% 100%, 0% 100%)',
+            clipPath: 'polygon(0 0, 100% 0, 92% 100%, 0% 100%)',
           }}
         >
           <div className="relative z-10 flex flex-col">
@@ -61,10 +74,11 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
         {/* Tim Lobby Right Wing */}
         <div
           id="banner-team-lobby"
-          className="relative flex flex-col items-end justify-center py-8 pr-5 pl-8 text-right sm:py-10 sm:pr-8 sm:pl-12"
+          className="relative flex flex-col items-end justify-center py-8 pr-5 pl-8 text-right transition-[width] duration-700 ease-out sm:py-10 sm:pr-8 sm:pl-12"
           style={{
+            width: `${lobbyWidth}%`,
             background: 'linear-gradient(315deg, #C97A3D 0%, #8c4e20 100%)',
-            clipPath: 'polygon(16% 0, 100% 0, 100% 100%, 0% 100%)',
+            clipPath: 'polygon(8% 0, 100% 0, 100% 100%, 0% 100%)',
           }}
         >
           <div className="relative z-10 flex flex-col items-end">

@@ -1,4 +1,13 @@
-import { LagaAmalSeasonData, LagaAmalPlayerStat, Player, Match, Medal } from '../types';
+import {
+  LagaAmalSeasonData,
+  LagaAmalPlayerStat,
+  Player,
+  Match,
+  Medal,
+  LagaAmalHeroPick,
+  HeroPickByUser,
+  UserHeroPercentage,
+} from '../types';
 import { INITIAL_LAGA_AMAL_S41, INITIAL_S41_PLAYERS } from './lagaAmalS41Data';
 import { getPlayerAvatarUrl } from './playerAvatars';
 
@@ -118,6 +127,37 @@ export function buildPlayersFromSeason(season: LagaAmalSeasonData): Player[] {
 }
 
 /**
+ * Derives the UI-facing "Hero Picks" shape (grouped per player, with
+ * percentage share per hero) from the raw per-player-per-hero tally
+ * (heroPicksByUser). This is the single source of truth the "Hero Picks"
+ * tab reads from — call this any time heroPicksByUser changes so the
+ * tab never goes stale.
+ */
+export function deriveHeroPicksForUI(heroPicksByUser: LagaAmalHeroPick[] = []): HeroPickByUser[] {
+  const byPlayer = new Map<string, LagaAmalHeroPick[]>();
+
+  heroPicksByUser.forEach((hp) => {
+    const list = byPlayer.get(hp.player) || [];
+    list.push(hp);
+    byPlayer.set(hp.player, list);
+  });
+
+  const result: HeroPickByUser[] = [];
+  byPlayer.forEach((picks, player) => {
+    const totalPicks = picks.reduce((sum, p) => sum + (p.total || 0), 0);
+    const heroes: UserHeroPercentage[] = picks
+      .map((p) => ({
+        heroName: p.hero,
+        percentage: totalPicks > 0 ? Math.round((p.total / totalPicks) * 100) : 0,
+      }))
+      .sort((a, b) => b.percentage - a.percentage);
+    result.push({ user: player, heroes });
+  });
+
+  return result.sort((a, b) => a.user.localeCompare(b.user));
+}
+
+/**
  * Recalculates season summary stats (tops, totals, averages)
  */
 export function recalculateSeasonStats(season: LagaAmalSeasonData): LagaAmalSeasonData {
@@ -163,6 +203,12 @@ export function recalculateSeasonStats(season: LagaAmalSeasonData): LagaAmalSeas
   updated.avgScoreTotal = avgSc;
   updated.averageScore = avgSc;
   updated.activePlayersCount = players.length;
+
+  // Keep the "Hero Picks" tab in sync with the raw tally whenever season
+  // stats are recalculated (e.g. after a CSV import or a new match).
+  if (updated.heroPicksByUser && updated.heroPicksByUser.length > 0) {
+    updated.heroPicks = deriveHeroPicksForUI(updated.heroPicksByUser);
+  }
 
   return updated;
 }
@@ -297,6 +343,25 @@ export function applyMatchToSeason(season: LagaAmalSeasonData, match: Match): La
   if (updated.heroPool) {
     updated.heroPool.sort((a: any, b: any) => (b.picked || b.timesPicked || 0) - (a.picked || a.timesPicked || 0));
   }
+
+  // Append this match to the "Log Match" tab's data source. This is built
+  // straight from the submitted match (which already knows the winner and
+  // each side's MVP), instead of being reconstructed from the flat
+  // matchRows — which don't carry team/winner info and previously left
+  // this tab stuck on stale data.
+  if (!updated.matchLogs) updated.matchLogs = [];
+  const pohonMvpEntry = match.pohon.find((mp) => mp.medal === 'MVP');
+  const lobbyMvpEntry = match.lobby.find((mp) => mp.medal === 'MVP');
+  updated.matchLogs.unshift({
+    matchNumber: updated.matchLogs.length + 1,
+    date: match.date,
+    winner: match.winner,
+    pohonMvp: pohonMvpEntry?.player_name,
+    lobbyMvp: lobbyMvpEntry?.player_name,
+  });
+
+  // Rebuild the "Hero Picks" tab data from the tally we just updated above.
+  updated.heroPicks = deriveHeroPicksForUI(updated.heroPicksByUser);
 
   return recalculateSeasonStats(updated);
 }

@@ -3,6 +3,8 @@ import {
   doc,
   setDoc,
   getDocs,
+  query,
+  where,
   onSnapshot,
   writeBatch,
   Unsubscribe,
@@ -132,6 +134,72 @@ export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[])
     batch.set(docRef, sanitizeForFirestore(s), { merge: true });
   });
   await batch.commit();
+}
+
+// ----------------- ADMIN LOGIN (Firestore-only) -----------------
+
+export interface AdminAccount {
+  email: string;
+  password: string;
+  name: string;
+}
+
+const DEFAULT_ADMIN: AdminAccount = {
+  email: 'admin@pantos.ml',
+  password: 'pantos123',
+  name: 'Admin Pantos',
+};
+
+/**
+ * Seeds the `admins` collection with a default account the first time the
+ * app runs against an empty Firestore, so login keeps working out of the
+ * box. Safe to call every load — it's a no-op once at least one admin
+ * document exists.
+ */
+export async function seedAdminIfEmpty(): Promise<void> {
+  try {
+    const snap = await getDocs(collection(db, 'admins'));
+    if (snap.empty) {
+      console.log('Firestore: Seeding default admin account...');
+      const docRef = doc(db, 'admins', DEFAULT_ADMIN.email.toLowerCase());
+      await setDoc(docRef, DEFAULT_ADMIN);
+    }
+  } catch (err) {
+    console.warn('Firestore admin seeding error:', err);
+  }
+}
+
+/**
+ * Verifies admin login credentials directly against Firestore — this is
+ * now the single source of truth for login, replacing the old hardcoded
+ * backend check.
+ */
+export async function verifyAdminLogin(
+  email: string,
+  password: string
+): Promise<{ success: boolean; admin?: { email: string; name: string }; error?: string }> {
+  try {
+    const normalizedEmail = (email || DEFAULT_ADMIN.email).trim().toLowerCase();
+
+    // Fast path: the account is stored with its email as the document id.
+    const docSnap = await getDocs(
+      query(collection(db, 'admins'), where('email', '==', normalizedEmail))
+    );
+
+    if (docSnap.empty) {
+      return { success: false, error: 'Akun admin tidak ditemukan di Firestore.' };
+    }
+
+    const account = docSnap.docs[0].data() as AdminAccount;
+    if (account.password !== password) {
+      return { success: false, error: 'Password admin salah.' };
+    }
+
+    return { success: true, admin: { email: account.email, name: account.name } };
+  } catch (err) {
+    console.error('Firestore admin login error:', err);
+    return { success: false, error: 'Gagal menghubungkan ke Firestore.' };
+  }
 }
 
 // ----------------- BULK INITIAL SEEDING -----------------

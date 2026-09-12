@@ -13,6 +13,9 @@ service cloud.firestore {
     match /laga_amal_seasons/{seasonId} {
       allow read, write: if true;
     }
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
     match /app_meta/{metaId} {
       allow read, write: if true;
     }

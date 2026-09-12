@@ -423,21 +423,9 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
   }
 });
 
-// POST /api/auth/login
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (
-    (email === 'admin@pantos.ml' || email === 'admin' || !email) &&
-    password === 'pantos123'
-  ) {
-    return res.json({
-      success: true,
-      token: 'admin-pantos-token-' + Date.now(),
-      admin: { email: 'admin@pantos.ml', name: 'Admin Pantos' },
-    });
-  }
-  return res.status(401).json({ success: false, error: 'Password admin salah (Gunakan: pantos123)' });
-});
+// NOTE: Admin login no longer goes through this backend — it now checks
+// the `admins` collection in Firestore directly from the client
+// (see src/services/firestoreSync.ts: verifyAdminLogin / seedAdminIfEmpty).
 
 // ----------------- LAGA AMAL SEASONS ROUTES -----------------
 // GET /api/laga-amal (Get all seasons with history)
