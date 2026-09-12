@@ -52,7 +52,12 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
           style={{
             width: `${pohonWidth}%`,
             background: 'linear-gradient(135deg, #4F7942 0%, #35532c 100%)',
-            clipPath: 'polygon(0 0, 100% 0, 92% 100%, 0% 100%)',
+            // Fixed pixel skew (not a %) so the diagonal cut stays the same
+            // angle no matter how narrow/wide this side gets — a percentage
+            // cut looks fine at 50/50 but visibly kinks once the split
+            // becomes lopsided (e.g. 33/67), since the same % is a very
+            // different pixel distance on a narrow box vs a wide one.
+            clipPath: 'polygon(0 0, 100% 0, calc(100% - 28px) 100%, 0% 100%)',
           }}
         >
           <div className="relative z-10 flex flex-col">
@@ -78,7 +83,10 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
           style={{
             width: `${lobbyWidth}%`,
             background: 'linear-gradient(315deg, #C97A3D 0%, #8c4e20 100%)',
-            clipPath: 'polygon(8% 0, 100% 0, 100% 100%, 0% 100%)',
+            // Same fixed pixel skew, mirrored, so the two cuts stay
+            // perfectly parallel and meet cleanly at the seam regardless
+            // of the win split.
+            clipPath: 'polygon(28px 0, 100% 0, 100% 100%, 0% 100%)',
           }}
         >
           <div className="relative z-10 flex flex-col items-end">
