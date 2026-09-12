@@ -12,60 +12,47 @@ import {
   ArrowRight,
   Shield,
   Lock,
-  Database,
-  Download,
-  FileSpreadsheet,
-  Cloud,
+  Calendar,
+  Layers,
 } from 'lucide-react';
-import { firebaseConfig } from '../lib/firebase';
-import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, TournamentData } from '../types';
+import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, LagaAmalSeasonData } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
-import {
-  downloadCsvFile,
-  generatePlayersCsv,
-  generateMatchesCsv,
-  generateMatchDetailsCsv,
-  generateAllInOneDatabaseCsv,
-} from '../utils/csvExport';
 
 interface AdminInputProps {
   players: Player[];
   heroes: Hero[];
-  matches?: Match[];
-  tournaments?: TournamentData[];
+  seasons?: LagaAmalSeasonData[];
+  activeSeasonId?: string;
   isAdmin: boolean;
   onOpenLogin: () => void;
   onSaveMatch: (matchData: any) => Promise<boolean>;
   onAddPlayer: (player: { name: string; status: 'Aktif' | 'Cabutan'; tier: string; avatar_url?: string }) => Promise<boolean>;
-  onOpenExport?: () => void;
 }
 
 export const AdminInput: React.FC<AdminInputProps> = ({
   players,
   heroes,
-  matches = [],
-  tournaments = [],
+  seasons = [],
+  activeSeasonId = 's41',
   isAdmin,
   onOpenLogin,
   onSaveMatch,
   onAddPlayer,
-  onOpenExport,
 }) => {
   // Assigned rosters
   const [pohonPlayers, setPohonPlayers] = useState<string[]>([]);
   const [lobbyPlayers, setLobbyPlayers] = useState<string[]>([]);
   const [draggingPlayer, setDraggingPlayer] = useState<string | null>(null);
 
-  // Player configuration row: { hero_name, medal }
+  // Player configuration row: { hero, medal, score }
   const [playerConfig, setPlayerConfig] = useState<
-    Record<string, { hero: string; medal: Medal }>
+    Record<string, { hero: string; medal: Medal; score: number }>
   >({});
 
   // Match meta
   const [winner, setWinner] = useState<TeamName>('Tim Pohon');
-  const [matchType, setMatchType] = useState<'Laga Amal' | 'Ranked' | 'Turnamen'>('Laga Amal');
-  const [tournamentStage, setTournamentStage] = useState('Pekan Reguler');
+  const [selectedSeason, setSelectedSeason] = useState<string>(activeSeasonId);
   const [matchDate, setMatchDate] = useState<string>(() => {
     return new Date().toLocaleDateString('id-ID', {
       day: '2-digit',
@@ -81,9 +68,6 @@ export const AdminInput: React.FC<AdminInputProps> = ({
     message: string;
   } | null>(null);
 
-  // Quick hero search filter for quick picking
-  const [heroSearch, setHeroSearch] = useState<string>('');
-
   // Add new player modal state
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -92,20 +76,22 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   const [newPlayerTier, setNewPlayerTier] = useState('Legend');
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
 
-  // Players currently in pool
+  // Player pool currently unassigned
   const pool = players.filter(
     (p) => !pohonPlayers.includes(p.name) && !lobbyPlayers.includes(p.name)
   );
 
-  // Drag and Drop handlers
-  const handleDragStart = (name: string) => {
-    setDraggingPlayer(name);
-  };
-
-  const handleDrop = (targetTeam: TeamShort) => {
-    if (!draggingPlayer) return;
-    assignPlayerToTeam(draggingPlayer, targetTeam);
-    setDraggingPlayer(null);
+  const getDefaultScore = (medal: Medal): number => {
+    switch (medal) {
+      case 'MVP':
+        return 10.0;
+      case 'Gold':
+        return 8.5;
+      case 'Silver':
+        return 6.0;
+      case 'Coklat':
+        return 3.5;
+    }
   };
 
   const assignPlayerToTeam = (name: string, team: TeamShort) => {
@@ -117,13 +103,15 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       setLobbyPlayers((prev) => (prev.includes(name) ? prev : [...prev, name]));
     }
 
-    // Default hero and medal if not assigned
+    // Initialize config if not yet set
     if (!playerConfig[name]) {
+      const defaultHero = heroes[Math.floor(Math.random() * Math.min(10, heroes.length))]?.name || 'Kadita';
       setPlayerConfig((prev) => ({
         ...prev,
         [name]: {
-          hero: heroes[Math.floor(Math.random() * 10)]?.name || 'Chou',
+          hero: defaultHero,
           medal: 'Silver',
+          score: 6.0,
         },
       }));
     }
@@ -136,16 +124,33 @@ export const AdminInput: React.FC<AdminInputProps> = ({
 
   const updatePlayerField = (
     name: string,
-    field: 'hero' | 'medal',
-    value: string
+    field: 'hero' | 'medal' | 'score',
+    value: any
   ) => {
-    setPlayerConfig((prev) => ({
-      ...prev,
-      [name]: {
-        hero: field === 'hero' ? value : prev[name]?.hero || heroes[0]?.name || 'Kadita',
-        medal: field === 'medal' ? (value as Medal) : prev[name]?.medal || 'Silver',
-      },
-    }));
+    setPlayerConfig((prev) => {
+      const current = prev[name] || { hero: 'Kadita', medal: 'Silver', score: 6.0 };
+      if (field === 'medal') {
+        const newMedal = value as Medal;
+        // If current score was exactly the default for previous medal, auto-update to new default
+        const prevDefault = getDefaultScore(current.medal);
+        const nextScore = current.score === prevDefault ? getDefaultScore(newMedal) : current.score;
+        return {
+          ...prev,
+          [name]: {
+            ...current,
+            medal: newMedal,
+            score: nextScore,
+          },
+        };
+      }
+      return {
+        ...prev,
+        [name]: {
+          ...current,
+          [field]: value,
+        },
+      };
+    });
   };
 
   const handleSaveMatch = async () => {
@@ -166,8 +171,8 @@ export const AdminInput: React.FC<AdminInputProps> = ({
     setNotification(null);
 
     const pohonDetails: MatchPlayerDetail[] = pohonPlayers.map((name) => {
-      const p = players.find((x) => x.name === name);
-      const conf = playerConfig[name] || { hero: 'Kadita', medal: 'Silver' };
+      const p = players.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      const conf = playerConfig[name] || { hero: 'Kadita', medal: 'Silver', score: 6.0 };
       const h = heroes.find((hero) => hero.name === conf.hero);
       return {
         player_id: p?.id || Date.now(),
@@ -176,12 +181,13 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         hero_name: conf.hero,
         team: 'Pohon',
         medal: conf.medal,
+        score: Number(conf.score) || 6.0,
       };
     });
 
     const lobbyDetails: MatchPlayerDetail[] = lobbyPlayers.map((name) => {
-      const p = players.find((x) => x.name === name);
-      const conf = playerConfig[name] || { hero: 'Chou', medal: 'Silver' };
+      const p = players.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      const conf = playerConfig[name] || { hero: 'Chou', medal: 'Silver', score: 6.0 };
       const h = heroes.find((hero) => hero.name === conf.hero);
       return {
         player_id: p?.id || Date.now(),
@@ -190,15 +196,18 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         hero_name: conf.hero,
         team: 'Lobby',
         medal: conf.medal,
+        score: Number(conf.score) || 6.0,
       };
     });
 
+    const seasonObj = seasons.find((s) => s.id === selectedSeason) || seasons[0];
+    const seasonLabel = seasonObj ? seasonObj.title : 'Season 41';
+
     const payload = {
       date: matchDate,
-      season: 'Season 1',
+      season: seasonLabel,
       winner,
-      type: matchType,
-      tournament_stage: matchType === 'Turnamen' ? tournamentStage : undefined,
+      type: 'Laga Amal',
       pohon: pohonDetails,
       lobby: lobbyDetails,
     };
@@ -208,9 +217,8 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       if (success) {
         setNotification({
           type: 'success',
-          message: 'Match tersimpan! Analisis AI Gemini sedang diproses secara async...',
+          message: 'Match tersimpan & langsung tersinkron ke Klasemen Laga Amal!',
         });
-        // Reset rosters for next game
         setPohonPlayers([]);
         setLobbyPlayers([]);
       }
@@ -224,698 +232,502 @@ export const AdminInput: React.FC<AdminInputProps> = ({
     }
   };
 
-  const handleCreatePlayer = async (e: React.FormEvent) => {
+  const handleAddPlayerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPlayerName.trim()) return;
+
     setIsAddingPlayer(true);
     try {
       const ok = await onAddPlayer({
         name: newPlayerName.trim(),
         status: newPlayerStatus,
         tier: newPlayerTier,
-        avatar_url: newPlayerAvatarUrl.trim() ? newPlayerAvatarUrl.trim() : undefined,
+        avatar_url: newPlayerAvatarUrl.trim() || undefined,
       });
+
       if (ok) {
         setNewPlayerName('');
         setNewPlayerAvatarUrl('');
         setShowAddPlayer(false);
+        setNotification({
+          type: 'success',
+          message: `Pemain '${newPlayerName}' berhasil ditambahkan ke database & klasemen!`,
+        });
       }
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: err.message || 'Gagal menambahkan pemain baru.',
+      });
     } finally {
       setIsAddingPlayer(false);
     }
   };
 
-  // If not logged in as admin, show lock overlay or friendly prompt
-  if (!isAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-[#332C25] bg-[#1D1916] p-8 text-center sm:p-12">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#241F1B] text-[#E8B33D] shadow-inner">
-          <Lock size={28} />
-        </div>
-        <h2 className="mt-4 font-bold text-lg text-[#F2EDE4]">
-          Halaman Khusus Admin
-        </h2>
-        <p className="mt-1.5 max-w-sm text-xs text-[#9C948A]">
-          Input pertandingan dan pengelolaan data hanya dapat diakses oleh admin Pantos. Silakan login untuk melanjutkan.
-        </p>
-        <button
-          id="admin-login-trigger-btn"
-          onClick={onOpenLogin}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#E8B33D] px-6 py-2.5 font-bold text-xs text-[#161311] transition-transform hover:scale-105"
-        >
-          <span>Login Admin Pantos</span>
-          <ArrowRight size={14} />
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div id="admin-input-container" className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#332C25] pb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#241F1B] text-[#E8B33D]">
-            <ClipboardList size={18} />
-          </div>
-          <div>
-            <h2 className="font-bold text-base text-[#F2EDE4] sm:text-lg">
-              Input Pertandingan & Draft Cepat
-            </h2>
-            <p className="text-xs text-[#9C948A]">
-              Drag & drop atau klik chip pemain · Target waktu pengisian: &lt;30 detik
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {onOpenExport && (
-            <button
-              id="btn-admin-export-csv"
-              onClick={onOpenExport}
-              className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-1.5 font-medium text-xs text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-colors"
-            >
-              <Database size={14} />
-              <span>Export Database (CSV)</span>
-            </button>
-          )}
-
-          <button
-            id="btn-add-player"
-            onClick={() => setShowAddPlayer(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 font-medium text-xs text-[#F2EDE4] hover:bg-[#2c2621]"
-          >
-            <Plus size={14} />
-            <span>Tambah Pemain Baru</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Notification banner */}
-      {notification && (
-        <div
-          className={`flex items-center gap-2 rounded-xl border p-3.5 text-xs font-medium ${
-            notification.type === 'success'
-              ? 'border-[#4F7942] bg-[#4F7942]/15 text-emerald-200'
-              : 'border-red-600/50 bg-red-950/30 text-red-200'
-          }`}
-        >
-          {notification.type === 'success' ? (
-            <CheckCircle2 size={16} className="shrink-0 text-[#4F7942]" />
-          ) : (
-            <AlertCircle size={16} className="shrink-0 text-red-400" />
-          )}
-          <span>{notification.message}</span>
-        </div>
-      )}
-
-      {/* Player pool */}
-      <div className="rounded-xl border border-[#332C25] bg-[#1D1916] p-4">
-        <div className="mb-2.5 flex items-center justify-between">
-          <span className="font-bold text-xs text-[#9C948A] uppercase tracking-wider">
-            Pool Pemain ({pool.length} Tersedia)
-          </span>
-          <span className="text-[11px] text-[#9C948A]">
-            Tarik ke kotak tim, atau klik tombol di bawah chip
-          </span>
-        </div>
-
-        {pool.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[#332C25] py-4 text-center text-xs text-[#9C948A]">
-            Semua pemain sudah dimasukkan ke dalam tim.
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {pool.map((p) => (
-              <div
-                key={p.id}
-                draggable
-                onDragStart={() => handleDragStart(p.name)}
-                className="group flex items-center gap-2 rounded-lg border border-[#332C25] bg-[#241F1B] px-2.5 py-1.5 text-xs font-medium text-[#F2EDE4] shadow-xs hover:border-[#E8B33D]/50"
-              >
-                <PlayerAvatar name={p.name} avatarUrl={p.avatar_url} size="xs" />
-                <span className="cursor-grab select-none font-semibold">{p.name}</span>
-                <span className="text-[10px] text-[#9C948A]">({p.tier})</span>
-
-                {/* Quick assign buttons for mobile & fast click */}
-                <div className="ml-1 flex items-center gap-1 border-l border-[#332C25] pl-1.5">
-                  <button
-                    type="button"
-                    onClick={() => assignPlayerToTeam(p.name, 'Pohon')}
-                    className="rounded bg-[#4F7942]/20 px-1.5 py-0.5 font-bold text-[10px] text-[#4F7942] hover:bg-[#4F7942] hover:text-white"
-                    title="Masuk Tim Pohon"
-                  >
-                    +Pohon
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => assignPlayerToTeam(p.name, 'Lobby')}
-                    className="rounded bg-[#C97A3D]/20 px-1.5 py-0.5 font-bold text-[10px] text-[#C97A3D] hover:bg-[#C97A3D] hover:text-white"
-                    title="Masuk Tim Lobby"
-                  >
-                    +Lobby
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Two Team Draft Boxes */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Box Tim Pohon */}
-        <div
-          id="dropzone-tim-pohon"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => handleDrop('Pohon')}
-          className="flex flex-col rounded-xl border-2 border-dashed border-[#4F7942]/60 bg-[#1D1916] p-4 transition-colors"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#4F7942]" />
-              <h3 className="font-bold text-sm text-[#4F7942] uppercase tracking-wider">
-                Tim Pohon
-              </h3>
+    <div id="admin-input-view" className="space-y-6">
+      {/* Header & Match Setup */}
+      <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-lg space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#332C25] pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#241F1B] text-[#E8B33D] border border-[#332C25]">
+              <ClipboardList size={18} />
             </div>
-            <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
-              {pohonPlayers.length} Pemain
-            </span>
-          </div>
-
-          <div className="min-h-[140px] flex-1 space-y-2">
-            {pohonPlayers.length === 0 ? (
-              <div className="flex h-full items-center justify-center rounded-lg border border-[#332C25]/40 py-8 text-center text-xs text-[#9C948A]">
-                Lepas chip pemain di sini untuk Tim Pohon
-              </div>
-            ) : (
-              pohonPlayers.map((name) => {
-                const conf = playerConfig[name] || { hero: 'Kadita', medal: 'Silver' };
-                const playerObj = players.find((p) => p.name === name);
-                return (
-                  <div
-                    key={name}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#332C25] bg-[#241F1B] p-2.5"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 w-28">
-                      <PlayerAvatar
-                        name={name}
-                        avatarUrl={playerObj?.avatar_url}
-                        team="Pohon"
-                        size="xs"
-                      />
-                      <span className="truncate font-semibold text-xs text-[#F2EDE4]">
-                        {name}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-1 items-center gap-1.5 min-w-[200px]">
-                      {/* Hero icon preview */}
-                      <HeroAvatar heroName={conf.hero} size="xs" shape="rounded" />
-
-                      {/* Hero selector */}
-                      <select
-                        value={conf.hero}
-                        onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
-                        className="flex-1 rounded border border-[#332C25] bg-[#161311] px-2 py-1 font-medium text-xs text-[#F2EDE4] focus:outline-hidden"
-                      >
-                        {heroes.map((h) => (
-                          <option key={h.id} value={h.name}>
-                            {h.name} ({h.role_primary})
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Medal selector */}
-                      <select
-                        value={conf.medal}
-                        onChange={(e) => updatePlayerField(name, 'medal', e.target.value)}
-                        className="rounded border border-[#332C25] bg-[#161311] px-2 py-1 font-bold text-xs focus:outline-hidden"
-                        style={{
-                          color:
-                            conf.medal === 'MVP'
-                              ? '#E8B33D'
-                              : conf.medal === 'Gold'
-                              ? '#D8A93A'
-                              : conf.medal === 'Silver'
-                              ? '#B9B2A8'
-                              : '#6B4226',
-                        }}
-                      >
-                        <option value="MVP" className="text-[#E8B33D]">MVP</option>
-                        <option value="Gold" className="text-[#D8A93A]">Gold</option>
-                        <option value="Silver" className="text-[#B9B2A8]">Silver</option>
-                        <option value="Coklat" className="text-[#6B4226]">Coklat</option>
-                      </select>
-                    </div>
-
-                    {/* Remove */}
-                    <button
-                      type="button"
-                      onClick={() => removePlayerFromTeam(name)}
-                      className="rounded p-1 text-[#9C948A] hover:bg-[#332C25] hover:text-red-400"
-                      title="Keluarkan dari tim"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Box Tim Lobby */}
-        <div
-          id="dropzone-tim-lobby"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => handleDrop('Lobby')}
-          className="flex flex-col rounded-xl border-2 border-dashed border-[#C97A3D]/60 bg-[#1D1916] p-4 transition-colors"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#C97A3D]" />
-              <h3 className="font-bold text-sm text-[#C97A3D] uppercase tracking-wider">
-                Tim Lobby
-              </h3>
+            <div>
+              <h2 className="font-bold text-base text-[#F2EDE4] sm:text-lg flex items-center gap-2">
+                Input Pertandingan Laga Amal
+                {isAdmin ? (
+                  <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                    Mode Admin Aktif
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-amber-950 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-400 flex items-center gap-1">
+                    <Lock size={10} /> Read Only
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-[#9C948A]">
+                Tentukan tim, hero, medali, dan skor setiap pemain untuk update real-time klasemen
+              </p>
             </div>
-            <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
-              {lobbyPlayers.length} Pemain
-            </span>
           </div>
 
-          <div className="min-h-[140px] flex-1 space-y-2">
-            {lobbyPlayers.length === 0 ? (
-              <div className="flex h-full items-center justify-center rounded-lg border border-[#332C25]/40 py-8 text-center text-xs text-[#9C948A]">
-                Lepas chip pemain di sini untuk Tim Lobby
-              </div>
-            ) : (
-              lobbyPlayers.map((name) => {
-                const conf = playerConfig[name] || { hero: 'Chou', medal: 'Silver' };
-                const playerObj = players.find((p) => p.name === name);
-                return (
-                  <div
-                    key={name}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#332C25] bg-[#241F1B] p-2.5"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 w-28">
-                      <PlayerAvatar
-                        name={name}
-                        avatarUrl={playerObj?.avatar_url}
-                        team="Lobby"
-                        size="xs"
-                      />
-                      <span className="truncate font-semibold text-xs text-[#F2EDE4]">
-                        {name}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-1 items-center gap-1.5 min-w-[200px]">
-                      {/* Hero icon preview */}
-                      <HeroAvatar heroName={conf.hero} size="xs" shape="rounded" />
-
-                      {/* Hero selector */}
-                      <select
-                        value={conf.hero}
-                        onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
-                        className="flex-1 rounded border border-[#332C25] bg-[#161311] px-2 py-1 font-medium text-xs text-[#F2EDE4] focus:outline-hidden"
-                      >
-                        {heroes.map((h) => (
-                          <option key={h.id} value={h.name}>
-                            {h.name} ({h.role_primary})
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Medal selector */}
-                      <select
-                        value={conf.medal}
-                        onChange={(e) => updatePlayerField(name, 'medal', e.target.value)}
-                        className="rounded border border-[#332C25] bg-[#161311] px-2 py-1 font-bold text-xs focus:outline-hidden"
-                        style={{
-                          color:
-                            conf.medal === 'MVP'
-                              ? '#E8B33D'
-                              : conf.medal === 'Gold'
-                              ? '#D8A93A'
-                              : conf.medal === 'Silver'
-                              ? '#B9B2A8'
-                              : '#6B4226',
-                        }}
-                      >
-                        <option value="MVP" className="text-[#E8B33D]">MVP</option>
-                        <option value="Gold" className="text-[#D8A93A]">Gold</option>
-                        <option value="Silver" className="text-[#B9B2A8]">Silver</option>
-                        <option value="Coklat" className="text-[#6B4226]">Coklat</option>
-                      </select>
-                    </div>
-
-                    {/* Remove */}
-                    <button
-                      type="button"
-                      onClick={() => removePlayerFromTeam(name)}
-                      className="rounded p-1 text-[#9C948A] hover:bg-[#332C25] hover:text-red-400"
-                      title="Keluarkan dari tim"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Match Meta & Submit */}
-      <div className="rounded-xl border border-[#332C25] bg-[#1D1916] p-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {/* Winner */}
-          <div>
-            <label className="mb-1.5 block font-bold text-xs text-[#9C948A] uppercase">
-              Pemenang Pertandingan
-            </label>
-            <select
-              id="select-winner"
-              value={winner}
-              onChange={(e) => setWinner(e.target.value as TeamName)}
-              className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 font-bold text-sm text-[#F2EDE4]"
-            >
-              <option value="Tim Pohon">Tim Pohon</option>
-              <option value="Tim Lobby">Tim Lobby</option>
-            </select>
-          </div>
-
-          {/* Type */}
-          <div>
-            <label className="mb-1.5 block font-bold text-xs text-[#9C948A] uppercase">
-              Jenis Pertandingan
-            </label>
-            <select
-              id="select-match-type"
-              value={matchType}
-              onChange={(e) => setMatchType(e.target.value as any)}
-              className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
-            >
-              <option value="Laga Amal">Laga Amal (Utama)</option>
-              <option value="Turnamen">Turnamen Klasemen</option>
-              <option value="Ranked">Ranked Santai</option>
-            </select>
-          </div>
-
-          {/* Date / Stage */}
-          <div>
-            <label className="mb-1.5 block font-bold text-xs text-[#9C948A] uppercase">
-              {matchType === 'Turnamen' ? 'Babak / Putaran Turnamen' : 'Tanggal Laga'}
-            </label>
-            {matchType === 'Turnamen' ? (
-              <select
-                id="select-tournament-stage"
-                value={tournamentStage}
-                onChange={(e) => setTournamentStage(e.target.value)}
-                className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
+          <div className="flex items-center gap-2">
+            {!isAdmin && (
+              <button
+                onClick={onOpenLogin}
+                className="flex items-center gap-1.5 rounded-xl bg-[#E8B33D] px-3 py-1.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-colors cursor-pointer shadow-sm"
               >
-                <option value="Pekan 1 - Matchday 1">Pekan 1 - Matchday 1</option>
-                <option value="Pekan 2 - Matchday 1">Pekan 2 - Matchday 1</option>
-                <option value="Pekan 3 - Matchday 1">Pekan 3 - Matchday 1</option>
-                <option value="Playoffs - Semifinal 1">Playoffs - Semifinal 1</option>
-                <option value="Playoffs - Semifinal 2">Playoffs - Semifinal 2</option>
-                <option value="Grand Final BO5">Grand Final BO5</option>
-              </select>
-            ) : (
-              <input
-                id="input-match-date"
-                type="text"
-                value={matchDate}
-                onChange={(e) => setMatchDate(e.target.value)}
-                className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
-                placeholder="Contoh: 12 Feb 2025"
-              />
+                <Lock size={13} />
+                <span>Masuk Admin</span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                id="btn-open-add-player"
+                onClick={() => setShowAddPlayer(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-[#332C25] bg-[#241F1B] px-3 py-1.5 text-xs font-semibold text-[#F2EDE4] hover:bg-[#2d2621] transition-colors cursor-pointer"
+              >
+                <Plus size={14} className="text-[#E8B33D]" />
+                <span>+ Tambah Pemain</span>
+              </button>
             )}
           </div>
         </div>
 
-        {matchType === 'Turnamen' && (
-          <div className="mt-3 flex items-center gap-2">
-            <label className="text-xs text-[#9C948A] font-medium">Tanggal:</label>
+        {/* Match Configurations (Date, Season, Winner) */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label className="block text-[11px] font-semibold text-[#9C948A] mb-1">
+              Tanggal Match:
+            </label>
             <input
               type="text"
               value={matchDate}
               onChange={(e) => setMatchDate(e.target.value)}
-              className="rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1 text-xs text-[#F2EDE4]"
-              placeholder="Contoh: 12 Feb 2025"
+              className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-xs font-medium text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
             />
           </div>
-        )}
 
-        {/* Submit button */}
-        <div className="mt-5 border-t border-[#332C25] pt-4">
-          <button
-            id="btn-submit-match"
-            type="button"
-            onClick={handleSaveMatch}
-            disabled={
-              isSubmitting || pohonPlayers.length === 0 || lobbyPlayers.length === 0
-            }
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#E8B33D] py-3.5 font-bold text-sm text-[#161311] shadow-lg transition-all hover:bg-[#d69f29] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {isSubmitting ? (
-              <>
-                <RefreshCw size={16} className="animate-spin" />
-                <span>Menyimpan & Menjalankan Analisis AI Gemini...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles size={16} />
-                <span>Simpan & Buat Analisis AI</span>
-              </>
-            )}
-          </button>
-          <p className="mt-2 text-center text-[11px] text-[#9C948A]">
-            Analisis otomatis diproses di server menggunakan model Gemini dengan prompt analis e-sport khas Pantos.
-          </p>
+          <div>
+            <label className="block text-[11px] font-semibold text-[#9C948A] mb-1">
+              Target Season:
+            </label>
+            <select
+              value={selectedSeason}
+              onChange={(e) => setSelectedSeason(e.target.value)}
+              className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-xs font-medium text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
+            >
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-[#9C948A] mb-1">
+              Tim Pemenang:
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setWinner('Tim Pohon')}
+                className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                  winner === 'Tim Pohon'
+                    ? 'border border-[#4F7942] bg-[#4F7942] text-white shadow-md'
+                    : 'border border-[#332C25] bg-[#161311] text-[#9C948A] hover:text-[#F2EDE4]'
+                }`}
+              >
+                🌳 Tim Pohon
+              </button>
+              <button
+                type="button"
+                onClick={() => setWinner('Tim Lobby')}
+                className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                  winner === 'Tim Lobby'
+                    ? 'border border-[#C97A3D] bg-[#C97A3D] text-white shadow-md'
+                    : 'border border-[#332C25] bg-[#161311] text-[#9C948A] hover:text-[#F2EDE4]'
+                }`}
+              >
+                🛋️ Tim Lobby
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Database Backup & Export Section */}
-      <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#332C25] pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2A241E] text-[#E8B33D]">
-              <Database size={17} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-[#F2EDE4]">
-                Manajemen & Ekspor Database ke CSV
+      {/* Roster Assignment Area */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* TIM POHON */}
+        <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-3 w-3 rounded-full bg-[#4F7942]" />
+              <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider">
+                Tim Pohon ({pohonPlayers.length} Pemain)
               </h3>
-              <p className="text-[11px] text-[#9C948A]">
-                Cadangkan data pemain, hasil laga, dan turnamen ke format spreadsheet (.csv)
-              </p>
             </div>
+            {winner === 'Tim Pohon' && (
+              <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
+                Pemenang Match
+              </span>
+            )}
           </div>
 
-          {onOpenExport && (
-            <button
-              id="btn-admin-open-modal-export"
-              onClick={onOpenExport}
-              className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/50 bg-[#E8B33D]/10 px-3 py-1.5 text-xs font-semibold text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-all"
-            >
-              <FileSpreadsheet size={14} />
-              <span>Buka Menu Ekspor Lengkap</span>
-            </button>
-          )}
+          <div className="space-y-3 min-h-[140px]">
+            {pohonPlayers.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#332C25] p-6 text-center text-xs text-[#9C948A]">
+                Pilih atau klik pemain di kolam bawah untuk memasukkannya ke Tim Pohon
+              </div>
+            ) : (
+              pohonPlayers.map((name) => {
+                const conf = playerConfig[name] || { hero: 'Kadita', medal: 'Silver', score: 6.0 };
+                return (
+                  <div
+                    key={name}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-[#332C25] bg-[#241F1B] p-3 shadow-xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <PlayerAvatar name={name} size="sm" />
+                      <span className="font-bold text-xs text-[#F2EDE4] truncate max-w-[120px]">
+                        {name}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Hero selector */}
+                      <select
+                        value={conf.hero}
+                        onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
+                        className="rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1 text-xs text-[#F2EDE4] focus:outline-none cursor-pointer"
+                      >
+                        {heroes.map((h) => (
+                          <option key={h.id} value={h.name}>
+                            {h.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Medal selector */}
+                      <select
+                        value={conf.medal}
+                        onChange={(e) => updatePlayerField(name, 'medal', e.target.value as Medal)}
+                        className={`rounded-lg border px-2 py-1 text-xs font-bold cursor-pointer ${
+                          conf.medal === 'MVP'
+                            ? 'border-[#E8B33D] bg-[#2A2218] text-[#E8B33D]'
+                            : conf.medal === 'Gold'
+                            ? 'border-[#D8A93A] bg-[#251E17] text-[#D8A93A]'
+                            : conf.medal === 'Silver'
+                            ? 'border-[#B9B2A8] bg-[#211E1B] text-[#B9B2A8]'
+                            : 'border-[#6B4226] bg-[#2A1D15] text-[#b8764a]'
+                        }`}
+                      >
+                        <option value="MVP">👑 MVP</option>
+                        <option value="Gold">🥇 Gold</option>
+                        <option value="Silver">🥈 Silver</option>
+                        <option value="Coklat">🍫 Coklat</option>
+                      </select>
+
+                      {/* Player Score Input */}
+                      <div className="flex items-center gap-1 rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1">
+                        <span className="text-[10px] text-[#9C948A] font-semibold">Skor:</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="20"
+                          value={conf.score}
+                          onChange={(e) =>
+                            updatePlayerField(name, 'score', parseFloat(e.target.value) || 0)
+                          }
+                          className="w-12 bg-transparent text-center font-bold text-xs text-[#F2EDE4] focus:outline-none"
+                          title="Input skor individu MLBB"
+                        />
+                      </div>
+
+                      <button
+                        onClick={() => removePlayerFromTeam(name)}
+                        className="rounded-lg p-1.5 text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Hapus dari tim"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* Cloud Firestore Status Banner */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-4 py-2.5 text-xs text-emerald-300">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-            </span>
-            <Cloud size={15} className="text-emerald-400" />
-            <span className="font-semibold text-[#F2EDE4]">
-              Tersinkronisasi dengan Cloud Firestore:
-            </span>
-            <span className="font-mono text-[11px] text-[#E8B33D] hidden sm:inline">
-              {firebaseConfig.projectId} ({firebaseConfig.firestoreDatabaseId})
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
-              <CheckCircle2 size={13} /> Real-Time onSnapshot Aktif
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          {/* Export Master */}
-          <div className="flex flex-col justify-between rounded-xl border border-[#E8B33D]/30 bg-[#251E17] p-3.5">
-            <div>
-              <div className="flex items-center justify-between text-xs font-bold text-[#E8B33D] mb-1">
-                <span>Master All-in-One</span>
-                <Sparkles size={14} />
-              </div>
-              <p className="text-[11px] text-[#C5BCAD]">
-                Semua data tabel digabung dalam 1 file master lengkap.
-              </p>
+        {/* TIM LOBBY */}
+        <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-3 w-3 rounded-full bg-[#C97A3D]" />
+              <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider">
+                Tim Lobby ({lobbyPlayers.length} Pemain)
+              </h3>
             </div>
-            <button
-              id="btn-quick-export-master"
-              onClick={() => {
-                const csv = generateAllInOneDatabaseCsv({ players, matches, tournaments });
-                downloadCsvFile('pantos_master_database.csv', csv);
-              }}
-              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-[#E8B33D] py-1.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256]"
-            >
-              <Download size={13} />
-              <span>Unduh Master CSV</span>
-            </button>
+            {winner === 'Tim Lobby' && (
+              <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
+                Pemenang Match
+              </span>
+            )}
           </div>
 
-          {/* Export Players */}
-          <div className="flex flex-col justify-between rounded-xl border border-[#332C25] bg-[#191512] p-3.5">
-            <div>
-              <div className="flex items-center justify-between text-xs font-bold text-[#F2EDE4] mb-1">
-                <span>Data Pemain</span>
-                <span className="text-[10px] text-[#9C948A]">{players.length} Pemain</span>
+          <div className="space-y-3 min-h-[140px]">
+            {lobbyPlayers.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#332C25] p-6 text-center text-xs text-[#9C948A]">
+                Pilih atau klik pemain di kolam bawah untuk memasukkannya ke Tim Lobby
               </div>
-              <p className="text-[11px] text-[#9C948A]">
-                Nama, status, tier, perolehan medali, dan win rate.
-              </p>
-            </div>
-            <button
-              id="btn-quick-export-players"
-              onClick={() => {
-                const csv = generatePlayersCsv(players);
-                downloadCsvFile('pantos_database_pemain.csv', csv);
-              }}
-              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] py-1.5 text-xs font-medium text-[#F2EDE4] hover:bg-[#302822]"
-            >
-              <Download size={13} />
-              <span>Unduh Pemain CSV</span>
-            </button>
-          </div>
+            ) : (
+              lobbyPlayers.map((name) => {
+                const conf = playerConfig[name] || { hero: 'Chou', medal: 'Silver', score: 6.0 };
+                return (
+                  <div
+                    key={name}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-[#332C25] bg-[#241F1B] p-3 shadow-xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <PlayerAvatar name={name} size="sm" />
+                      <span className="font-bold text-xs text-[#F2EDE4] truncate max-w-[120px]">
+                        {name}
+                      </span>
+                    </div>
 
-          {/* Export Matches */}
-          <div className="flex flex-col justify-between rounded-xl border border-[#332C25] bg-[#191512] p-3.5">
-            <div>
-              <div className="flex items-center justify-between text-xs font-bold text-[#F2EDE4] mb-1">
-                <span>Riwayat Pertandingan</span>
-                <span className="text-[10px] text-[#9C948A]">{matches.length} Laga</span>
-              </div>
-              <p className="text-[11px] text-[#9C948A]">
-                Pemenang, MVP, susunan draft hero, medali, & AI.
-              </p>
-            </div>
-            <button
-              id="btn-quick-export-matches"
-              onClick={() => {
-                const csv = generateMatchesCsv(matches);
-                downloadCsvFile('pantos_riwayat_pertandingan.csv', csv);
-              }}
-              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] py-1.5 text-xs font-medium text-[#F2EDE4] hover:bg-[#302822]"
-            >
-              <Download size={13} />
-              <span>Unduh Pertandingan CSV</span>
-            </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Hero selector */}
+                      <select
+                        value={conf.hero}
+                        onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
+                        className="rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1 text-xs text-[#F2EDE4] focus:outline-none cursor-pointer"
+                      >
+                        {heroes.map((h) => (
+                          <option key={h.id} value={h.name}>
+                            {h.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Medal selector */}
+                      <select
+                        value={conf.medal}
+                        onChange={(e) => updatePlayerField(name, 'medal', e.target.value as Medal)}
+                        className={`rounded-lg border px-2 py-1 text-xs font-bold cursor-pointer ${
+                          conf.medal === 'MVP'
+                            ? 'border-[#E8B33D] bg-[#2A2218] text-[#E8B33D]'
+                            : conf.medal === 'Gold'
+                            ? 'border-[#D8A93A] bg-[#251E17] text-[#D8A93A]'
+                            : conf.medal === 'Silver'
+                            ? 'border-[#B9B2A8] bg-[#211E1B] text-[#B9B2A8]'
+                            : 'border-[#6B4226] bg-[#2A1D15] text-[#b8764a]'
+                        }`}
+                      >
+                        <option value="MVP">👑 MVP</option>
+                        <option value="Gold">🥇 Gold</option>
+                        <option value="Silver">🥈 Silver</option>
+                        <option value="Coklat">🍫 Coklat</option>
+                      </select>
+
+                      {/* Player Score Input */}
+                      <div className="flex items-center gap-1 rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1">
+                        <span className="text-[10px] text-[#9C948A] font-semibold">Skor:</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="20"
+                          value={conf.score}
+                          onChange={(e) =>
+                            updatePlayerField(name, 'score', parseFloat(e.target.value) || 0)
+                          }
+                          className="w-12 bg-transparent text-center font-bold text-xs text-[#F2EDE4] focus:outline-none"
+                          title="Input skor individu MLBB"
+                        />
+                      </div>
+
+                      <button
+                        onClick={() => removePlayerFromTeam(name)}
+                        className="rounded-lg p-1.5 text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Hapus dari tim"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
 
-      {/* Modal Add Player */}
-      {showAddPlayer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl">
-            <h3 className="font-bold text-base text-[#F2EDE4]">Tambah Pemain Baru</h3>
+      {/* UNASSIGNED PLAYERS POOL */}
+      <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-xs text-[#9C948A] uppercase tracking-wider flex items-center gap-1.5">
+            <Users size={14} className="text-[#E8B33D]" />
+            Kolam Pemain Tersedia ({pool.length})
+          </h3>
+          <span className="text-[11px] text-[#9C948A]">
+            Klik nama untuk memasukkan ke Tim Pohon atau Tim Lobby
+          </span>
+        </div>
 
-            {/* Live Avatar Preview */}
-            <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#332C25] bg-[#241F1B] p-3">
-              <PlayerAvatar
-                name={newPlayerName.trim() || 'Pemain'}
-                avatarUrl={newPlayerAvatarUrl.trim() || undefined}
-                size="md"
-              />
-              <div className="min-w-0 flex-1">
-                <span className="block font-bold text-sm text-[#F2EDE4] truncate">
-                  {newPlayerName.trim() || 'Nama Pemain'}
-                </span>
-                <span className="block text-[11px] text-[#9C948A]">
-                  {newPlayerAvatarUrl.trim() ? 'Menggunakan URL Foto kustom' : 'Avatar otomatis dari nama pemain'}
-                </span>
+        <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+          {pool.map((p) => (
+            <div
+              key={p.id}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[#332C25] bg-[#241F1B] px-2.5 py-1 text-xs text-[#F2EDE4] hover:border-[#E8B33D]/50 transition-all"
+            >
+              <PlayerAvatar name={p.name} size="xs" />
+              <span className="font-semibold text-xs">{p.name}</span>
+              <div className="flex items-center gap-1 ml-1">
+                <button
+                  type="button"
+                  onClick={() => assignPlayerToTeam(p.name, 'Pohon')}
+                  className="rounded bg-[#4F7942]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#72ac60] hover:bg-[#4F7942] hover:text-white transition-colors cursor-pointer"
+                  title="Pilih masuk Tim Pohon"
+                >
+                  + Pohon
+                </button>
+                <button
+                  type="button"
+                  onClick={() => assignPlayerToTeam(p.name, 'Lobby')}
+                  className="rounded bg-[#C97A3D]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#e29355] hover:bg-[#C97A3D] hover:text-white transition-colors cursor-pointer"
+                  title="Pilih masuk Tim Lobby"
+                >
+                  + Lobby
+                </button>
               </div>
             </div>
+          ))}
+        </div>
+      </div>
 
-            <form onSubmit={handleCreatePlayer} className="mt-4 space-y-3">
+      {/* Notifications */}
+      {notification && (
+        <div
+          className={`rounded-xl p-3 text-xs flex items-center gap-2 ${
+            notification.type === 'success'
+              ? 'bg-emerald-950/50 border border-emerald-800/40 text-emerald-300'
+              : 'bg-rose-950/50 border border-rose-800/40 text-rose-300'
+          }`}
+        >
+          {notification.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+          <span>{notification.message}</span>
+        </div>
+      )}
+
+      {/* Action Submit */}
+      <div className="flex items-center justify-end gap-3 pt-2">
+        <button
+          id="btn-save-match"
+          onClick={handleSaveMatch}
+          disabled={isSubmitting}
+          className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-6 py-3 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-colors shadow-md cursor-pointer"
+        >
+          {isSubmitting ? (
+            <RefreshCw size={14} className="animate-spin" />
+          ) : (
+            <Sparkles size={14} />
+          )}
+          <span>{isSubmitting ? 'Menyimpan & Menganalisis...' : 'Simpan Pertandingan & Update Klasemen'}</span>
+        </button>
+      </div>
+
+      {/* ADD PLAYER MODAL */}
+      {showAddPlayer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
+              <h3 className="text-base font-bold text-[#F2EDE4]">Tambah Pemain Baru</h3>
+              <button
+                onClick={() => setShowAddPlayer(false)}
+                className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddPlayerSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="mb-1 block text-xs text-[#9C948A]">
-                  Nama Pemain / Panggilan
-                </label>
+                <label className="block text-[#9C948A] font-semibold mb-1">Nickname Pemain:</label>
                 <input
                   type="text"
                   required
+                  placeholder="e.g. Bang Jago"
                   value={newPlayerName}
                   onChange={(e) => setNewPlayerName(e.target.value)}
-                  placeholder="Contoh: Bogi"
-                  className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
+                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-[#9C948A]">
-                  URL Foto / Avatar (Opsional)
-                </label>
-                <input
-                  type="url"
-                  value={newPlayerAvatarUrl}
-                  onChange={(e) => setNewPlayerAvatarUrl(e.target.value)}
-                  placeholder="https://... (kosongkan untuk avatar bawaan)"
-                  className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-[#9C948A]">Status</label>
+                <label className="block text-[#9C948A] font-semibold mb-1">Status:</label>
                 <select
                   value={newPlayerStatus}
-                  onChange={(e) => setNewPlayerStatus(e.target.value as any)}
-                  className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
+                  onChange={(e) => setNewPlayerStatus(e.target.value as 'Aktif' | 'Cabutan')}
+                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:outline-none"
                 >
-                  <option value="Aktif">Aktif (Pemain Rutin)</option>
-                  <option value="Cabutan">Cabutan (Tamu / Cadangan)</option>
+                  <option value="Aktif">Aktif</option>
+                  <option value="Cabutan">Cabutan</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-[#9C948A]">Tier Akun</label>
+                <label className="block text-[#9C948A] font-semibold mb-1">Tier / Rank:</label>
                 <select
                   value={newPlayerTier}
                   onChange={(e) => setNewPlayerTier(e.target.value)}
-                  className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-sm text-[#F2EDE4]"
+                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:outline-none"
                 >
                   <option value="Mythic Immortal">Mythic Immortal</option>
                   <option value="Mythical Glory">Mythical Glory</option>
                   <option value="Mythic">Mythic</option>
                   <option value="Legend">Legend</option>
                   <option value="Epic">Epic</option>
-                  <option value="Grandmaster">Grandmaster</option>
                 </select>
               </div>
 
-              <div className="mt-5 flex gap-2">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddPlayer(false)}
-                  className="flex-1 rounded-lg border border-[#332C25] bg-[#241F1B] py-2 font-medium text-xs text-[#F2EDE4]"
+                  className="rounded-xl border border-[#332C25] px-4 py-2 text-xs font-semibold text-[#9C948A] hover:bg-[#241F1B] cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isAddingPlayer}
-                  className="flex-1 rounded-lg bg-[#E8B33D] py-2 font-bold text-xs text-[#161311]"
+                  className="rounded-xl bg-[#E8B33D] px-4 py-2 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-colors cursor-pointer"
                 >
-                  {isAddingPlayer ? 'Menyimpan...' : 'Tambahkan'}
+                  {isAddingPlayer ? 'Menyimpan...' : 'Simpan Pemain'}
                 </button>
               </div>
             </form>

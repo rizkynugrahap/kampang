@@ -2,46 +2,62 @@ import React, { useState, useMemo } from 'react';
 import {
   Trophy,
   Award,
-  Crown,
-  Shield,
-  Upload,
-  Download,
-  Search,
-  Filter,
   Users,
-  Swords,
-  ChevronDown,
-  ArrowUpDown,
+  Calendar,
+  Flame,
+  Search,
+  Upload,
+  RotateCcw,
   Sparkles,
-  FileSpreadsheet,
+  ArrowUpDown,
   CheckCircle2,
   AlertCircle,
-  X,
-  Flame,
+  FileText,
   BarChart3,
-  Calendar,
+  ChevronRight,
+  Filter,
+  Layers,
+  Plus,
+  X,
+  History,
 } from 'lucide-react';
-import { LagaAmalSeasonData, LagaAmalPlayerStat, LagaAmalHeroPick } from '../types';
-import { INITIAL_LAGA_AMAL_S41, parseLagaAmalCsv, exportLagaAmalCsv } from '../data/lagaAmalS41Data';
-import { syncLagaAmalToFirestore } from '../services/firestoreSync';
+import {
+  LagaAmalSeasonData,
+  LagaAmalPlayerStat,
+  HeroPickByUser,
+  HeroPoolItem,
+  LagaAmalMatchLog,
+} from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
+import { INITIAL_LAGA_AMAL_S41 } from '../data/lagaAmalS41Data';
+import { ALL_INITIAL_SEASONS, recalculateSeasonStats } from '../data/seasonsSeed';
+import { syncLagaAmalToFirestore } from '../services/firestoreSync';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
 type SortField = 'score' | 'mvp' | 'antam' | 'silver' | 'coklat' | 'matches' | 'winRate' | 'avgScore';
 
-export const LagaAmalView: React.FC = () => {
-  const [seasonData, setSeasonData] = useState<LagaAmalSeasonData>(() => {
-    const saved = localStorage.getItem('pantos_laga_amal_s41');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.warn('Failed to parse cached season data:', e);
-      }
-    }
-    return INITIAL_LAGA_AMAL_S41;
-  });
+interface LagaAmalViewProps {
+  seasons?: LagaAmalSeasonData[];
+  activeSeasonId?: string;
+  onSeasonChange?: (seasonId: string) => void;
+  onUpdateSeason?: (season: LagaAmalSeasonData) => void;
+  onViewPlayerProfile?: (nickname: string) => void;
+  isAdmin?: boolean;
+}
+
+export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
+  seasons = ALL_INITIAL_SEASONS,
+  activeSeasonId = 's41',
+  onSeasonChange,
+  onUpdateSeason,
+  onViewPlayerProfile,
+  isAdmin = false,
+}) => {
+  // Current season data resolved from props or fallback
+  const currentSeason = useMemo(() => {
+    return seasons.find((s) => s.id === activeSeasonId) || seasons[0] || INITIAL_LAGA_AMAL_S41;
+  }, [seasons, activeSeasonId]);
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('standings');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,44 +71,17 @@ export const LagaAmalView: React.FC = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
 
+  // New season modal
+  const [isNewSeasonModalOpen, setIsNewSeasonModalOpen] = useState(false);
+  const [newSeasonTitle, setNewSeasonTitle] = useState('');
+  const [newSeasonDateStr, setNewSeasonDateStr] = useState('');
+
   // Selected player detail modal
   const [detailPlayer, setDetailPlayer] = useState<LagaAmalPlayerStat | null>(null);
 
-  // Load from backend on mount if available
-  React.useEffect(() => {
-    fetch('/api/laga-amal')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const s41 = data.find((s) => s.id === 's41') || data[0];
-          setSeasonData(s41);
-          localStorage.setItem('pantos_laga_amal_s41', JSON.stringify(s41));
-        }
-      })
-      .catch((err) => console.warn('Could not load from API, using cached/seed:', err));
-  }, []);
-
-  // Save to localStorage, backend & Cloud Firestore when seasonData changes
-  const updateSeasonData = (newData: LagaAmalSeasonData) => {
-    setSeasonData(newData);
-    try {
-      localStorage.setItem('pantos_laga_amal_s41', JSON.stringify(newData));
-    } catch (e) {
-      console.warn('LocalStorage save failed:', e);
-    }
-    syncLagaAmalToFirestore(newData).catch((e) =>
-      console.warn('Failed to sync Laga Amal to Firestore:', e)
-    );
-    fetch('/api/laga-amal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newData),
-    }).catch((e) => console.warn('Failed to sync with API:', e));
-  };
-
   // Sort and filter players for standings
   const filteredPlayers = useMemo(() => {
-    return seasonData.players
+    return (currentSeason.players || [])
       .filter((p) => p.nickname.toLowerCase().includes(searchQuery.toLowerCase()))
       .sort((a, b) => {
         let diff = 0;
@@ -124,7 +113,7 @@ export const LagaAmalView: React.FC = () => {
         }
         return sortAsc ? diff : -diff;
       });
-  }, [seasonData.players, searchQuery, sortField, sortAsc]);
+  }, [currentSeason.players, searchQuery, sortField, sortAsc]);
 
   // Handle Sort Toggle
   const handleSort = (field: SortField) => {
@@ -138,90 +127,169 @@ export const LagaAmalView: React.FC = () => {
 
   // Hero picks filtered by selected player
   const filteredHeroPicks = useMemo(() => {
-    return seasonData.heroPicksByUser.filter((hp) => {
-      const matchesPlayer = selectedPlayerFilter === 'all' || hp.player === selectedPlayerFilter;
-      const matchesSearch =
-        hp.hero.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        hp.player.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesPlayer && matchesSearch;
-    });
-  }, [seasonData.heroPicksByUser, selectedPlayerFilter, searchQuery]);
+    if (!currentSeason.heroPicks) return [];
+    if (selectedPlayerFilter === 'all') {
+      return currentSeason.heroPicks;
+    }
+    return currentSeason.heroPicks.filter(
+      (p) => p.user.toLowerCase() === selectedPlayerFilter.toLowerCase()
+    );
+  }, [currentSeason.heroPicks, selectedPlayerFilter]);
 
-  // Handle CSV Import
+  // Handle creating a new season
+  const handleCreateNewSeason = () => {
+    if (!newSeasonTitle.trim()) return;
+    const newId = `s${Date.now()}`;
+    const newSeason: LagaAmalSeasonData = {
+      id: newId,
+      title: newSeasonTitle.trim(),
+      dateStr: newSeasonDateStr.trim() || new Date().toLocaleDateString('id-ID', { month: 'short', year: 'numeric' }),
+      activePlayersCount: currentSeason.players.length,
+      topCoklat: { player: currentSeason.players[0]?.nickname || '-', count: 0 },
+      topSilver: { player: currentSeason.players[0]?.nickname || '-', count: 0 },
+      topAntam: { player: currentSeason.players[0]?.nickname || '-', count: 0 },
+      topMvp: { player: currentSeason.players[0]?.nickname || '-', count: 0 },
+      totalMatchesRecorded: 0,
+      totalScoreAccumulated: 0,
+      averageWinRate: 0,
+      averageScore: 0,
+      players: currentSeason.players.map((p) => ({
+        nickname: p.nickname,
+        coklat: 0,
+        silver: 0,
+        antam: 0,
+        mvp: 0,
+        matches: 0,
+        score: 0,
+        winRate: 0,
+        avgScore: 0,
+        avatar_url: p.avatar_url,
+      })),
+      heroPicks: [],
+      heroPool: [],
+      matchLogs: [],
+    };
+
+    if (onUpdateSeason) {
+      onUpdateSeason(newSeason);
+    }
+    if (onSeasonChange) {
+      onSeasonChange(newId);
+    }
+    setIsNewSeasonModalOpen(false);
+    setNewSeasonTitle('');
+    setNewSeasonDateStr('');
+  };
+
+  // CSV Import handler
   const handleImportCsv = () => {
+    setImportError(null);
+    setImportSuccess(false);
+
     if (!csvInputText.trim()) {
-      setImportError('Silakan tempel teks CSV terlebih dahulu.');
+      setImportError('Silakan tempel (paste) data CSV terlebih dahulu.');
       return;
     }
+
     try {
-      const parsed = parseLagaAmalCsv(csvInputText);
-      if (parsed.players.length === 0) {
-        throw new Error('Format CSV tidak dikenali atau tabel pemain kosong.');
+      const lines = csvInputText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      const parsedPlayers: LagaAmalPlayerStat[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (
+          line.toLowerCase().includes('nickname') ||
+          line.toLowerCase().includes('nama pemain') ||
+          line.toLowerCase().includes('user')
+        ) {
+          continue;
+        }
+
+        const cols = line.split(',').map((c) => c.replace(/(^"|"$)/g, '').trim());
+        if (cols.length >= 6) {
+          const nickname = cols[0];
+          if (!nickname) continue;
+
+          const coklat = parseInt(cols[1], 10) || 0;
+          const silver = parseInt(cols[2], 10) || 0;
+          const antam = parseInt(cols[3], 10) || 0;
+          const mvp = parseInt(cols[4], 10) || 0;
+          const matches = parseInt(cols[5], 10) || (coklat + silver + antam + mvp);
+          const score = cols[6] ? parseFloat(cols[6]) : (coklat * 0 + silver * 1 + antam * 2 + mvp * 3);
+          const winRate = cols[7] ? parseFloat(cols[7].replace('%', '')) : (matches > 0 ? Math.round(((antam + mvp) / matches) * 100) : 0);
+          const avgScore = cols[8] ? parseFloat(cols[8]) : (matches > 0 ? parseFloat((score / matches).toFixed(2)) : 0);
+
+          parsedPlayers.push({
+            nickname,
+            coklat,
+            silver,
+            antam,
+            mvp,
+            matches,
+            score,
+            winRate,
+            avgScore,
+          });
+        }
       }
-      updateSeasonData(parsed);
+
+      if (parsedPlayers.length === 0) {
+        throw new Error('Tidak ada baris pemain yang valid ditemukan.');
+      }
+
+      const updatedSeason = recalculateSeasonStats({
+        ...currentSeason,
+        players: parsedPlayers,
+      });
+
+      if (onUpdateSeason) {
+        onUpdateSeason(updatedSeason);
+      }
+
       setImportSuccess(true);
-      setImportError(null);
       setTimeout(() => {
         setIsImportModalOpen(false);
         setImportSuccess(false);
         setCsvInputText('');
       }, 1200);
     } catch (err: any) {
-      setImportError(err.message || 'Gagal memproses file CSV.');
-    }
-  };
-
-  // Handle file upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const content = evt.target?.result as string;
-      if (content) {
-        setCsvInputText(content);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  // Handle Export CSV
-  const handleExportCsv = () => {
-    const csvContent = exportLagaAmalCsv(seasonData);
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Klasemen_Laga_Amal_${seasonData.id.toUpperCase()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Reset to seed data
-  const handleReset = () => {
-    if (confirm('Kembalikan data ke patokan CSV Musim 41 (S41) default?')) {
-      updateSeasonData(INITIAL_LAGA_AMAL_S41);
+      setImportError(err.message || 'Gagal memproses teks CSV');
     }
   };
 
   return (
     <div id="laga-amal-view" className="space-y-6">
-      {/* Top Banner Header */}
+      {/* Top Banner Header & Season Selector */}
       <div className="relative overflow-hidden rounded-2xl border border-[#332C25] bg-gradient-to-b from-[#241F1B] via-[#1D1916] to-[#161311] p-5 sm:p-6 shadow-xl">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-0.5 text-xs font-bold text-[#E8B33D]">
-                MLBB Season Standings · Musim 41
-              </span>
+            {/* Season Selector Dropdown */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-2.5 py-1 text-xs font-bold text-[#E8B33D]">
+                <History size={13} className="text-[#E8B33D]" />
+                <span>Pilih Season:</span>
+                <select
+                  id="season-history-selector"
+                  value={currentSeason.id}
+                  onChange={(e) => onSeasonChange && onSeasonChange(e.target.value)}
+                  className="bg-transparent font-bold text-[#F2EDE4] focus:outline-none cursor-pointer pr-1"
+                >
+                  {seasons.map((s, idx) => (
+                    <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">
+                      {s.title} {idx === 0 ? '(Terbaru / Aktif)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <span className="flex items-center gap-1 text-xs text-[#9C948A]">
                 <Calendar size={13} className="text-[#E8B33D]" />
-                {seasonData.dateStr}
+                {currentSeason.dateStr}
               </span>
             </div>
+
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-[#F2EDE4]">
-              {seasonData.title}
+              {currentSeason.title}
             </h2>
             <p className="text-xs text-[#9C948A] max-w-2xl leading-relaxed">
               Papan klasemen performa individu resmi Laga Amal MLBB Pantos. Dihitung berdasarkan perolehan Medali Coklat, Silver, Antam (Gold), dan Gelar MVP.
@@ -229,35 +297,30 @@ export const LagaAmalView: React.FC = () => {
           </div>
 
           {/* Action buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               id="btn-import-csv-laga-amal"
               onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/50 bg-[#E8B33D]/10 px-3 py-2 text-xs font-semibold text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-colors shadow-xs"
+              className="flex items-center gap-1.5 rounded-lg border border-[#E8B33D]/50 bg-[#E8B33D]/10 px-3 py-2 text-xs font-semibold text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-colors shadow-xs cursor-pointer"
             >
               <Upload size={14} />
               <span>Import / Sync CSV</span>
             </button>
-            <button
-              id="btn-export-csv-laga-amal"
-              onClick={handleExportCsv}
-              className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-xs font-semibold text-[#F2EDE4] hover:bg-[#2d2621] transition-colors"
-            >
-              <Download size={14} />
-              <span>Unduh CSV</span>
-            </button>
-            <button
-              id="btn-reset-laga-amal"
-              onClick={handleReset}
-              className="rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-xs text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2d2621] transition-colors"
-              title="Reset ke patokan S41"
-            >
-              Reset S41
-            </button>
+
+            {isAdmin && (
+              <button
+                id="btn-create-new-season"
+                onClick={() => setIsNewSeasonModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-xs font-semibold text-[#F2EDE4] hover:bg-[#2d2621] transition-colors cursor-pointer"
+              >
+                <Plus size={14} className="text-[#E8B33D]" />
+                <span>+ Season Baru</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* 7 KPI Ribbon Cards (Exact Match from CSV) */}
+        {/* 7 KPI Ribbon Cards */}
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           {/* Active Players */}
           <div className="rounded-xl border border-[#332C25] bg-[#191513] p-3 text-center">
@@ -265,21 +328,21 @@ export const LagaAmalView: React.FC = () => {
               <Users size={12} className="text-[#E8B33D]" />
               <span>Active Player</span>
             </div>
-            <span className="text-xl font-black text-[#F2EDE4]">{seasonData.activePlayersCount}</span>
+            <span className="text-xl font-black text-[#F2EDE4]">{currentSeason.activePlayersCount}</span>
             <span className="block text-[10px] text-[#9C948A] mt-0.5">Peserta Terdaftar</span>
           </div>
 
           {/* Top Coklat */}
           <div className="rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center flex flex-col items-center">
             <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#b8764a] uppercase tracking-wider mb-1.5">
-              <span>🥉 Top Coklat</span>
+              <span>🍫 Top Coklat</span>
             </div>
-            <PlayerAvatar name={seasonData.topCoklat.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={seasonData.topCoklat.player}>
-              {seasonData.topCoklat.player}
+            <PlayerAvatar name={currentSeason.topCoklat.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topCoklat.player}>
+              {currentSeason.topCoklat.player}
             </span>
             <span className="text-[10px] font-semibold text-[#b8764a] mt-0.5 block">
-              {seasonData.topCoklat.count}x Coklat
+              {currentSeason.topCoklat.count}x Coklat
             </span>
           </div>
 
@@ -288,247 +351,255 @@ export const LagaAmalView: React.FC = () => {
             <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#B9B2A8] uppercase tracking-wider mb-1.5">
               <span>🥈 Top Silver</span>
             </div>
-            <PlayerAvatar name={seasonData.topSilver.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={seasonData.topSilver.player}>
-              {seasonData.topSilver.player}
+            <PlayerAvatar name={currentSeason.topSilver.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topSilver.player}>
+              {currentSeason.topSilver.player}
             </span>
             <span className="text-[10px] font-semibold text-[#B9B2A8] mt-0.5 block">
-              {seasonData.topSilver.count}x Silver
+              {currentSeason.topSilver.count}x Silver
             </span>
           </div>
 
           {/* Top Antam */}
-          <div className="rounded-xl border border-[#E8B33D]/40 bg-[#252014] p-3 text-center flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1.5">
+          <div className="rounded-xl border border-[#D8A93A]/40 bg-[#251E17] p-3 text-center flex flex-col items-center">
+            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#D8A93A] uppercase tracking-wider mb-1.5">
               <span>🥇 Top Antam</span>
             </div>
-            <PlayerAvatar name={seasonData.topAntam.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={seasonData.topAntam.player}>
-              {seasonData.topAntam.player}
+            <PlayerAvatar name={currentSeason.topAntam.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topAntam.player}>
+              {currentSeason.topAntam.player}
             </span>
-            <span className="text-[10px] font-semibold text-[#E8B33D] mt-0.5 block">
-              {seasonData.topAntam.count}x Gold
+            <span className="text-[10px] font-semibold text-[#D8A93A] mt-0.5 block">
+              {currentSeason.topAntam.count}x Gold
             </span>
           </div>
 
           {/* Top MVP */}
-          <div className="rounded-xl border border-amber-500/50 bg-[#2D2111] p-3 text-center shadow-xs flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-1.5">
-              <Crown size={12} className="text-amber-400" />
-              <span>MVP 👑</span>
+          <div className="rounded-xl border border-[#E8B33D]/40 bg-[#2A2218] p-3 text-center flex flex-col items-center">
+            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1.5">
+              <span>👑 Top MVP</span>
             </div>
-            <PlayerAvatar name={seasonData.topMvp.player} size="sm" className="mb-1" />
-            <span className="text-xs font-black text-[#F2EDE4] block truncate w-full" title={seasonData.topMvp.player}>
-              {seasonData.topMvp.player}
+            <PlayerAvatar name={currentSeason.topMvp.player} size="sm" className="mb-1" />
+            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topMvp.player}>
+              {currentSeason.topMvp.player}
             </span>
-            <span className="text-[10px] font-bold text-amber-400 mt-0.5 block">
-              {seasonData.topMvp.count}x MVP
+            <span className="text-[10px] font-semibold text-[#E8B33D] mt-0.5 block">
+              {currentSeason.topMvp.count}x MVP
             </span>
           </div>
 
           {/* Total Matches */}
           <div className="rounded-xl border border-[#332C25] bg-[#191513] p-3 text-center">
             <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#9C948A] uppercase tracking-wider mb-1">
-              <Swords size={12} className="text-[#E8B33D]" />
-              <span>Total Match</span>
+              <Flame size={12} className="text-rose-400" />
+              <span>Total Laga</span>
             </div>
-            <span className="text-xl font-black text-[#F2EDE4]">{seasonData.totalMatches}</span>
-            <span className="block text-[10px] text-[#9C948A] mt-0.5">Pertandingan</span>
+            <span className="text-xl font-black text-[#F2EDE4]">{currentSeason.totalMatchesRecorded}</span>
+            <span className="block text-[10px] text-[#9C948A] mt-0.5">Match Terdata</span>
           </div>
 
-          {/* Total Score */}
+          {/* Average Winrate & Score */}
           <div className="rounded-xl border border-[#332C25] bg-[#191513] p-3 text-center">
             <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#9C948A] uppercase tracking-wider mb-1">
-              <BarChart3 size={12} className="text-[#E8B33D]" />
-              <span>Total Score</span>
+              <Trophy size={12} className="text-emerald-400" />
+              <span>Rata-Rata</span>
             </div>
-            <span className="text-base font-black text-[#E8B33D] block truncate">
-              {seasonData.totalScore.toLocaleString()}
-            </span>
-            <span className="block text-[10px] text-[#9C948A] mt-0.5">Rerata: 7.54</span>
+            <span className="text-xl font-black text-emerald-400">{currentSeason.averageWinRate}%</span>
+            <span className="block text-[10px] text-[#9C948A] mt-0.5">Skor: {currentSeason.averageScore}</span>
           </div>
         </div>
       </div>
 
-      {/* Navigation Sub-tabs & Search Controls */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-[#332C25] bg-[#1D1916] p-1">
+      {/* Navigation Sub-tabs */}
+      <div className="flex items-center justify-between border-b border-[#332C25] pb-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <button
             id="tab-laga-amal-standings"
             onClick={() => setActiveSubTab('standings')}
-            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSubTab === 'standings'
-                ? 'bg-[#E8B33D] text-[#161311] shadow-xs'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
             }`}
           >
-            <Trophy size={13} />
-            <span>Klasemen Individu ({seasonData.players.length})</span>
+            <Trophy size={16} />
+            <span>Klasemen Pemain ({filteredPlayers.length})</span>
           </button>
-
           <button
-            id="tab-laga-amal-hero-picks"
+            id="tab-laga-amal-heropicks"
             onClick={() => setActiveSubTab('heroPicks')}
-            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSubTab === 'heroPicks'
-                ? 'bg-[#E8B33D] text-[#161311] shadow-xs'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
             }`}
           >
-            <Flame size={13} />
-            <span>Hero Pick by User</span>
+            <BarChart3 size={16} />
+            <span>Hero Picks ({currentSeason.heroPicks?.length || 0})</span>
           </button>
-
           <button
-            id="tab-laga-amal-hero-pool"
+            id="tab-laga-amal-heropool"
             onClick={() => setActiveSubTab('heroPool')}
-            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSubTab === 'heroPool'
-                ? 'bg-[#E8B33D] text-[#161311] shadow-xs'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
             }`}
           >
-            <BarChart3 size={13} />
-            <span>Master Hero Pool ({seasonData.heroPool.length})</span>
+            <Layers size={16} />
+            <span>Hero Pool ({currentSeason.heroPool?.length || 0})</span>
           </button>
-        </div>
-
-        {/* Search bar */}
-        <div className="relative min-w-[220px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9C948A]" />
-          <input
-            type="text"
-            placeholder={activeSubTab === 'heroPool' ? 'Cari nama hero...' : 'Cari pemain atau hero...'}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-[#332C25] bg-[#1D1916] pl-8 pr-3 py-1.5 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-hidden"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9C948A] hover:text-[#F2EDE4]"
-            >
-              <X size={12} />
-            </button>
-          )}
+          <button
+            id="tab-laga-amal-matchlogs"
+            onClick={() => setActiveSubTab('matchLogs')}
+            className={`flex items-center gap-2 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activeSubTab === 'matchLogs'
+                ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+            }`}
+          >
+            <FileText size={16} />
+            <span>Log Match ({currentSeason.matchLogs?.length || 0})</span>
+          </button>
         </div>
       </div>
 
-      {/* SUB-TAB 1: KLASEMEN UTAMA */}
+      {/* SUB-TAB 1: STANDINGS */}
       {activeSubTab === 'standings' && (
-        <div className="overflow-hidden rounded-2xl border border-[#332C25] bg-[#1D1916] shadow-lg">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-[#332C25] bg-[#241F1B] text-[11px] font-bold text-[#9C948A] uppercase tracking-wider">
+        <div className="space-y-4">
+          {/* Search bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="relative w-full sm:w-72">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari nickname pemain..."
+                className="w-full rounded-xl border border-[#332C25] bg-[#1D1916] pl-9 pr-4 py-2 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#9C948A]">
+              <span>Urutan aktif: <strong className="text-[#E8B33D] uppercase">{sortField}</strong> ({sortAsc ? 'Naik' : 'Turun'})</span>
+            </div>
+          </div>
+
+          {/* Standings Table */}
+          <div className="overflow-x-auto rounded-2xl border border-[#332C25] bg-[#1D1916] shadow-md">
+            <table className="w-full text-left text-xs text-[#F2EDE4]">
+              <thead className="border-b border-[#332C25] bg-[#161311] text-[11px] uppercase tracking-wider text-[#9C948A]">
                 <tr>
-                  <th className="py-3 px-3 text-center w-12">#</th>
-                  <th className="py-3 px-3">Nickname</th>
+                  <th className="py-3.5 pl-4 pr-2 text-center w-12">#</th>
+                  <th className="py-3.5 px-3">Pemain</th>
                   <th
                     onClick={() => handleSort('coklat')}
-                    className="py-3 px-2 text-center cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-[#b8764a]"
+                    title="Medali Coklat (Semen)"
                   >
-                    <div className="flex items-center justify-center gap-1 text-[#b8764a]">
-                      <span>Coklat 🥉</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Coklat</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('silver')}
-                    className="py-3 px-2 text-center cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-[#B9B2A8]"
+                    title="Medali Silver"
                   >
-                    <div className="flex items-center justify-center gap-1 text-[#B9B2A8]">
-                      <span>Silver 🥈</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Silver</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('antam')}
-                    className="py-3 px-2 text-center cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-[#D8A93A]"
+                    title="Medali Antam (Gold)"
                   >
-                    <div className="flex items-center justify-center gap-1 text-[#E8B33D]">
-                      <span>Antam 🥇</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Antam</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('mvp')}
-                    className="py-3 px-2 text-center cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-[#E8B33D]"
+                    title="Gelar MVP"
                   >
-                    <div className="flex items-center justify-center gap-1 text-amber-400">
-                      <span>MVP 👑</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>MVP</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('matches')}
-                    className="py-3 px-2 text-center cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-[#F2EDE4]"
                   >
                     <div className="flex items-center justify-center gap-1">
-                      <span>Ikut Main</span>
-                      <ArrowUpDown size={10} />
+                      <span>Match</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('score')}
-                    className="py-3 px-3 text-right cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-[#E8B33D] font-black text-[#E8B33D]"
+                    title="Total Skor"
                   >
-                    <div className="flex items-center justify-end gap-1 text-[#E8B33D]">
-                      <span>Total Score</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Skor</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('winRate')}
-                    className="py-3 px-2 text-center cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 px-3 text-center cursor-pointer hover:text-emerald-400"
                   >
-                    <div className="flex items-center justify-center gap-1 text-emerald-400">
-                      <span>Win Rate</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>WR%</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                   <th
                     onClick={() => handleSort('avgScore')}
-                    className="py-3 px-3 text-right cursor-pointer hover:text-[#F2EDE4]"
+                    className="py-3.5 pr-4 pl-3 text-center cursor-pointer hover:text-amber-300"
                   >
-                    <div className="flex items-center justify-end gap-1">
-                      <span>AVG Score</span>
-                      <ArrowUpDown size={10} />
+                    <div className="flex items-center justify-center gap-1">
+                      <span>AVG</span>
+                      <ArrowUpDown size={11} />
                     </div>
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#332C25]/50 font-medium">
+              <tbody className="divide-y divide-[#332C25]/60 font-medium">
                 {filteredPlayers.map((player, idx) => {
-                  const isTop1 = idx === 0 && sortField === 'score' && !sortAsc;
-                  const isTop2 = idx === 1 && sortField === 'score' && !sortAsc;
-                  const isTop3 = idx === 2 && sortField === 'score' && !sortAsc;
+                  const isTopRank = idx === 0 && sortField === 'score' && !sortAsc;
+                  const isBottomRank = idx === filteredPlayers.length - 1 && sortField === 'score' && !sortAsc;
 
                   return (
                     <tr
                       key={player.nickname}
                       onClick={() => setDetailPlayer(player)}
-                      className="cursor-pointer transition-colors hover:bg-[#241F1B]/80 group"
+                      className="group transition-colors hover:bg-[#241F1B] cursor-pointer"
                     >
-                      {/* Rank */}
-                      <td className="py-3 px-3 text-center font-bold">
-                        {isTop1 ? (
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#E8B33D] text-[#161311] font-black text-xs shadow-xs">
+                      {/* Rank Number */}
+                      <td className="py-3 pl-4 pr-2 text-center">
+                        {isTopRank ? (
+                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#E8B33D]/20 text-xs font-black text-[#E8B33D]">
                             1
                           </span>
-                        ) : isTop2 ? (
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#B9B2A8] text-[#161311] font-black text-xs">
-                            2
-                          </span>
-                        ) : isTop3 ? (
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#C97A3D] text-[#161311] font-black text-xs">
-                            3
+                        ) : isBottomRank ? (
+                          <span
+                            title="Penghuni Kelas Semen"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#6B4226]/40 text-xs font-bold text-[#b8764a]"
+                          >
+                            {idx + 1}
                           </span>
                         ) : (
-                          <span className="text-[#9C948A]">{idx + 1}</span>
+                          <span className="text-[#9C948A] text-xs font-semibold">{idx + 1}</span>
                         )}
                       </td>
 
-                      {/* Nickname */}
+                      {/* Player Avatar & Nickname */}
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-2.5">
                           <PlayerAvatar
@@ -537,422 +608,378 @@ export const LagaAmalView: React.FC = () => {
                             size="sm"
                           />
                           <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">
-                                {player.nickname}
-                              </span>
-                              {player.mvp >= 20 && (
-                                <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
-                                  MVP King
-                                </span>
-                              )}
-                            </div>
+                            <span className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">
+                              {player.nickname}
+                            </span>
                           </div>
                         </div>
                       </td>
 
-                      {/* Coklat */}
-                      <td className="py-3 px-2 text-center font-semibold text-[#b8764a]">
+                      {/* Medals */}
+                      <td className="py-3 px-3 text-center font-semibold text-[#b8764a]">
                         {player.coklat}
                       </td>
-
-                      {/* Silver */}
-                      <td className="py-3 px-2 text-center font-semibold text-[#B9B2A8]">
+                      <td className="py-3 px-3 text-center font-semibold text-[#B9B2A8]">
                         {player.silver}
                       </td>
-
-                      {/* Antam */}
-                      <td className="py-3 px-2 text-center font-bold text-[#E8B33D]">
+                      <td className="py-3 px-3 text-center font-semibold text-[#D8A93A]">
                         {player.antam}
                       </td>
-
-                      {/* MVP */}
-                      <td className="py-3 px-2 text-center font-black text-amber-400">
+                      <td className="py-3 px-3 text-center font-black text-[#E8B33D]">
                         {player.mvp}
                       </td>
 
-                      {/* Ikut Main */}
-                      <td className="py-3 px-2 text-center text-[#F2EDE4]">
+                      {/* Matches */}
+                      <td className="py-3 px-3 text-center font-bold text-[#F2EDE4]">
                         {player.matches}
                       </td>
 
                       {/* Total Score */}
-                      <td className="py-3 px-3 text-right font-mono font-bold text-sm text-[#E8B33D]">
-                        {player.score.toFixed(1)}
+                      <td className="py-3 px-3 text-center font-black text-sm text-[#E8B33D]">
+                        {player.score}
                       </td>
 
                       {/* Win Rate */}
-                      <td className="py-3 px-2 text-center font-semibold text-emerald-400">
-                        {player.winRate.toFixed(1)}%
+                      <td className="py-3 px-3 text-center font-bold text-emerald-400">
+                        {player.winRate}%
                       </td>
 
                       {/* AVG Score */}
-                      <td className="py-3 px-3 text-right font-mono text-[#D8D0C5]">
-                        {player.avgScore.toFixed(2)}
+                      <td className="py-3 pr-4 pl-3 text-center font-bold text-amber-300">
+                        {player.avgScore}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-              {/* Total Summary Footer Row */}
-              <tfoot className="border-t-2 border-[#332C25] bg-[#191513] font-bold text-xs">
-                <tr>
-                  <td className="py-3 px-3 text-center text-[#E8B33D]">Σ</td>
-                  <td className="py-3 px-3 text-[#F2EDE4]">Total Result</td>
-                  <td className="py-3 px-2 text-center text-[#b8764a]">38</td>
-                  <td className="py-3 px-2 text-center text-[#B9B2A8]">282</td>
-                  <td className="py-3 px-2 text-center text-[#E8B33D]">316</td>
-                  <td className="py-3 px-2 text-center text-amber-400">151</td>
-                  <td className="py-3 px-2 text-center text-[#F2EDE4]">787</td>
-                  <td className="py-3 px-3 text-right font-mono text-sm text-[#E8B33D]">5,934.1</td>
-                  <td className="py-3 px-2 text-center text-emerald-400">49.94%</td>
-                  <td className="py-3 px-3 text-right font-mono text-[#D8D0C5]">7.54</td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </div>
       )}
 
-      {/* SUB-TAB 2: MOST HERO PICK BY USER */}
+      {/* SUB-TAB 2: HERO PICKS */}
       {activeSubTab === 'heroPicks' && (
         <div className="space-y-4">
-          {/* Player Selector Bar */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <span className="text-xs font-semibold text-[#9C948A] whitespace-nowrap pl-1">
-              Filter Pemain:
-            </span>
-            <button
-              onClick={() => setSelectedPlayerFilter('all')}
-              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap ${
-                selectedPlayerFilter === 'all'
-                  ? 'bg-[#E8B33D] text-[#161311]'
-                  : 'bg-[#241F1B] text-[#9C948A] hover:text-[#F2EDE4]'
-              }`}
-            >
-              Semua ({seasonData.heroPicksByUser.length})
-            </button>
-            {seasonData.players.map((p) => (
-              <button
-                key={p.nickname}
-                onClick={() => setSelectedPlayerFilter(p.nickname)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap ${
-                  selectedPlayerFilter === p.nickname
-                    ? 'bg-[#E8B33D] text-[#161311]'
-                    : 'bg-[#241F1B] text-[#9C948A] hover:text-[#F2EDE4]'
-                }`}
-              >
-                {p.nickname}
-              </button>
-            ))}
-          </div>
-
-          {/* Hero Picks Table */}
-          <div className="overflow-hidden rounded-2xl border border-[#332C25] bg-[#1D1916] shadow-lg">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-[#332C25] bg-[#241F1B] text-[11px] font-bold text-[#9C948A] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4">Pemain</th>
-                    <th className="py-3 px-4">Hero</th>
-                    <th className="py-3 px-3 text-center text-[#b8764a]">1. Coklat 🥉</th>
-                    <th className="py-3 px-3 text-center text-[#B9B2A8]">2. Silver 🥈</th>
-                    <th className="py-3 px-3 text-center text-[#E8B33D]">3. Antam 🥇</th>
-                    <th className="py-3 px-3 text-center text-amber-400">4. MVP 👑</th>
-                    <th className="py-3 px-4 text-center font-bold text-[#F2EDE4]">Total Result</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#332C25]/50">
-                  {filteredHeroPicks.map((pick, i) => (
-                    <tr key={`${pick.player}-${pick.hero}-${i}`} className="hover:bg-[#241F1B]/60 transition-colors">
-                      <td className="py-2.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <PlayerAvatar name={pick.player} size="xs" />
-                          <span className="font-bold text-[#F2EDE4]">{pick.player}</span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <HeroAvatar heroName={pick.hero} size="xs" shape="rounded" />
-                          <span className="font-semibold text-[#E8B33D]">{pick.hero}</span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 text-center text-[#b8764a]">
-                        {pick.coklat > 0 ? pick.coklat : '-'}
-                      </td>
-                      <td className="py-2.5 px-3 text-center text-[#B9B2A8]">
-                        {pick.silver > 0 ? pick.silver : '-'}
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-bold text-[#E8B33D]">
-                        {pick.antam > 0 ? pick.antam : '-'}
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-black text-amber-400">
-                        {pick.mvp > 0 ? pick.mvp : '-'}
-                      </td>
-                      <td className="py-2.5 px-4 text-center">
-                        <span className="rounded-md bg-[#241F1B] px-2 py-0.5 font-mono font-bold text-xs text-[#F2EDE4] border border-[#332C25]">
-                          {pick.total} Main
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 3: MASTER HERO POOL */}
-      {activeSubTab === 'heroPool' && (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div>
-              <span className="font-bold text-sm text-[#F2EDE4] block">Distribusi Pool Hero Musim 41</span>
-              <span className="text-[#9C948A]">
-                Total Hero Terdaftar di MLBB Pool: <strong className="text-[#E8B33D]">129 Hero</strong> · Hero Pernah Di-pick: <strong className="text-emerald-400">{seasonData.heroPool.filter(h => h.picked > 0).length}</strong>
-              </span>
-            </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-emerald-500/20 px-2 py-1 text-emerald-400 font-semibold text-[11px]">
-                Top Meta: Novaria & Selena (27 Picks)
-              </span>
+              <Filter size={15} className="text-[#E8B33D]" />
+              <span className="text-xs text-[#9C948A]">Filter Pemain:</span>
+              <select
+                value={selectedPlayerFilter}
+                onChange={(e) => setSelectedPlayerFilter(e.target.value)}
+                className="rounded-xl border border-[#332C25] bg-[#1D1916] px-3 py-1.5 text-xs font-semibold text-[#F2EDE4] focus:outline-none"
+              >
+                <option value="all">Semua Pemain ({currentSeason.heroPicks?.length || 0})</option>
+                {currentSeason.heroPicks?.map((hp) => (
+                  <option key={hp.user} value={hp.user}>
+                    {hp.user}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {seasonData.heroPool
-              .filter((h) => h.hero.toLowerCase().includes(searchQuery.toLowerCase()))
-              .map((h, index) => {
-                const isTopPick = h.picked >= 10;
-                return (
-                  <div
-                    key={h.hero}
-                    className={`rounded-xl border p-2.5 flex items-center justify-between gap-2 transition-all ${
-                      isTopPick
-                        ? 'border-[#E8B33D]/40 bg-[#252014]'
-                        : h.picked > 0
-                        ? 'border-[#332C25] bg-[#1D1916]'
-                        : 'border-[#332C25]/40 bg-[#161311] opacity-60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <HeroAvatar heroName={h.hero} size="sm" shape="rounded" />
-                      <div className="min-w-0">
-                        <span className="font-bold text-xs text-[#F2EDE4] block truncate">
-                          {h.hero}
-                        </span>
-                        <span className="text-[10px] text-[#9C948A]">
-                          #{index + 1}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredHeroPicks.map((hp) => (
+              <div
+                key={hp.user}
+                className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 space-y-3 shadow-md"
+              >
+                <div className="flex items-center justify-between border-b border-[#332C25] pb-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <PlayerAvatar name={hp.user} size="sm" />
+                    <div>
+                      <h4 className="font-bold text-sm text-[#F2EDE4]">{hp.user}</h4>
+                      <span className="text-[10px] text-[#9C948A]">
+                        {hp.heroes.length} Hero Dimainkan
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {hp.heroes.map((h, i) => (
+                    <div key={h.heroName} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <HeroAvatar heroName={h.heroName} size="xs" shape="rounded" />
+                        <span className="font-medium text-[#F2EDE4]">{h.heroName}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-16 bg-[#251E17] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-[#E8B33D] rounded-full"
+                            style={{ width: `${Math.min(100, h.percentage)}%` }}
+                          />
+                        </div>
+                        <span className="font-bold text-[11px] text-[#E8B33D] w-10 text-right">
+                          {h.percentage}%
                         </span>
                       </div>
                     </div>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-mono font-bold ${
-                        isTopPick
-                          ? 'bg-[#E8B33D] text-[#161311]'
-                          : h.picked > 0
-                          ? 'bg-[#241F1B] text-[#E8B33D] border border-[#332C25]'
-                          : 'bg-[#241F1B] text-[#9C948A]'
-                      }`}
-                    >
-                      {h.picked}
-                    </span>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* CSV Import Modal */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
-          <div className="relative w-full max-w-2xl rounded-2xl border border-[#332C25] bg-[#1D1916] p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E8B33D]/20 text-[#E8B33D]">
-                  <FileSpreadsheet size={18} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-[#F2EDE4]">
-                    Import Data Klasemen Laga Amal (CSV)
-                  </h3>
-                  <p className="text-xs text-[#9C948A]">
-                    Format otomatis mendeteksi sheet "KELASEMEN LAGA AMAL"
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsImportModalOpen(false)}
-                className="rounded-lg p-1 text-[#9C948A] hover:bg-[#241F1B] hover:text-[#F2EDE4]"
+      {/* SUB-TAB 3: HERO POOL */}
+      {activeSubTab === 'heroPool' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {(currentSeason.heroPool || []).map((item) => (
+              <div
+                key={item.heroName}
+                className="rounded-xl border border-[#332C25] bg-[#1D1916] p-3 text-center space-y-2 hover:border-[#E8B33D]/50 transition-all"
               >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4">
-              {/* File input */}
-              <div>
-                <label className="block text-xs font-bold text-[#9C948A] uppercase mb-1.5">
-                  Unggah File .CSV
-                </label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="block w-full text-xs text-[#9C948A] file:mr-3 file:rounded-lg file:border-0 file:bg-[#241F1B] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#F2EDE4] hover:file:bg-[#2d2621]"
-                />
-              </div>
-
-              {/* Textarea for pasting */}
-              <div>
-                <label className="block text-xs font-bold text-[#9C948A] uppercase mb-1.5">
-                  Atau Tempel (Paste) Konten CSV:
-                </label>
-                <textarea
-                  rows={8}
-                  placeholder="Tempel teks CSV di sini..."
-                  value={csvInputText}
-                  onChange={(e) => setCsvInputText(e.target.value)}
-                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] p-3 font-mono text-[11px] text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-hidden leading-relaxed"
-                />
-              </div>
-
-              {/* Status messages */}
-              {importError && (
-                <div className="flex items-center gap-2 rounded-lg bg-red-900/30 border border-red-700/50 p-2.5 text-xs text-red-200">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{importError}</span>
+                <HeroAvatar heroName={item.heroName} size="md" shape="rounded" className="mx-auto" />
+                <div>
+                  <h4 className="font-bold text-xs text-[#F2EDE4] truncate">{item.heroName}</h4>
+                  <div className="mt-1 flex items-center justify-center gap-1.5 text-[10px] text-[#9C948A]">
+                    <span className="font-bold text-[#E8B33D]">{item.timesPicked}x</span>
+                    <span>Pick ({item.percentage}%)</span>
+                  </div>
                 </div>
-              )}
-
-              {importSuccess && (
-                <div className="flex items-center gap-2 rounded-lg bg-emerald-900/30 border border-emerald-700/50 p-2.5 text-xs text-emerald-200">
-                  <CheckCircle2 size={14} className="shrink-0" />
-                  <span>Data klasemen berhasil diperbarui dari CSV!</span>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsImportModalOpen(false)}
-                  className="rounded-lg border border-[#332C25] bg-[#241F1B] px-4 py-2 text-xs font-semibold text-[#9C948A] hover:bg-[#2d2621] hover:text-[#F2EDE4]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleImportCsv}
-                  className="rounded-lg bg-[#E8B33D] px-4 py-2 text-xs font-bold text-[#161311] hover:bg-[#e0a82b] transition-colors shadow-xs"
-                >
-                  Proses & Sinkronkan
-                </button>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Player Hero Profile Modal */}
+      {/* SUB-TAB 4: LOG MATCH */}
+      {activeSubTab === 'matchLogs' && (
+        <div className="space-y-3">
+          {(currentSeason.matchLogs || []).map((log) => (
+            <div
+              key={log.matchNumber}
+              className="rounded-xl border border-[#332C25] bg-[#1D1916] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="rounded bg-[#E8B33D]/20 px-2 py-0.5 text-[11px] font-bold text-[#E8B33D]">
+                    Match #{log.matchNumber}
+                  </span>
+                  <span className="text-xs text-[#9C948A]">{log.date}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-bold text-[#F2EDE4]">
+                  <span>Pemenang:</span>
+                  <span className="text-emerald-400">{log.winner}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 text-xs">
+                {log.pohonMvp && (
+                  <div className="rounded-lg bg-[#241F1B] px-3 py-1.5 border border-[#332C25]">
+                    <span className="text-[10px] text-[#9C948A] block">MVP Pohon</span>
+                    <span className="font-bold text-[#E8B33D]">{log.pohonMvp}</span>
+                  </div>
+                )}
+                {log.lobbyMvp && (
+                  <div className="rounded-lg bg-[#241F1B] px-3 py-1.5 border border-[#332C25]">
+                    <span className="text-[10px] text-[#9C948A] block">MVP Lobby</span>
+                    <span className="font-bold text-[#E8B33D]">{log.lobbyMvp}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* PLAYER DETAIL MODAL */}
       {detailPlayer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
-          <div className="relative w-full max-w-xl rounded-2xl border border-[#332C25] bg-[#1D1916] p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
               <div className="flex items-center gap-3">
-                <PlayerAvatar
-                  name={detailPlayer.nickname}
-                  avatarUrl={detailPlayer.avatar_url}
-                  size="md"
-                />
+                <PlayerAvatar name={detailPlayer.nickname} size="lg" />
                 <div>
-                  <span className="text-xs font-bold text-[#E8B33D] uppercase">
-                    Rincian Performa Pemain · S41
+                  <h3 className="text-base font-bold text-[#F2EDE4]">{detailPlayer.nickname}</h3>
+                  <span className="text-xs text-[#9C948A]">
+                    Statistik di {currentSeason.title}
                   </span>
-                  <h3 className="text-lg font-black text-[#F2EDE4]">{detailPlayer.nickname}</h3>
                 </div>
               </div>
               <button
                 onClick={() => setDetailPlayer(null)}
-                className="rounded-lg p-1 text-[#9C948A] hover:bg-[#241F1B] hover:text-[#F2EDE4]"
+                className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="mt-4 space-y-4">
-              {/* Stats overview */}
-              <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-2.5">
-                  <span className="text-[10px] text-[#9C948A] block">Ikut Main</span>
-                  <span className="text-base font-black text-[#F2EDE4]">{detailPlayer.matches}</span>
-                </div>
-                <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-2.5">
-                  <span className="text-[10px] text-[#9C948A] block">Total Score</span>
-                  <span className="text-base font-black text-[#E8B33D]">{detailPlayer.score.toFixed(1)}</span>
-                </div>
-                <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-2.5">
-                  <span className="text-[10px] text-[#9C948A] block">Win Rate</span>
-                  <span className="text-base font-black text-emerald-400">{detailPlayer.winRate.toFixed(1)}%</span>
-                </div>
-                <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-2.5">
-                  <span className="text-[10px] text-[#9C948A] block">AVG Score</span>
-                  <span className="text-base font-black text-[#D8D0C5]">{detailPlayer.avgScore.toFixed(2)}</span>
-                </div>
+            {/* Quick stats */}
+            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+              <div className="rounded-lg bg-[#2A1D15] p-2 border border-[#6B4226]/40">
+                <div className="text-base font-black text-[#b8764a]">{detailPlayer.coklat}</div>
+                <div className="text-[10px] text-[#9C948A]">Coklat</div>
               </div>
-
-              {/* Medals */}
-              <div className="flex items-center justify-around rounded-xl border border-[#332C25] bg-[#191513] p-3 text-xs">
-                <div className="text-center">
-                  <span className="text-[#b8764a] font-semibold block">🥉 Coklat</span>
-                  <span className="font-bold text-sm text-[#F2EDE4]">{detailPlayer.coklat}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-[#B9B2A8] font-semibold block">🥈 Silver</span>
-                  <span className="font-bold text-sm text-[#F2EDE4]">{detailPlayer.silver}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-[#E8B33D] font-semibold block">🥇 Antam</span>
-                  <span className="font-bold text-sm text-[#F2EDE4]">{detailPlayer.antam}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-amber-400 font-semibold block">👑 MVP</span>
-                  <span className="font-bold text-sm text-[#F2EDE4]">{detailPlayer.mvp}</span>
-                </div>
+              <div className="rounded-lg bg-[#211E1B] p-2 border border-[#7D766D]/40">
+                <div className="text-base font-black text-[#B9B2A8]">{detailPlayer.silver}</div>
+                <div className="text-[10px] text-[#9C948A]">Silver</div>
               </div>
+              <div className="rounded-lg bg-[#251E17] p-2 border border-[#D8A93A]/40">
+                <div className="text-base font-black text-[#D8A93A]">{detailPlayer.antam}</div>
+                <div className="text-[10px] text-[#9C948A]">Antam</div>
+              </div>
+              <div className="rounded-lg bg-[#2A2218] p-2 border border-[#E8B33D]/40">
+                <div className="text-base font-black text-[#E8B33D]">{detailPlayer.mvp}</div>
+                <div className="text-[10px] text-[#9C948A]">MVP</div>
+              </div>
+            </div>
 
-              {/* Hero Breakdown List */}
+            <div className="rounded-xl bg-[#161311] p-3.5 border border-[#332C25] space-y-2 text-xs">
+              <div className="flex justify-between items-center text-[#9C948A]">
+                <span>Total Match:</span>
+                <span className="font-bold text-[#F2EDE4]">{detailPlayer.matches} Pertandingan</span>
+              </div>
+              <div className="flex justify-between items-center text-[#9C948A]">
+                <span>Total Skor Musim:</span>
+                <span className="font-black text-[#E8B33D]">{detailPlayer.score}</span>
+              </div>
+              <div className="flex justify-between items-center text-[#9C948A]">
+                <span>Win Rate:</span>
+                <span className="font-bold text-emerald-400">{detailPlayer.winRate}%</span>
+              </div>
+              <div className="flex justify-between items-center text-[#9C948A]">
+                <span>AVG Score per Match:</span>
+                <span className="font-bold text-amber-300">{detailPlayer.avgScore}</span>
+              </div>
+            </div>
+
+            {/* Action to view full profile */}
+            {onViewPlayerProfile && (
+              <button
+                onClick={() => {
+                  onViewPlayerProfile(detailPlayer.nickname);
+                  setDetailPlayer(null);
+                }}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-colors cursor-pointer"
+              >
+                <span>Buka Profil Lengkap & Riwayat Hero</span>
+                <ChevronRight size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* NEW SEASON MODAL */}
+      {isNewSeasonModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
+              <div className="flex items-center gap-2">
+                <History size={18} className="text-[#E8B33D]" />
+                <h3 className="text-base font-bold text-[#F2EDE4]">Buat Musim / Season Baru</h3>
+              </div>
+              <button
+                onClick={() => setIsNewSeasonModalOpen(false)}
+                className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
               <div>
-                <span className="text-xs font-bold text-[#9C948A] uppercase block mb-2">
-                  Hero Dimainkan di S41 ({seasonData.heroPicksByUser.filter(hp => hp.player === detailPlayer.nickname).length} Hero):
-                </span>
-                <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                  {seasonData.heroPicksByUser
-                    .filter((hp) => hp.player === detailPlayer.nickname)
-                    .map((hp) => (
-                      <div
-                        key={hp.hero}
-                        className="flex items-center justify-between rounded-lg border border-[#332C25]/60 bg-[#241F1B] px-3 py-2 text-xs"
-                      >
-                        <div className="flex items-center gap-2">
-                          <HeroAvatar heroName={hp.hero} size="xs" shape="rounded" />
-                          <span className="font-bold text-[#F2EDE4]">{hp.hero}</span>
-                        </div>
-                        <div className="flex items-center gap-2.5 text-[11px]">
-                          {hp.mvp > 0 && <span className="text-amber-400 font-bold">{hp.mvp} MVP</span>}
-                          {hp.antam > 0 && <span className="text-[#E8B33D] font-semibold">{hp.antam} Antam</span>}
-                          {hp.silver > 0 && <span className="text-[#B9B2A8]">{hp.silver} Silver</span>}
-                          {hp.coklat > 0 && <span className="text-[#b8764a]">{hp.coklat} Coklat</span>}
-                          <span className="rounded bg-[#1D1916] px-1.5 py-0.5 font-mono text-[10px] text-[#9C948A]">
-                            Total: {hp.total}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
+                <label className="block text-[#9C948A] font-semibold mb-1">Judul Season:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Klasemen MLBB Pantos - Season 42"
+                  value={newSeasonTitle}
+                  onChange={(e) => setNewSeasonTitle(e.target.value)}
+                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+                />
               </div>
+              <div>
+                <label className="block text-[#9C948A] font-semibold mb-1">Rentang Tanggal:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Feb - Mar 2025"
+                  value={newSeasonDateStr}
+                  onChange={(e) => setNewSeasonDateStr(e.target.value)}
+                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setIsNewSeasonModalOpen(false)}
+                className="rounded-xl border border-[#332C25] px-4 py-2 text-xs font-semibold text-[#9C948A] hover:bg-[#241F1B] cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleCreateNewSeason}
+                className="rounded-xl bg-[#E8B33D] px-4 py-2 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-colors cursor-pointer"
+              >
+                Buat Season
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV IMPORT MODAL */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
+              <div className="flex items-center gap-2">
+                <Upload size={18} className="text-[#E8B33D]" />
+                <h3 className="text-base font-bold text-[#F2EDE4]">Import CSV Klasemen</h3>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#9C948A]">
+              Tempel teks CSV hasil ekspor spreadsheet dengan format kolom:<br />
+              <code className="text-[#E8B33D] font-mono">Nickname, Coklat, Silver, Antam, MVP, Matches, Score, WinRate, AvgScore</code>
+            </p>
+
+            <textarea
+              rows={8}
+              value={csvInputText}
+              onChange={(e) => setCsvInputText(e.target.value)}
+              placeholder={`LAH MANDOOR,0,1,4,11,16,51.0,93.8%,3.19\nDignityzed,0,2,4,8,14,40.0,85.7%,2.86`}
+              className="w-full rounded-xl border border-[#332C25] bg-[#161311] p-3 text-xs font-mono text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+            />
+
+            {importError && (
+              <div className="rounded-xl border border-rose-800/40 bg-rose-950/50 p-2.5 text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle size={15} />
+                <span>{importError}</span>
+              </div>
+            )}
+
+            {importSuccess && (
+              <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/50 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 size={15} />
+                <span>Berhasil mengimpor data klasemen musim!</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="rounded-xl border border-[#332C25] px-4 py-2 text-xs font-semibold text-[#9C948A] hover:bg-[#241F1B] cursor-pointer"
+              >
+                Tutup
+              </button>
+              <button
+                onClick={handleImportCsv}
+                className="rounded-xl bg-[#E8B33D] px-4 py-2 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-colors cursor-pointer"
+              >
+                Terapkan CSV
+              </button>
             </div>
           </div>
         </div>

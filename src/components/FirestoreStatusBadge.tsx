@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
-import { Database, RefreshCw, CheckCircle2, Cloud, Sparkles, ExternalLink, X, AlertCircle } from 'lucide-react';
+import { Database, RefreshCw, CheckCircle2, Cloud, X, AlertCircle } from 'lucide-react';
 import { firebaseConfig } from '../lib/firebase';
 import { forceSyncAllToFirestore } from '../services/firestoreSync';
-import { Player, Match, TournamentData, LagaAmalSeasonData } from '../types';
+import { Player, Match, LagaAmalSeasonData } from '../types';
 
 interface FirestoreStatusBadgeProps {
   players: Player[];
   matches: Match[];
-  tournaments: TournamentData[];
-  lagaAmal: LagaAmalSeasonData;
+  seasons: LagaAmalSeasonData[];
   isConnected: boolean;
   lastSyncedAt: Date | null;
   onSyncSuccess?: () => void;
@@ -17,8 +16,7 @@ interface FirestoreStatusBadgeProps {
 export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
   players,
   matches,
-  tournaments,
-  lagaAmal,
+  seasons,
   isConnected,
   lastSyncedAt,
   onSyncSuccess,
@@ -34,8 +32,7 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
       await forceSyncAllToFirestore({
         players,
         matches,
-        tournaments,
-        lagaAmal,
+        seasons,
       });
       setSyncMessage('Berhasil menyinkronkan seluruh database ke Cloud Firestore!');
       if (onSyncSuccess) onSyncSuccess();
@@ -45,6 +42,8 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
       setIsSyncing(false);
     }
   };
+
+  const activeSeason = seasons[0];
 
   return (
     <>
@@ -86,7 +85,7 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
                     </span>
                   </h3>
                   <p className="text-[11px] text-[#9C948A]">
-                    Penyimpanan persisten real-time lintas perangkat
+                    Penyimpanan persisten real-time Laga Amal Pantos
                   </p>
                 </div>
               </div>
@@ -125,22 +124,18 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
             </div>
 
             {/* Stat counts */}
-            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="rounded-lg bg-[#251E17] p-2 border border-[#332C25]">
                 <div className="text-base font-bold text-[#E8B33D]">{players.length}</div>
                 <div className="text-[10px] text-[#9C948A]">Pemain</div>
               </div>
               <div className="rounded-lg bg-[#251E17] p-2 border border-[#332C25]">
                 <div className="text-base font-bold text-[#F2EDE4]">{matches.length}</div>
-                <div className="text-[10px] text-[#9C948A]">Matches</div>
+                <div className="text-[10px] text-[#9C948A]">Pertandingan</div>
               </div>
               <div className="rounded-lg bg-[#251E17] p-2 border border-[#332C25]">
-                <div className="text-base font-bold text-[#F2EDE4]">{tournaments.length}</div>
-                <div className="text-[10px] text-[#9C948A]">Turnamen</div>
-              </div>
-              <div className="rounded-lg bg-[#251E17] p-2 border border-[#332C25]">
-                <div className="text-base font-bold text-amber-400">{lagaAmal?.players?.length || 0}</div>
-                <div className="text-[10px] text-[#9C948A]">Laga Amal</div>
+                <div className="text-base font-bold text-amber-400">{seasons.length}</div>
+                <div className="text-[10px] text-[#9C948A]">Musim / Season</div>
               </div>
             </div>
 
@@ -163,7 +158,7 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
                 id="btn-trigger-manual-firestore-sync"
                 onClick={handleManualSync}
                 disabled={isSyncing}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-colors shadow-sm"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
               >
                 <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
                 <span>{isSyncing ? 'Menyinkronkan ke Cloud...' : 'Upload & Sinkronkan Sekarang'}</span>

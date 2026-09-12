@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getPlayerAvatarUrl } from '../data/playerAvatars';
 import { PlayerStatus, TeamShort, TeamName } from '../types';
 
@@ -31,7 +31,29 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   showStatusDot = false,
 }) => {
   const [hasError, setHasError] = useState(false);
+  const [, setRevision] = useState(0);
   const resolvedUrl = getPlayerAvatarUrl(name, avatarUrl);
+
+  // Reset error state when avatarUrl or resolvedUrl changes
+  useEffect(() => {
+    setHasError(false);
+  }, [name, avatarUrl, resolvedUrl]);
+
+  // Listen to global avatar updates for instant sync across all open tabs/components
+  useEffect(() => {
+    const handleAvatarUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<{ playerName?: string }>;
+      if (
+        !customEvent.detail?.playerName ||
+        customEvent.detail.playerName.trim().toLowerCase() === (name || '').trim().toLowerCase()
+      ) {
+        setHasError(false);
+        setRevision((r) => r + 1);
+      }
+    };
+    window.addEventListener('pantos-avatar-updated', handleAvatarUpdate);
+    return () => window.removeEventListener('pantos-avatar-updated', handleAvatarUpdate);
+  }, [name]);
 
   const sizeClass = SIZE_MAP[size] || SIZE_MAP.md;
 

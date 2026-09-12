@@ -8,7 +8,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Player, Match, TournamentData, LagaAmalSeasonData } from '../types';
+import { Player, Match, LagaAmalSeasonData } from '../types';
 
 /**
  * Remove undefined values as Firestore rejects undefined fields
@@ -41,7 +41,6 @@ export function subscribeToPlayers(
         snapshot.forEach((docSnap) => {
           playersList.push(docSnap.data() as Player);
         });
-        // Sort players by id or medals
         playersList.sort((a, b) => Number(a.id) - Number(b.id));
         onUpdate(playersList);
       }
@@ -72,29 +71,6 @@ export function subscribeToMatches(
     },
     (err) => {
       console.warn('Firestore matches snapshot error:', err);
-      if (onError) onError(err);
-    }
-  );
-}
-
-export function subscribeToTournaments(
-  onUpdate: (tournaments: TournamentData[]) => void,
-  onError?: (err: Error) => void
-): Unsubscribe {
-  const colRef = collection(db, 'tournaments');
-  return onSnapshot(
-    colRef,
-    (snapshot) => {
-      if (!snapshot.empty) {
-        const tourneyList: TournamentData[] = [];
-        snapshot.forEach((docSnap) => {
-          tourneyList.push(docSnap.data() as TournamentData);
-        });
-        onUpdate(tourneyList);
-      }
-    },
-    (err) => {
-      console.warn('Firestore tournaments snapshot error:', err);
       if (onError) onError(err);
     }
   );
@@ -144,14 +120,18 @@ export async function syncMatchToFirestore(match: Match): Promise<void> {
   await setDoc(docRef, sanitizeForFirestore(match), { merge: true });
 }
 
-export async function syncTournamentToFirestore(tournament: TournamentData): Promise<void> {
-  const docRef = doc(db, 'tournaments', String(tournament.id));
-  await setDoc(docRef, sanitizeForFirestore(tournament), { merge: true });
-}
-
 export async function syncLagaAmalToFirestore(season: LagaAmalSeasonData): Promise<void> {
   const docRef = doc(db, 'laga_amal_seasons', String(season.id));
   await setDoc(docRef, sanitizeForFirestore(season), { merge: true });
+}
+
+export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[]): Promise<void> {
+  const batch = writeBatch(db);
+  seasons.forEach((s) => {
+    const docRef = doc(db, 'laga_amal_seasons', String(s.id));
+    batch.set(docRef, sanitizeForFirestore(s), { merge: true });
+  });
+  await batch.commit();
 }
 
 // ----------------- BULK INITIAL SEEDING -----------------
@@ -162,8 +142,7 @@ export async function syncLagaAmalToFirestore(season: LagaAmalSeasonData): Promi
 export async function seedFirestoreIfEmpty(data: {
   players: Player[];
   matches: Match[];
-  tournaments: TournamentData[];
-  lagaAmal: LagaAmalSeasonData;
+  seasons: LagaAmalSeasonData[];
 }): Promise<boolean> {
   try {
     const playersSnap = await getDocs(collection(db, 'players'));
@@ -183,21 +162,10 @@ export async function seedFirestoreIfEmpty(data: {
       await matchBatch.commit();
     }
 
-    const tourneySnap = await getDocs(collection(db, 'tournaments'));
-    if (tourneySnap.empty) {
-      console.log('Firestore: Seeding initial tournaments...');
-      const tourneyBatch = writeBatch(db);
-      data.tournaments.forEach((t) => {
-        const docRef = doc(db, 'tournaments', String(t.id));
-        tourneyBatch.set(docRef, sanitizeForFirestore(t));
-      });
-      await tourneyBatch.commit();
-    }
-
     const lagaAmalSnap = await getDocs(collection(db, 'laga_amal_seasons'));
-    if (lagaAmalSnap.empty && data.lagaAmal) {
-      console.log('Firestore: Seeding initial Laga Amal season...');
-      await syncLagaAmalToFirestore(data.lagaAmal);
+    if (lagaAmalSnap.empty && data.seasons && data.seasons.length > 0) {
+      console.log('Firestore: Seeding initial Laga Amal seasons...');
+      await syncSeasonsBatchToFirestore(data.seasons);
     }
 
     return true;
@@ -213,8 +181,7 @@ export async function seedFirestoreIfEmpty(data: {
 export async function forceSyncAllToFirestore(data: {
   players: Player[];
   matches: Match[];
-  tournaments: TournamentData[];
-  lagaAmal: LagaAmalSeasonData;
+  seasons: LagaAmalSeasonData[];
 }): Promise<boolean> {
   try {
     await syncPlayersBatchToFirestore(data.players);
@@ -226,15 +193,8 @@ export async function forceSyncAllToFirestore(data: {
     });
     await matchBatch.commit();
 
-    const tourneyBatch = writeBatch(db);
-    data.tournaments.forEach((t) => {
-      const docRef = doc(db, 'tournaments', String(t.id));
-      tourneyBatch.set(docRef, sanitizeForFirestore(t), { merge: true });
-    });
-    await tourneyBatch.commit();
-
-    if (data.lagaAmal) {
-      await syncLagaAmalToFirestore(data.lagaAmal);
+    if (data.seasons && data.seasons.length > 0) {
+      await syncSeasonsBatchToFirestore(data.seasons);
     }
 
     return true;

@@ -3,9 +3,10 @@ import { Match } from '../types';
 
 interface ScoreBannerProps {
   matches: Match[];
+  seasonTitle?: string;
 }
 
-export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches }) => {
+export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle = 'Season 41' }) => {
   const pohonWins = matches.filter((m) => m.winner === 'Tim Pohon').length;
   const lobbyWins = matches.filter((m) => m.winner === 'Tim Lobby').length;
   const total = matches.length;
@@ -22,7 +23,7 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches }) => {
           Tim Pohon
         </span>
         <span className="font-mono text-[11px] text-[#9C948A]">
-          Musim 1 · {total} Pertandingan
+          {seasonTitle} · {total} Pertandingan
         </span>
         <span className="flex items-center gap-1.5 text-[#C97A3D]">
           Tim Lobby
@@ -76,24 +77,11 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches }) => {
                 {lobbyWins}
               </span>
             </div>
-            <span className="mt-1 text-[11px] font-medium text-amber-100/70">
+            <span className="mt-1 text-[11px] font-medium text-orange-100/70">
               {total > 0 ? Math.round((lobbyWins / total) * 100) : 0}% Winrate
             </span>
           </div>
         </div>
-
-        {/* Center VS pill badge */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="rounded-full border-2 border-[#161311] bg-[#241F1B] px-3 py-1 font-black text-xs tracking-widest text-[#E8B33D] shadow-md">
-            VS
-          </div>
-        </div>
-      </div>
-
-      {/* Sub-banner footer caption */}
-      <div className="flex items-center justify-between border-t border-[#332C25] bg-[#1D1916] px-4 py-2 text-[11px] text-[#9C948A]">
-        <span>Sistem penilaian berbasis Medali (MVP/Gold/Silver/Coklat)</span>
-        <span className="italic text-[#E8B33D]/90">Kompetisi Laga Santai</span>
       </div>
     </div>
   );

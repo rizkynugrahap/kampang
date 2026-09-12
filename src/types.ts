@@ -22,6 +22,9 @@ export interface Player {
   total_match: number;
   medals: PlayerMedals;
   avatar_url?: string;
+  score?: number; // Total season score
+  avgScore?: number;
+  winRate?: number;
 }
 
 export interface Hero {
@@ -40,9 +43,10 @@ export interface MatchPlayerDetail {
   hero_name: string;
   team: TeamShort;
   medal: Medal;
+  score?: number; // Match rating score (e.g. 9.5, 7.8)
 }
 
-export type MatchType = 'Laga Amal' | 'Ranked' | 'Turnamen';
+export type MatchType = 'Laga Amal' | 'Ranked';
 
 export interface Match {
   id: number;
@@ -67,66 +71,7 @@ export interface TopHeroStat {
   coklatCount: number;
 }
 
-export interface TournamentTeamStanding {
-  id: string;
-  name: string;
-  shortName: string;
-  color: string;
-  played: number;
-  won: number;
-  lost: number;
-  points: number; // Menang: +3, Kalah: 0
-  gameWins: number;
-  gameLosses: number;
-  mvpCount: number;
-  goldCount: number;
-  silverCount: number;
-  coklatCount: number;
-  streak: string;
-  form: ('W' | 'L')[];
-  members?: string[];
-  slogan?: string;
-}
-
-export interface TournamentPlayerStanding {
-  playerName: string;
-  team: TeamShort;
-  tier: string;
-  played: number;
-  mvp: number;
-  gold: number;
-  silver: number;
-  coklat: number;
-  points: number;
-  avatar_url?: string;
-}
-
-export interface TournamentFixture {
-  id: string;
-  round: string;
-  date: string;
-  teamA: string;
-  teamB: string;
-  scoreA: number;
-  scoreB: number;
-  status: 'Selesai' | 'Live' | 'Mendatang';
-  winner?: string;
-  matchId?: number;
-}
-
-export interface TournamentData {
-  id: string;
-  name: string;
-  season: string;
-  status: 'Sedang Berjalan' | 'Selesai';
-  format: string;
-  prizePool: string;
-  standings: TournamentTeamStanding[];
-  fixtures: TournamentFixture[];
-  ai_recap?: string;
-}
-
-// Laga Amal Season Types (from CSV benchmark)
+// Laga Amal Season Types
 export interface LagaAmalPlayerStat {
   nickname: string;
   coklat: number;
@@ -165,10 +110,36 @@ export interface LagaAmalMatchRow {
   antam: number;
   mvp: number;
   result: 'VICTORY' | 'DEFEAT';
-  rating: string; // e.g. "3. ANTAM", "4. MVP"
+  rating: string;
   score: number;
   winRate: number;
   count: number;
+}
+
+export interface UserHeroPercentage {
+  heroName: string;
+  percentage: number;
+}
+
+export interface HeroPickByUser {
+  user: string;
+  heroes: UserHeroPercentage[];
+}
+
+export interface HeroPoolItem {
+  heroName: string;
+  timesPicked: number;
+  percentage: number;
+  hero?: string;
+  picked?: number;
+}
+
+export interface LagaAmalMatchLog {
+  matchNumber: number;
+  date: string;
+  winner: string;
+  pohonMvp?: string;
+  lobbyMvp?: string;
 }
 
 export interface LagaAmalSeasonData {
@@ -180,12 +151,18 @@ export interface LagaAmalSeasonData {
   topSilver: { player: string; count: number };
   topAntam: { player: string; count: number };
   topMvp: { player: string; count: number };
-  totalMatches: number;
-  totalScore: number;
-  avgWinRateTotal: number;
-  avgScoreTotal: number;
+  totalMatches?: number;
+  totalMatchesRecorded?: number;
+  totalScore?: number;
+  totalScoreAccumulated?: number;
+  avgWinRateTotal?: number;
+  averageWinRate?: number;
+  avgScoreTotal?: number;
+  averageScore?: number;
   players: LagaAmalPlayerStat[];
-  heroPicksByUser: LagaAmalHeroPick[];
-  heroPool: LagaAmalHeroPoolItem[];
-  matchRows: LagaAmalMatchRow[];
+  heroPicksByUser?: LagaAmalHeroPick[];
+  heroPicks?: HeroPickByUser[];
+  heroPool?: any[];
+  matchRows?: LagaAmalMatchRow[];
+  matchLogs?: LagaAmalMatchLog[];
 }
