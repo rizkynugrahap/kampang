@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   setDoc,
+  deleteDoc,
   getDocs,
   query,
   where,
@@ -136,6 +137,15 @@ export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[])
   await batch.commit();
 }
 
+/**
+ * Deletes a whole Laga Amal season/klasemen from Firestore. Admin-only —
+ * the caller is responsible for checking permission before calling this.
+ */
+export async function deleteLagaAmalFromFirestore(seasonId: string): Promise<void> {
+  const docRef = doc(db, 'laga_amal_seasons', String(seasonId));
+  await deleteDoc(docRef);
+}
+
 // ----------------- ADMIN LOGIN (Firestore-only) -----------------
 
 export interface AdminAccount {
@@ -203,45 +213,6 @@ export async function verifyAdminLogin(
 }
 
 // ----------------- BULK INITIAL SEEDING -----------------
-
-/**
- * Checks if Firestore collections are empty, and seeds them with initial data if so.
- */
-export async function seedFirestoreIfEmpty(data: {
-  players: Player[];
-  matches: Match[];
-  seasons: LagaAmalSeasonData[];
-}): Promise<boolean> {
-  try {
-    const playersSnap = await getDocs(collection(db, 'players'));
-    if (playersSnap.empty) {
-      console.log('Firestore: Seeding initial players...');
-      await syncPlayersBatchToFirestore(data.players);
-    }
-
-    const matchesSnap = await getDocs(collection(db, 'matches'));
-    if (matchesSnap.empty) {
-      console.log('Firestore: Seeding initial matches...');
-      const matchBatch = writeBatch(db);
-      data.matches.forEach((m) => {
-        const docRef = doc(db, 'matches', String(m.id));
-        matchBatch.set(docRef, sanitizeForFirestore(m));
-      });
-      await matchBatch.commit();
-    }
-
-    const lagaAmalSnap = await getDocs(collection(db, 'laga_amal_seasons'));
-    if (lagaAmalSnap.empty && data.seasons && data.seasons.length > 0) {
-      console.log('Firestore: Seeding initial Laga Amal seasons...');
-      await syncSeasonsBatchToFirestore(data.seasons);
-    }
-
-    return true;
-  } catch (err) {
-    console.warn('Firestore initial seeding error:', err);
-    return false;
-  }
-}
 
 /**
  * Force sync all current data to Firestore

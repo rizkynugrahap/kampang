@@ -7,6 +7,7 @@ import { INITIAL_PLAYERS, INITIAL_MATCHES } from './src/data/seed.ts';
 import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/data/seasonsSeed.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
+import { generateHeuristicMatchAnalysis } from './src/utils/matchAnalysis.ts';
 
 const app = express();
 const PORT = 3000;
@@ -93,6 +94,14 @@ function getGenAI(): GoogleGenAI | null {
   return aiClient;
 }
 
+if (!process.env.GEMINI_API_KEY) {
+  console.warn(
+    '[Gemini] GEMINI_API_KEY tidak ditemukan di environment — analisis pertandingan akan ' +
+    'memakai komentar cadangan (heuristik), bukan hasil AI asli. Set secret ini di panel ' +
+    'AI Studio / Cloud Run agar analisis Gemini aktif.'
+  );
+}
+
 // Generate match commentary using Gemini
 async function generateMatchAnalysis(match: Match): Promise<string> {
   const winnerTeam = match.winner;
@@ -118,8 +127,11 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
 
   const ai = getGenAI();
   if (ai) {
-    // Models to try in order: gemini-3.6-flash (recommended by API), then gemini-3.8-flash
-    const candidateModels = ['gemini-3.6-flash', 'gemini-3.8-flash'];
+    // Valid, current Gemini model ids. (Earlier this listed
+    // 'gemini-3.6-flash' / 'gemini-3.8-flash', which don't exist as real
+    // Gemini models — every call silently failed and the app fell back to
+    // heuristic/placeholder text. Real analysis never had a chance to run.)
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -141,21 +153,7 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
   }
 
   // Fallback heuristic commentary if API key is not present or call fails
-  const allPlayers = [...match.pohon, ...match.lobby];
-  const mvp = allPlayers.find((p) => p.medal === 'MVP');
-  const coklat = allPlayers.find((p) => p.medal === 'Coklat');
-
-  let commentary = `${winnerTeam} keluar sebagai pemenang di laga ini setelah pertarungan intens. `;
-  if (mvp) {
-    commentary += `${mvp.player_name} (${mvp.hero_name}) menjadi momok menakutkan dengan kontribusi skor ${mvp.score || 9.5} yang layak diganjar MVP. `;
-  }
-  if (coklat) {
-    commentary += `Sementara itu, ${coklat.player_name} (${coklat.hero_name}) harus rela menelan medali Coklat setelah berulang kali tertangkap di posisi offside dan menjadi sasaran empuk lawan.`;
-  } else {
-    commentary += 'Kedua tim bermain disiplin tanpa ada yang tergelincir masuk ke zona semen.';
-  }
-
-  return commentary;
+  return generateHeuristicMatchAnalysis(match);
 }
 
 // ----------------- API ROUTES -----------------
@@ -331,7 +329,15 @@ app.post('/api/matches', async (req, res) => {
 
     const seasonLabel = season || 'Season 41';
 
-    const newMatch: Match = {
+    // Generate the Gemini AI commentary BEFORE responding. Previously this
+    // ran in the background after the response was already sent, and the
+    // finished result only ever got written to the server's local
+    // data/store.json — it was never pushed back to Firestore, which is
+    // what the app actually reads from in real time. That's why the
+    // analysis card was stuck showing the generic offline placeholder
+    // instead of the real Gemini commentary: the real text was generated,
+    // but nothing downstream ever saw it.
+    const draftMatch: Match = {
       id: nextId,
       date: date || new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
       season: seasonLabel,
@@ -340,8 +346,18 @@ app.post('/api/matches', async (req, res) => {
       pohon,
       lobby,
       ai_analysis: '',
-      is_generating_analysis: true,
+      is_generating_analysis: false,
     };
+
+    let analysisText: string;
+    try {
+      analysisText = await generateMatchAnalysis(draftMatch);
+    } catch (aiErr) {
+      console.error('Error generating AI analysis:', aiErr);
+      analysisText = 'Analisis AI sementara tidak tersedia.';
+    }
+
+    const newMatch: Match = { ...draftMatch, ai_analysis: analysisText };
 
     // Insert match at beginning (newest first)
     store.matches.unshift(newMatch);
@@ -368,20 +384,6 @@ app.post('/api/matches', async (req, res) => {
 
     saveStore(store);
 
-    // Generate AI commentary in background
-    generateMatchAnalysis(newMatch)
-      .then((analysis) => {
-        newMatch.ai_analysis = analysis;
-        newMatch.is_generating_analysis = false;
-        saveStore(store);
-      })
-      .catch((aiErr) => {
-        console.error('Error generating AI analysis:', aiErr);
-        newMatch.ai_analysis = 'Analisis AI sementara tidak tersedia.';
-        newMatch.is_generating_analysis = false;
-        saveStore(store);
-      });
-
     res.status(201).json({
       match: newMatch,
       players: store.players,
@@ -406,9 +408,19 @@ app.delete('/api/matches/:id', (req, res) => {
 });
 
 // POST /api/matches/:id/analyze (Re-run analysis for an existing match)
+// Accepts an optional full match object in the body as a fallback — this
+// lets the client regenerate analysis even for a match that only exists in
+// Firestore/local state (e.g. one created while this backend was
+// unreachable) and never made it into this server's local store.
 app.post('/api/matches/:id/analyze', async (req, res) => {
   const matchId = Number(req.params.id);
-  const match = store.matches.find((m) => m.id === matchId);
+  let match = store.matches.find((m) => m.id === matchId);
+  const isKnownLocally = Boolean(match);
+
+  if (!match && req.body && req.body.winner && req.body.pohon && req.body.lobby) {
+    match = { id: matchId, ...req.body } as Match;
+  }
+
   if (!match) {
     return res.status(404).json({ error: 'Match tidak ditemukan' });
   }
@@ -416,7 +428,9 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
   try {
     const analysis = await generateMatchAnalysis(match);
     match.ai_analysis = analysis;
-    saveStore(store);
+    if (isKnownLocally) {
+      saveStore(store);
+    }
     res.json({ id: matchId, ai_analysis: analysis });
   } catch (err: any) {
     res.status(500).json({ error: 'Gagal membuat analisis AI: ' + err.message });
@@ -467,16 +481,24 @@ app.post('/api/laga-amal', (req, res) => {
   res.json({ success: true, season: store.lagaAmalSeasons[existingIdx >= 0 ? existingIdx : 0], players: store.players });
 });
 
-// POST /api/reset-data
-app.post('/api/reset-data', (req, res) => {
-  const freshSeasons = JSON.parse(JSON.stringify(ALL_INITIAL_SEASONS));
-  store = {
-    players: buildPlayersFromSeason(freshSeasons[0]),
-    matches: JSON.parse(JSON.stringify(INITIAL_MATCHES)),
-    lagaAmalSeasons: freshSeasons,
-  };
+// DELETE /api/laga-amal/:id (Admin only — deletes a whole season/klasemen)
+app.delete('/api/laga-amal/:id', (req, res) => {
+  const seasonId = req.params.id;
+  if (!store.lagaAmalSeasons || store.lagaAmalSeasons.length === 0) {
+    return res.status(404).json({ error: 'Tidak ada musim tersimpan' });
+  }
+  if (store.lagaAmalSeasons.length <= 1) {
+    return res.status(400).json({ error: 'Tidak bisa menghapus satu-satunya season yang tersisa' });
+  }
+  const exists = store.lagaAmalSeasons.some((s) => s.id === seasonId);
+  if (!exists) {
+    return res.status(404).json({ error: 'Musim Laga Amal tidak ditemukan' });
+  }
+
+  store.lagaAmalSeasons = store.lagaAmalSeasons.filter((s) => s.id !== seasonId);
+  store.players = buildPlayersFromSeason(store.lagaAmalSeasons[0]);
   saveStore(store);
-  res.json({ success: true, message: 'Data berhasil direset ke seed Laga Amal Pantos', players: store.players, seasons: store.lagaAmalSeasons });
+  res.json({ success: true, seasons: store.lagaAmalSeasons, players: store.players });
 });
 
 // ----------------- VITE MIDDLEWARE / SPA FALLBACK -----------------

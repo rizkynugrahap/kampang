@@ -20,6 +20,7 @@ import {
   Plus,
   X,
   History,
+  Trash2,
 } from 'lucide-react';
 import {
   LagaAmalSeasonData,
@@ -37,11 +38,35 @@ import { syncLagaAmalToFirestore } from '../services/firestoreSync';
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
 type SortField = 'score' | 'mvp' | 'antam' | 'silver' | 'coklat' | 'matches' | 'winRate' | 'avgScore';
 
+const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/** Turns two <input type="date"> values into a friendly Indonesian range, e.g. "12 Sep - 20 Okt 2026". */
+function formatSeasonDateRange(startStr: string, endStr: string): string {
+  if (!startStr) return '';
+  const parseLocal = (s: string) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return { day: d, month: MONTHS_ID[m - 1], year: y };
+  };
+  const start = parseLocal(startStr);
+  if (!endStr || endStr === startStr) {
+    return `${start.day} ${start.month} ${start.year}`;
+  }
+  const end = parseLocal(endStr);
+  if (start.year === end.year && start.month === end.month) {
+    return `${start.day} - ${end.day} ${start.month} ${start.year}`;
+  }
+  if (start.year === end.year) {
+    return `${start.day} ${start.month} - ${end.day} ${end.month} ${start.year}`;
+  }
+  return `${start.day} ${start.month} ${start.year} - ${end.day} ${end.month} ${end.year}`;
+}
+
 interface LagaAmalViewProps {
   seasons?: LagaAmalSeasonData[];
   activeSeasonId?: string;
   onSeasonChange?: (seasonId: string) => void;
   onUpdateSeason?: (season: LagaAmalSeasonData) => void;
+  onDeleteSeason?: (seasonId: string) => void;
   onViewPlayerProfile?: (nickname: string) => void;
   isAdmin?: boolean;
 }
@@ -51,6 +76,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
   activeSeasonId = 's41',
   onSeasonChange,
   onUpdateSeason,
+  onDeleteSeason,
   onViewPlayerProfile,
   isAdmin = false,
 }) => {
@@ -71,10 +97,15 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
 
-  // New season modal
+  // New season modal — simplified to just a season number + a start/end
+  // date picker. The title and the display date string are both generated
+  // automatically from these so admins don't have to hand-type formatted
+  // text like "KLASEMEN LAGA AMAL - S42" or "12 Sep - 12 Okt 2026".
   const [isNewSeasonModalOpen, setIsNewSeasonModalOpen] = useState(false);
-  const [newSeasonTitle, setNewSeasonTitle] = useState('');
-  const [newSeasonDateStr, setNewSeasonDateStr] = useState('');
+  const [newSeasonNumber, setNewSeasonNumber] = useState(42);
+  const [newSeasonStartDate, setNewSeasonStartDate] = useState('');
+  const [newSeasonEndDate, setNewSeasonEndDate] = useState('');
+  const [newSeasonError, setNewSeasonError] = useState<string | null>(null);
 
   // Selected player detail modal
   const [detailPlayer, setDetailPlayer] = useState<LagaAmalPlayerStat | null>(null);
@@ -136,14 +167,45 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
     );
   }, [currentSeason.heroPicks, selectedPlayerFilter]);
 
+  // Opens the "New Season" modal with a sensible next season number
+  // pre-filled, so admins usually just need to pick the dates.
+  const openNewSeasonModal = () => {
+    const existingNumbers = seasons.map((s) => parseInt((s.id.match(/(\d+)/) || [])[1] || '0', 10));
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    setNewSeasonNumber(nextNumber);
+    setNewSeasonStartDate('');
+    setNewSeasonEndDate('');
+    setNewSeasonError(null);
+    setIsNewSeasonModalOpen(true);
+  };
+
+  // Live preview of the auto-generated title & date string
+  const newSeasonPreviewTitle = `KLASEMEN LAGA AMAL - S${newSeasonNumber || ''}`;
+  const newSeasonPreviewDate = formatSeasonDateRange(newSeasonStartDate, newSeasonEndDate) || 'Pilih tanggal mulai';
+
   // Handle creating a new season
   const handleCreateNewSeason = () => {
-    if (!newSeasonTitle.trim()) return;
-    const newId = `s${Date.now()}`;
+    setNewSeasonError(null);
+
+    if (!newSeasonNumber || newSeasonNumber <= 0) {
+      setNewSeasonError('Nomor season harus diisi.');
+      return;
+    }
+    if (!newSeasonStartDate) {
+      setNewSeasonError('Tanggal mulai harus diisi.');
+      return;
+    }
+
+    const newId = `s${newSeasonNumber}`;
+    if (seasons.some((s) => s.id === newId)) {
+      setNewSeasonError(`Season S${newSeasonNumber} sudah ada. Pakai nomor lain.`);
+      return;
+    }
+
     const newSeason: LagaAmalSeasonData = {
       id: newId,
-      title: newSeasonTitle.trim(),
-      dateStr: newSeasonDateStr.trim() || new Date().toLocaleDateString('id-ID', { month: 'short', year: 'numeric' }),
+      title: newSeasonPreviewTitle,
+      dateStr: formatSeasonDateRange(newSeasonStartDate, newSeasonEndDate),
       activePlayersCount: currentSeason.players.length,
       topCoklat: { player: currentSeason.players[0]?.nickname || '-', count: 0 },
       topSilver: { player: currentSeason.players[0]?.nickname || '-', count: 0 },
@@ -177,8 +239,8 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
       onSeasonChange(newId);
     }
     setIsNewSeasonModalOpen(false);
-    setNewSeasonTitle('');
-    setNewSeasonDateStr('');
+    setNewSeasonStartDate('');
+    setNewSeasonEndDate('');
   };
 
   // CSV Import handler
@@ -310,11 +372,28 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
             {isAdmin && (
               <button
                 id="btn-create-new-season"
-                onClick={() => setIsNewSeasonModalOpen(true)}
+                onClick={openNewSeasonModal}
                 className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-xs font-semibold text-[#F2EDE4] hover:bg-[#2d2621] transition-colors cursor-pointer"
               >
                 <Plus size={14} className="text-[#E8B33D]" />
                 <span>+ Season Baru</span>
+              </button>
+            )}
+
+            {isAdmin && onDeleteSeason && (
+              <button
+                id="btn-delete-season"
+                onClick={() => onDeleteSeason(currentSeason.id)}
+                disabled={seasons.length <= 1}
+                title={
+                  seasons.length <= 1
+                    ? 'Tidak bisa menghapus satu-satunya season yang tersisa'
+                    : `Hapus klasemen ${currentSeason.title}`
+                }
+                className="flex items-center gap-1.5 rounded-lg border border-rose-800/40 bg-rose-950/20 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-950/40 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 size={14} />
+                <span>Hapus Klasemen</span>
               </button>
             )}
           </div>
@@ -884,25 +963,55 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-[#9C948A] font-semibold mb-1">Judul Season:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Klasemen MLBB Pantos - Season 42"
-                  value={newSeasonTitle}
-                  onChange={(e) => setNewSeasonTitle(e.target.value)}
-                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
-                />
+                <label className="block text-[#9C948A] font-semibold mb-1">Nomor Season:</label>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-lg bg-[#161311] border border-[#332C25] px-3 py-2 font-bold text-[#E8B33D]">S</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newSeasonNumber}
+                    onChange={(e) => setNewSeasonNumber(parseInt(e.target.value, 10) || 0)}
+                    className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-[#9C948A] font-semibold mb-1">Rentang Tanggal:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Feb - Mar 2025"
-                  value={newSeasonDateStr}
-                  onChange={(e) => setNewSeasonDateStr(e.target.value)}
-                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
-                />
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[#9C948A] font-semibold mb-1">Tanggal Mulai:</label>
+                  <input
+                    type="date"
+                    value={newSeasonStartDate}
+                    onChange={(e) => setNewSeasonStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none [color-scheme:dark]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#9C948A] font-semibold mb-1">Tanggal Selesai:</label>
+                  <input
+                    type="date"
+                    value={newSeasonEndDate}
+                    min={newSeasonStartDate || undefined}
+                    onChange={(e) => setNewSeasonEndDate(e.target.value)}
+                    className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none [color-scheme:dark]"
+                  />
+                </div>
               </div>
+
+              {/* Live preview of the auto-generated title & date so admins
+                  can see exactly what will be created before confirming. */}
+              <div className="rounded-xl border border-[#E8B33D]/30 bg-[#E8B33D]/5 p-3 space-y-0.5">
+                <div className="text-[10px] uppercase tracking-wider text-[#9C948A]">Pratinjau</div>
+                <div className="font-bold text-sm text-[#F2EDE4]">{newSeasonPreviewTitle}</div>
+                <div className="text-[#E8B33D] font-medium">{newSeasonPreviewDate}</div>
+              </div>
+
+              {newSeasonError && (
+                <div className="flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-950/40 p-2.5 text-[#F2EDE4]">
+                  <AlertCircle size={14} className="shrink-0 text-red-400" />
+                  <span>{newSeasonError}</span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">

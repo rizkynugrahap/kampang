@@ -6,7 +6,6 @@ import {
   Swords,
   Lock,
   Unlock,
-  RotateCcw,
   Sparkles,
   Flame,
   Image as ImageIcon,
@@ -27,17 +26,18 @@ import {
   subscribeToPlayers,
   subscribeToMatches,
   subscribeToLagaAmal,
-  seedFirestoreIfEmpty,
   seedAdminIfEmpty,
   syncPlayerToFirestore,
   syncMatchToFirestore,
   syncLagaAmalToFirestore,
   syncPlayersBatchToFirestore,
+  deleteLagaAmalFromFirestore,
 } from './services/firestoreSync';
 import { MLBB_HEROES } from './data/heroes';
 import { INITIAL_PLAYERS, INITIAL_MATCHES } from './data/seed';
 import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './data/seasonsSeed';
 import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars';
+import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 
 type ActiveTab = 'dashboard' | 'lagaAmal' | 'admin' | 'profile';
 
@@ -167,14 +167,16 @@ export default function App() {
   useEffect(() => {
     loadData();
 
-    // Auto-seed Firestore if empty
-    seedFirestoreIfEmpty({
-      players: INITIAL_PLAYERS,
-      matches: INITIAL_MATCHES,
-      seasons: ALL_INITIAL_SEASONS,
-    }).catch((e) => console.warn('Firestore seeding check:', e));
+    // NOTE: this used to also auto-reseed players/matches/seasons back to
+    // the hardcoded baseline (ALL_INITIAL_SEASONS/INITIAL_PLAYERS/
+    // INITIAL_MATCHES) any time Firestore looked empty. That's been
+    // removed — it fought with real admin actions like deleting a season
+    // or a match (any collection left empty would silently get refilled
+    // with old seed data on the next reload).
 
     // Auto-seed the default admin login account if Firestore has none yet
+    // (this one is safe to keep — it only ever creates a login account,
+    // never touches real season/player/match data).
     seedAdminIfEmpty().catch((e) => console.warn('Firestore admin seeding check:', e));
 
     const unsubLagaAmal = subscribeToLagaAmal(
@@ -268,12 +270,14 @@ export default function App() {
       return true;
     } catch (err: any) {
       console.error('Error in handleSaveMatch:', err);
-      // Fallback offline handling
+      // Backend unreachable — still give a real (if simpler) commentary
+      // instead of a flat generic placeholder like "Pertandingan selesai
+      // dengan sengit!", which used to show up here every time.
       const fallbackId = Date.now();
       const newMatch: Match = {
         id: fallbackId,
         ...matchPayload,
-        ai_analysis: 'Pertandingan selesai dengan sengit!',
+        ai_analysis: generateHeuristicMatchAnalysis(matchPayload),
       };
       setMatches((prev) => [newMatch, ...prev]);
 
@@ -364,54 +368,100 @@ export default function App() {
     }
   };
 
-  // Re-run AI analysis
+  // Re-run AI analysis. Sends the full match payload as a fallback so this
+  // still works for matches that only exist in Firestore/local state (e.g.
+  // saved while the backend was unreachable) and were never known to this
+  // server's own local store.
   const handleAnalyzeMatch = async (matchId: number) => {
+    const targetMatch = matches.find((m) => m.id === matchId);
     try {
-      const res = await fetch(`/api/matches/${matchId}/analyze`, { method: 'POST' });
+      const res = await fetch(`/api/matches/${matchId}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(targetMatch || {}),
+      });
       if (res.ok) {
         const data = await res.json();
+        let updatedMatch: Match | undefined;
         setMatches((prev) =>
-          prev.map((m) => (m.id === matchId ? { ...m, ai_analysis: data.ai_analysis } : m))
+          prev.map((m) => {
+            if (m.id !== matchId) return m;
+            updatedMatch = { ...m, ai_analysis: data.ai_analysis };
+            return updatedMatch;
+          })
         );
         if (selectedMatch && selectedMatch.id === matchId) {
           setSelectedMatch((prev) => (prev ? { ...prev, ai_analysis: data.ai_analysis } : null));
         }
+        // Persist the regenerated analysis to Firestore too — otherwise it
+        // only lives in local state and reverts to the stale version on
+        // the next reload or for any other viewer.
+        if (updatedMatch) {
+          await syncMatchToFirestore(updatedMatch);
+        }
+        return;
       }
+      throw new Error('Backend analyze endpoint returned ' + res.status);
     } catch (err) {
-      console.warn('Error analyzing match:', err);
+      console.warn('Error analyzing match via backend, using local fallback:', err);
+      // Backend unreachable — generate a heuristic commentary locally so
+      // the admin still gets a real (if simpler) analysis instead of the
+      // request silently doing nothing.
+      if (!targetMatch) return;
+      const fallbackAnalysis = generateHeuristicMatchAnalysis(targetMatch);
+      const updatedMatch: Match = { ...targetMatch, ai_analysis: fallbackAnalysis };
+      setMatches((prev) => prev.map((m) => (m.id === matchId ? updatedMatch : m)));
+      if (selectedMatch && selectedMatch.id === matchId) {
+        setSelectedMatch(updatedMatch);
+      }
+      try {
+        await syncMatchToFirestore(updatedMatch);
+      } catch (syncErr) {
+        console.warn('Error syncing fallback analysis to Firestore:', syncErr);
+      }
     }
   };
 
-  // Reset database to seed
-  const handleResetData = async () => {
+  // Delete an entire season/klasemen — admin only. This removes it from
+  // Firestore (the real-time source of truth), the local backend store,
+  // and local state. At least one season must always remain.
+  const handleDeleteSeason = async (seasonId: string) => {
     if (!isAdmin) {
       setIsLoginModalOpen(true);
       return;
     }
 
-    if (!confirm('Yakin ingin mereset seluruh database ke patokan seed Laga Amal Pantos?')) {
+    const target = seasons.find((s) => s.id === seasonId);
+    if (!target) return;
+
+    if (seasons.length <= 1) {
+      alert('Tidak bisa menghapus satu-satunya season yang tersisa.');
+      return;
+    }
+
+    if (!confirm(`Hapus klasemen "${target.title}" secara permanen? Tindakan ini tidak bisa dibatalkan.`)) {
       return;
     }
 
     try {
       setIsLoading(true);
-      const res = await fetch('/api/reset-data', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setSeasons(data.seasons || ALL_INITIAL_SEASONS);
-        setPlayers(data.players || INITIAL_PLAYERS);
-        setMatches(INITIAL_MATCHES);
-      } else {
-        setSeasons(ALL_INITIAL_SEASONS);
-        setPlayers(buildPlayersFromSeason(ALL_INITIAL_SEASONS[0]));
-        setMatches(INITIAL_MATCHES);
-      }
-      localStorage.removeItem('pantos_seasons_cache');
+      await deleteLagaAmalFromFirestore(seasonId);
+
+      fetch(`/api/laga-amal/${seasonId}`, { method: 'DELETE' }).catch((e) =>
+        console.warn('Backend delete season sync:', e)
+      );
+
+      setSeasons((prev) => {
+        const next = prev.filter((s) => s.id !== seasonId);
+        localStorage.setItem('pantos_seasons_cache', JSON.stringify(next));
+        if (selectedSeasonId === seasonId && next.length > 0) {
+          setSelectedSeasonId(next[0].id);
+        }
+        return next;
+      });
     } catch (err) {
-      console.warn('Reset error:', err);
-      setSeasons(ALL_INITIAL_SEASONS);
-      setPlayers(buildPlayersFromSeason(ALL_INITIAL_SEASONS[0]));
-      setMatches(INITIAL_MATCHES);
+      console.warn('Error deleting season:', err);
+      alert('Gagal menghapus klasemen. Coba lagi.');
     } finally {
       setIsLoading(false);
     }
@@ -565,19 +615,6 @@ export default function App() {
                 <span className="hidden sm:inline">Masuk Admin</span>
               </button>
             )}
-
-            {/* Reset Database Button */}
-            {isAdmin && (
-              <button
-                id="btn-reset-database"
-                onClick={handleResetData}
-                disabled={isLoading}
-                className="rounded-lg border border-[#332C25] bg-[#241F1B] p-2 text-[#9C948A] hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer"
-                title="Reset seluruh database ke patokan seed"
-              >
-                <RotateCcw size={14} className={isLoading ? 'animate-spin' : ''} />
-              </button>
-            )}
           </div>
         </div>
 
@@ -679,6 +716,7 @@ export default function App() {
             activeSeasonId={selectedSeasonId}
             onSeasonChange={(id) => setSelectedSeasonId(id)}
             onUpdateSeason={handleUpdateSeason}
+            onDeleteSeason={handleDeleteSeason}
             onViewPlayerProfile={handleViewPlayerProfile}
             isAdmin={isAdmin}
           />
