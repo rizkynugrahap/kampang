@@ -318,13 +318,20 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(recalc),
       }).catch((e) => console.warn('API sync season:', e));
-    } catch (err) {
-      console.warn('Sync season to Firestore:', err);
+    } catch (err: any) {
+      console.error('Sync season to Firestore failed:', err);
+      alert(
+        `Perubahan klasemen TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
+        `Pesan error: ${err?.message || err}\n\n` +
+        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      );
     }
   };
 
   // Save new match with player score and automatic season sync
   const handleSaveMatch = async (matchPayload: any): Promise<boolean> => {
+    let savedMatch: Match;
+
     try {
       const res = await fetch('/api/matches', {
         method: 'POST',
@@ -338,7 +345,7 @@ export default function App() {
       }
 
       const resData = await res.json();
-      const savedMatch: Match = resData.match || resData;
+      savedMatch = resData.match || resData;
 
       // Update local matches
       setMatches((prev) => {
@@ -346,37 +353,47 @@ export default function App() {
         localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
         return next;
       });
-
-      // Apply match to active season
-      const updatedSeason = applyMatchToSeason(activeSeason, savedMatch);
-      await handleUpdateSeason(updatedSeason);
-
-      // Sync match and players to Firestore
-      await syncMatchToFirestore(savedMatch);
-      const updatedPlayers = buildPlayersFromSeason(updatedSeason);
-      setPlayers(updatedPlayers);
-      await syncPlayersBatchToFirestore(updatedPlayers);
-
-      setLastSyncedAt(new Date());
-      return true;
     } catch (err: any) {
-      console.error('Error in handleSaveMatch:', err);
+      console.error('Error saving match to backend, using local fallback:', err);
       // Backend unreachable — still give a real (if simpler) commentary
       // instead of a flat generic placeholder like "Pertandingan selesai
       // dengan sengit!", which used to show up here every time.
       const fallbackId = Date.now();
-      const newMatch: Match = {
+      savedMatch = {
         id: fallbackId,
         ...matchPayload,
         ai_analysis: generateHeuristicMatchAnalysis(matchPayload),
       };
-      setMatches((prev) => [newMatch, ...prev]);
-
-      const updatedSeason = applyMatchToSeason(activeSeason, newMatch);
-      await handleUpdateSeason(updatedSeason);
-
-      return true;
+      setMatches((prev) => [savedMatch, ...prev]);
     }
+
+    // Apply match to active season (local + backend cache) regardless of
+    // which path above ran.
+    const updatedSeason = applyMatchToSeason(activeSeason, savedMatch);
+    await handleUpdateSeason(updatedSeason);
+    const updatedPlayers = buildPlayersFromSeason(updatedSeason);
+    setPlayers(updatedPlayers);
+
+    // Sync match and players to Firestore — kept in its OWN try/catch so a
+    // Firestore failure (e.g. security rules not deployed on the current
+    // project) doesn't get mistaken for "backend unreachable" and silently
+    // produce a duplicate local-only match. This is also the one place
+    // that decides whether the match survives a page refresh at all, so
+    // its failure needs to be loud, not swallowed.
+    try {
+      await syncMatchToFirestore(savedMatch);
+      await syncPlayersBatchToFirestore(updatedPlayers);
+      setLastSyncedAt(new Date());
+    } catch (syncErr: any) {
+      console.error('Error syncing match to Firestore:', syncErr);
+      alert(
+        `Pertandingan tersimpan sementara, TAPI gagal disinkronkan ke Firestore — artinya akan hilang saat refresh.\n\n` +
+        `Pesan error: ${syncErr?.message || syncErr}\n\n` +
+        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      );
+    }
+
+    return true;
   };
 
   // Add new player
@@ -433,8 +450,13 @@ export default function App() {
       setPlayers((prev) => [...prev, addedPlayer]);
       await syncPlayerToFirestore(addedPlayer);
       return true;
-    } catch (err) {
-      console.warn('Error adding player:', err);
+    } catch (err: any) {
+      console.error('Error adding player:', err);
+      alert(
+        `Pemain baru TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
+        `Pesan error: ${err?.message || err}\n\n` +
+        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      );
       return false;
     }
   };
@@ -485,7 +507,14 @@ export default function App() {
             if (isTargetSeason) {
               const reverted = revertMatchFromSeason(s, deletedMatch);
               // sync reverted season to firestore & API
-              syncLagaAmalToFirestore(reverted).catch((err) => console.warn('Sync reverted season:', err));
+              syncLagaAmalToFirestore(reverted).catch((err) => {
+                console.error('Sync reverted season:', err);
+                alert(
+                  `Statistik klasemen setelah hapus match TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
+                  `Pesan error: ${err?.message || err}\n\n` +
+                  `Cek Firebase Console → Firestore Database → tab Rules.`
+                );
+              });
               return reverted;
             }
             return s;
@@ -494,8 +523,12 @@ export default function App() {
           return nextSeasons;
         });
       }
-    } catch (err) {
-      console.warn('Error deleting match:', err);
+    } catch (err: any) {
+      console.error('Error deleting match:', err);
+      alert(
+        `Gagal menghapus pertandingan dari Firestore.\n\nPesan error: ${err?.message || err}\n\n` +
+        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      );
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
         localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
@@ -620,8 +653,14 @@ export default function App() {
         }
         return next;
       });
-    } catch (err) {
-      console.warn('Error deleting season:', err);
+    } catch (err: any) {
+      console.error('Error deleting season:', err);
+      alert(
+        `Gagal menghapus klasemen dari Firestore.\n\nPesan error: ${err?.message || err}\n\n` +
+        `Ini biasanya berarti Firestore Rules belum di-deploy ke project Firebase yang sekarang dipakai, ` +
+        `atau Firestore Database itu sendiri belum diaktifkan di project tersebut. ` +
+        `Cek Firebase Console → Firestore Database → tab Rules.`
+      );
     } finally {
       setIsLoading(false);
     }
@@ -726,8 +765,13 @@ export default function App() {
       await syncPlayerToFirestore(updatedPlayer);
 
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating player details:', err);
+      alert(
+        `Perubahan badge/tier TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
+        `Pesan error: ${err?.message || err}\n\n` +
+        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      );
       return false;
     }
   };
