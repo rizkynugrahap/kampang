@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_PLAYERS, INITIAL_MATCHES } from './src/data/seed.ts';
+import { INITIAL_PLAYERS } from './src/data/seed.ts';
 import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/data/seasonsSeed.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
@@ -46,7 +46,7 @@ function loadStore(): StoreData {
       }
 
       if (!parsed.matches || !Array.isArray(parsed.matches)) {
-        parsed.matches = JSON.parse(JSON.stringify(INITIAL_MATCHES));
+        parsed.matches = [];
       }
 
       return parsed;
@@ -58,7 +58,7 @@ function loadStore(): StoreData {
   const initialSeasons = JSON.parse(JSON.stringify(ALL_INITIAL_SEASONS));
   const initialData: StoreData = {
     players: buildPlayersFromSeason(initialSeasons[0]),
-    matches: JSON.parse(JSON.stringify(INITIAL_MATCHES)),
+    matches: [],
     lagaAmalSeasons: initialSeasons,
   };
   saveStore(initialData);
@@ -127,11 +127,8 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
 
   const ai = getGenAI();
   if (ai) {
-    // Valid, current Gemini model ids. (Earlier this listed
-    // 'gemini-3.6-flash' / 'gemini-3.8-flash', which don't exist as real
-    // Gemini models — every call silently failed and the app fell back to
-    // heuristic/placeholder text. Real analysis never had a chance to run.)
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    // Valid Gemini model ids per AI Studio SDK guidance
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -147,13 +144,119 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
           return response.text.trim();
         }
       } catch (err: any) {
-        console.warn(`Gemini model ${modelName} call failed:`, err?.message);
+        const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
+        const isQuota =
+          err?.status === 'RESOURCE_EXHAUSTED' ||
+          err?.code === 429 ||
+          errMsg.includes('429') ||
+          errMsg.includes('Quota exceeded') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        if (isQuota) {
+          console.info(`[Gemini] Match analysis quota reached on ${modelName}, switching to heuristic.`);
+          break;
+        } else {
+          console.info(`[Gemini] Model ${modelName} unavailable for match analysis, checking next candidate.`);
+        }
       }
     }
   }
 
   // Fallback heuristic commentary if API key is not present or call fails
   return generateHeuristicMatchAnalysis(match);
+}
+
+// Heuristic fallback for Pantos player titles
+function generateHeuristicPlayerJulukan(player: Player, seasonStat?: any): string {
+  const mvp = seasonStat ? seasonStat.mvp : player.medals.MVP;
+  const coklat = seasonStat ? seasonStat.coklat : player.medals.Coklat;
+  const antam = seasonStat ? seasonStat.antam : player.medals.Gold;
+  const winRate = seasonStat ? seasonStat.winRate : player.winRate || 50;
+
+  if (mvp >= 8 || winRate >= 70) return 'Sang Penggendong Patah Tulang';
+  if (coklat >= 5) return 'Warga Kehormatan Kelas Semen';
+  if (antam >= 6) return 'Kolektor Antam Anti Beban';
+  if (player.status === 'Cabutan') return 'Joker Cabutan Penentu Nasib';
+  if (player.tier === 'Mythic') return 'Sepuh Mythic Pantos';
+  if (player.tier === 'Epic') return 'Abadi di Neraka Epic';
+  if (mvp >= 4) return 'Pencuri Gelar MVP Handal';
+  return 'Pejuang Laga Amal Pantos';
+}
+
+// Generate creative Pantos nickname using Gemini AI
+async function generatePlayerJulukan(
+  player: Player,
+  seasonStat?: any,
+  topHeroes: string[] = []
+): Promise<string> {
+  const mvp = seasonStat ? seasonStat.mvp : player.medals.MVP;
+  const antam = seasonStat ? seasonStat.antam : player.medals.Gold;
+  const silver = seasonStat ? seasonStat.silver : player.medals.Silver;
+  const coklat = seasonStat ? seasonStat.coklat : player.medals.Coklat;
+  const winRate = seasonStat ? seasonStat.winRate : player.winRate || 50;
+  const avgScore = seasonStat ? seasonStat.avgScore : player.avgScore || 7.5;
+  const tier = player.tier || 'Legend';
+  const status = player.status || 'Aktif';
+
+  const promptText = `
+Buatlah 1 (satu) JULUKAN / GELAR PANTOS (hanya 2 sampai 5 kata, tanpa tanda kutip, tanpa penjelasan tambahan) yang kocak, bernuansa meme Mobile Legends / e-sport komunitas santai "Laga Amal Pantos" untuk pemain:
+Nama: "${player.name}"
+Tier: ${tier} (Status: ${status})
+MVP: ${mvp} kali
+Antam (Gold): ${antam} kali
+Silver: ${silver} kali
+Coklat (Beban/Feeder): ${coklat} kali
+Win Rate: ${winRate}%
+Rata-rata Skor: ${avgScore}
+Hero Favorit: ${topHeroes.join(', ') || 'Fleksibel'}
+
+Panduan julukan:
+- Bahasa Indonesia santai khas tongkrongan gamer MLBB (istilah: penggendong, tulang punggung, semen, feeder, lord, mekanik, sedekah bintang, penunggu lobby, preman lane).
+- Jika banyak MVP: beri julukan dewa carry / tulang punggung retak.
+- Jika banyak Coklat: julukan jenaka donatur poin / pelindung kelas semen / sedekah bintang.
+- Jika seimbang/solid: julukan spesialis pendamping / pilar rahasia / anti-tumbang.
+- Kembalikan HANYA teks julukannya saja. Contoh output: "Sang Penggendong Patah Tulang" atau "Duta Coklat Kelas Semen" atau "Preman Goldlane Anti Tumbang".
+`;
+
+  const ai = getGenAI();
+  if (ai) {
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptText,
+          config: {
+            temperature: 0.85,
+            maxOutputTokens: 100,
+          },
+        });
+        if (response.text && response.text.trim()) {
+          // Clean output from quotation marks or bullet points
+          let cleanTitle = response.text.trim().replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
+          if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
+          return cleanTitle;
+        }
+      } catch (err: any) {
+        const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
+        const isQuota =
+          err?.status === 'RESOURCE_EXHAUSTED' ||
+          err?.code === 429 ||
+          errMsg.includes('429') ||
+          errMsg.includes('Quota exceeded') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        if (isQuota) {
+          console.info(`[Gemini] Julukan generation quota reached on ${modelName}; applying heuristic title.`);
+          break;
+        } else {
+          console.info(`[Gemini] Model ${modelName} unavailable for title generation, trying next candidate.`);
+        }
+      }
+    }
+  }
+
+  return generateHeuristicPlayerJulukan(player, seasonStat);
 }
 
 // ----------------- API ROUTES -----------------
@@ -237,7 +340,7 @@ app.post('/api/players', (req, res) => {
 app.put('/api/players/:id', (req, res) => {
   const rawId = req.params.id;
   const decodedId = decodeURIComponent(rawId).trim().toLowerCase();
-  const { avatar_url, status, tier, name } = req.body;
+  const { avatar_url, status, tier, name, julukan, julukan_updated_at } = req.body;
 
   let playerIndex = store.players.findIndex(
     (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === decodedId
@@ -266,6 +369,8 @@ app.put('/api/players/:id', (req, res) => {
         avgScore: sp.avgScore,
         winRate: sp.winRate,
         avatar_url: avatar_url || undefined,
+        julukan: julukan || undefined,
+        julukan_updated_at: julukan_updated_at || undefined,
       };
       store.players.push(newP);
       playerIndex = store.players.length - 1;
@@ -283,6 +388,8 @@ app.put('/api/players/:id', (req, res) => {
     ...(status && { status }),
     ...(tier && { tier }),
     ...(name && { name: name.trim() }),
+    ...(julukan !== undefined && { julukan }),
+    ...(julukan_updated_at !== undefined && { julukan_updated_at }),
   };
 
   store.players[playerIndex] = updatedPlayer;
@@ -301,6 +408,94 @@ app.put('/api/players/:id', (req, res) => {
 
   saveStore(store);
   res.json(updatedPlayer);
+});
+
+// POST /api/players/:id/generate-title (Generate or refresh creative Pantos title using Gemini)
+app.post('/api/players/:id/generate-title', async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const decodedId = decodeURIComponent(rawId).trim().toLowerCase();
+
+    let playerIndex = store.players.findIndex(
+      (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === decodedId
+    );
+
+    if (playerIndex === -1 && store.lagaAmalSeasons && store.lagaAmalSeasons.length > 0) {
+      const sp = store.lagaAmalSeasons[0].players.find(
+        (p) => p.nickname.toLowerCase() === decodedId
+      );
+      if (sp) {
+        const newP: Player = {
+          id: store.players.length + 1,
+          name: sp.nickname,
+          status: sp.matches >= 20 ? 'Aktif' : 'Cabutan',
+          tier: 'Legend',
+          total_match: sp.matches,
+          medals: { MVP: sp.mvp, Gold: sp.antam, Silver: sp.silver, Coklat: sp.coklat },
+          score: sp.score,
+          avgScore: sp.avgScore,
+          winRate: sp.winRate,
+        };
+        store.players.push(newP);
+        playerIndex = store.players.length - 1;
+      }
+    }
+
+    if (playerIndex === -1) {
+      return res.status(404).json({ error: `Pemain '${rawId}' tidak ditemukan` });
+    }
+
+    const player = store.players[playerIndex];
+    const activeSeason = store.lagaAmalSeasons?.[0];
+    const seasonPlayerStat = activeSeason?.players.find(
+      (p) => p.nickname.toLowerCase() === player.name.toLowerCase()
+    );
+
+    // Extract top heroes for player
+    const topHeroNames: string[] = [];
+    if (activeSeason?.heroPicks) {
+      const hp = activeSeason.heroPicks.find((h) => h.user.toLowerCase() === player.name.toLowerCase());
+      if (hp && hp.heroes) {
+        topHeroNames.push(...hp.heroes.slice(0, 3).map((h) => h.heroName));
+      }
+    }
+
+    let generatedJulukan: string;
+    try {
+      generatedJulukan = await generatePlayerJulukan(player, seasonPlayerStat, topHeroNames);
+    } catch {
+      generatedJulukan = generateHeuristicPlayerJulukan(player, seasonPlayerStat);
+    }
+    const nowIso = new Date().toISOString();
+
+    const updatedPlayer: Player = {
+      ...player,
+      julukan: generatedJulukan,
+      julukan_updated_at: nowIso,
+    };
+
+    store.players[playerIndex] = updatedPlayer;
+    saveStore(store);
+
+    res.json({
+      success: true,
+      julukan: generatedJulukan,
+      julukan_updated_at: nowIso,
+      player: updatedPlayer,
+    });
+  } catch (err: any) {
+    const rawId = req.params.id;
+    const player = store.players.find(
+      (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === String(rawId).toLowerCase()
+    );
+    const fallbackTitle = player ? generateHeuristicPlayerJulukan(player) : 'Pejuang Laga Amal Pantos';
+    res.json({
+      success: true,
+      julukan: fallbackTitle,
+      julukan_updated_at: new Date().toISOString(),
+      player: player ? { ...player, julukan: fallbackTitle } : undefined,
+    });
+  }
 });
 
 // GET /api/heroes
@@ -354,10 +549,10 @@ app.post('/api/matches', async (req, res) => {
       analysisText = await generateMatchAnalysis(draftMatch);
     } catch (aiErr) {
       console.error('Error generating AI analysis:', aiErr);
-      analysisText = 'Analisis AI sementara tidak tersedia.';
+      analysisText = generateHeuristicMatchAnalysis(draftMatch);
     }
 
-    const newMatch: Match = { ...draftMatch, ai_analysis: analysisText };
+    const newMatch: Match = { ...draftMatch, ai_analysis: analysisText, is_generating_analysis: false };
 
     // Insert match at beginning (newest first)
     store.matches.unshift(newMatch);
@@ -398,13 +593,12 @@ app.post('/api/matches', async (req, res) => {
 // DELETE /api/matches/:id
 app.delete('/api/matches/:id', (req, res) => {
   const matchId = Number(req.params.id);
-  const exists = store.matches.some((m) => m.id === matchId);
-  if (!exists) {
-    return res.status(404).json({ error: 'Match tidak ditemukan' });
+  const beforeLen = store.matches.length;
+  store.matches = store.matches.filter((m) => m.id !== matchId && String(m.id) !== String(req.params.id));
+  if (store.matches.length !== beforeLen) {
+    saveStore(store);
   }
-  store.matches = store.matches.filter((m) => m.id !== matchId);
-  saveStore(store);
-  res.json({ success: true, message: `Match ${matchId} berhasil dihapus` });
+  res.json({ success: true, message: `Match ${req.params.id} berhasil dihapus` });
 });
 
 // POST /api/matches/:id/analyze (Re-run analysis for an existing match)
@@ -490,15 +684,29 @@ app.delete('/api/laga-amal/:id', (req, res) => {
   if (store.lagaAmalSeasons.length <= 1) {
     return res.status(400).json({ error: 'Tidak bisa menghapus satu-satunya season yang tersisa' });
   }
-  const exists = store.lagaAmalSeasons.some((s) => s.id === seasonId);
-  if (!exists) {
+  const targetSeason = store.lagaAmalSeasons.find((s) => s.id === seasonId);
+  if (!targetSeason) {
     return res.status(404).json({ error: 'Musim Laga Amal tidak ditemukan' });
   }
+
+  // Remove all matches associated with this season
+  const extractNum = (s?: string) => s?.match(/(\d+)/)?.[1];
+  const targetNum = extractNum(targetSeason.title) || extractNum(targetSeason.id);
+
+  store.matches = store.matches.filter((m) => {
+    const mNum = extractNum(m.season);
+    const isThisSeason =
+      (targetNum && mNum === targetNum) ||
+      m.season === targetSeason.id ||
+      m.season === targetSeason.title ||
+      (m.season && m.season.toLowerCase().includes(targetSeason.id.toLowerCase()));
+    return !isThisSeason;
+  });
 
   store.lagaAmalSeasons = store.lagaAmalSeasons.filter((s) => s.id !== seasonId);
   store.players = buildPlayersFromSeason(store.lagaAmalSeasons[0]);
   saveStore(store);
-  res.json({ success: true, seasons: store.lagaAmalSeasons, players: store.players });
+  res.json({ success: true, seasons: store.lagaAmalSeasons, players: store.players, matches: store.matches });
 });
 
 // ----------------- VITE MIDDLEWARE / SPA FALLBACK -----------------

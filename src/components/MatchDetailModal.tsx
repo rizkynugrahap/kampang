@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
-import { X, Sparkles, Trophy, Calendar, RefreshCw, Bot } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Trophy, Calendar, RefreshCw, Bot, Trash2 } from 'lucide-react';
 import { Match, Medal } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
+import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 
 interface MatchDetailModalProps {
   match: Match | null;
+  isAdmin?: boolean;
   onClose: () => void;
   onReanalyze?: (matchId: number) => Promise<void>;
+  onReanalyzeMatch?: (matchId: number) => Promise<void>;
+  onDeleteMatch?: (matchId: number) => void | Promise<void>;
+  onSelectPlayer?: (name: string) => void;
 }
 
 const MEDAL_BADGES: Record<Medal, { bg: string; text: string; label: string }> = {
@@ -19,24 +24,48 @@ const MEDAL_BADGES: Record<Medal, { bg: string; text: string; label: string }> =
 
 export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
   match,
+  isAdmin = false,
   onClose,
   onReanalyze,
+  onReanalyzeMatch,
+  onDeleteMatch,
+  onSelectPlayer,
 }) => {
   const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const reanalyzeFn = onReanalyzeMatch || onReanalyze;
 
   if (!match) return null;
 
   const isPohonWinner = match.winner === 'Tim Pohon';
 
   const handleReanalyze = async () => {
-    if (!onReanalyze) return;
+    if (!isAdmin || !reanalyzeFn) return;
     setIsReanalyzing(true);
     try {
-      await onReanalyze(match.id);
+      await reanalyzeFn(match.id);
     } finally {
       setIsReanalyzing(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (!onDeleteMatch) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteMatch(match.id);
+      onClose();
+    } catch (e) {
+      console.warn('Error in modal delete match:', e);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const analysisDisplay = match.ai_analysis || generateHeuristicMatchAnalysis(match);
 
   return (
     <div
@@ -107,7 +136,10 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 return (
                   <div
                     key={p.id || idx}
-                    className="flex items-center justify-between rounded-lg bg-[#191513]/80 px-3 py-2 text-xs border border-[#2A231D]"
+                    onClick={() => onSelectPlayer && onSelectPlayer(p.player_name)}
+                    className={`flex items-center justify-between rounded-lg bg-[#191513]/80 px-3 py-2 text-xs border border-[#2A231D] ${
+                      onSelectPlayer ? 'cursor-pointer hover:border-[#4F7942]/60 hover:bg-[#241F1B]' : ''
+                    }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <PlayerAvatar name={p.player_name} size="sm" team="Pohon" />
@@ -154,7 +186,10 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 return (
                   <div
                     key={p.id || idx}
-                    className="flex items-center justify-between rounded-lg bg-[#191513]/80 px-3 py-2 text-xs border border-[#2A231D]"
+                    onClick={() => onSelectPlayer && onSelectPlayer(p.player_name)}
+                    className={`flex items-center justify-between rounded-lg bg-[#191513]/80 px-3 py-2 text-xs border border-[#2A231D] ${
+                      onSelectPlayer ? 'cursor-pointer hover:border-[#C97A3D]/60 hover:bg-[#241F1B]' : ''
+                    }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <PlayerAvatar name={p.player_name} size="sm" team="Lobby" />
@@ -191,17 +226,17 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 Analisis Pertandingan AI (Gemini)
               </h4>
             </div>
-            {onReanalyze && (
+            {isAdmin && reanalyzeFn && (
               <button
                 id="reanalyze-match-btn"
                 onClick={handleReanalyze}
                 disabled={isReanalyzing}
-                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[#9C948A] hover:bg-[#332C25] hover:text-[#F2EDE4] disabled:opacity-50"
-                title="Generate ulang analisis"
+                className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#1D1916] px-2.5 py-1 text-[11px] font-medium text-[#E8B33D] hover:border-[#E8B33D]/40 hover:bg-[#241F1B] disabled:opacity-50 transition-all cursor-pointer"
+                title="Generate ulang analisis dengan Gemini AI"
               >
                 <RefreshCw
                   size={12}
-                  className={isReanalyzing ? 'animate-spin' : ''}
+                  className={isReanalyzing ? 'animate-spin text-[#E8B33D]' : ''}
                 />
                 <span>{isReanalyzing ? 'Menganalisis...' : 'Analisis Ulang'}</span>
               </button>
@@ -209,27 +244,65 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
           </div>
 
           <div className="text-xs leading-relaxed text-[#F2EDE4] whitespace-pre-line">
-            {match.ai_analysis ? (
-              match.ai_analysis
-            ) : match.is_generating_analysis ? (
-              <div className="flex items-center gap-2 py-3 text-[#9C948A]">
-                <RefreshCw size={14} className="animate-spin text-[#E8B33D]" />
-                <span>AI sedang menganalisis jalannya pertandingan...</span>
+            {isReanalyzing ? (
+              <div className="space-y-2 py-1">
+                <div className="flex items-center gap-2 text-[#E8B33D]">
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span className="font-medium">AI Gemini sedang menganalisis jalannya pertandingan...</span>
+                </div>
+                <p className="text-[#9C948A] opacity-80 border-t border-[#332C25]/60 pt-2 text-[11px]">
+                  {analysisDisplay}
+                </p>
               </div>
             ) : (
-              <span className="italic text-[#9C948A]">
-                Belum ada analisis untuk pertandingan ini.
-              </span>
+              analysisDisplay
             )}
           </div>
         </div>
 
-        {/* Close Button */}
-        <div className="mt-4 flex justify-end">
+        {/* Action Buttons */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          {isAdmin && onDeleteMatch ? (
+            showDeleteConfirm ? (
+              <div className="flex items-center gap-2 rounded-lg border border-red-900/60 bg-red-950/40 p-1.5">
+                <span className="text-xs font-semibold text-red-300 pl-1">Hapus match ini?</span>
+                <button
+                  id="confirm-delete-match-modal-btn"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex items-center gap-1 rounded-md bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  <Trash2 size={12} />
+                  <span>{isDeleting ? 'Menghapus...' : 'Ya, Hapus'}</span>
+                </button>
+                <button
+                  id="cancel-delete-match-modal-btn"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="rounded-md border border-[#332C25] bg-[#1D1916] px-2.5 py-1 text-xs text-[#9C948A] hover:text-[#F2EDE4] transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+            ) : (
+              <button
+                id="delete-match-modal-btn"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={isDeleting}
+                className="flex items-center gap-1.5 rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 font-medium text-xs text-red-400 hover:bg-red-900/30 hover:border-red-800 disabled:opacity-50 transition-all cursor-pointer"
+              >
+                <Trash2 size={13} />
+                <span>Hapus Match</span>
+              </button>
+            )
+          ) : (
+            <div />
+          )}
+
           <button
             id="close-match-detail-footer-btn"
             onClick={onClose}
-            className="rounded-lg border border-[#332C25] bg-[#241F1B] px-5 py-2 font-semibold text-xs text-[#F2EDE4] hover:bg-[#2e2722]"
+            className="rounded-lg border border-[#332C25] bg-[#241F1B] px-5 py-2 font-semibold text-xs text-[#F2EDE4] hover:bg-[#2e2722] cursor-pointer ml-auto"
           >
             Tutup
           </button>

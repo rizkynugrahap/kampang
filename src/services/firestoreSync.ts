@@ -63,14 +63,14 @@ export function subscribeToMatches(
   return onSnapshot(
     colRef,
     (snapshot) => {
+      const matchesList: Match[] = [];
       if (!snapshot.empty) {
-        const matchesList: Match[] = [];
         snapshot.forEach((docSnap) => {
           matchesList.push(docSnap.data() as Match);
         });
         matchesList.sort((a, b) => Number(b.id) - Number(a.id));
-        onUpdate(matchesList);
       }
+      onUpdate(matchesList);
     },
     (err) => {
       console.warn('Firestore matches snapshot error:', err);
@@ -144,6 +144,85 @@ export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[])
 export async function deleteLagaAmalFromFirestore(seasonId: string): Promise<void> {
   const docRef = doc(db, 'laga_amal_seasons', String(seasonId));
   await deleteDoc(docRef);
+}
+
+/**
+ * Deletes a single match from Firestore
+ */
+export async function deleteMatchFromFirestore(matchId: string | number): Promise<void> {
+  const docRef = doc(db, 'matches', String(matchId));
+  try {
+    await deleteDoc(docRef);
+  } catch (e) {
+    console.warn('Direct doc delete error:', e);
+  }
+
+  // Also query by numeric or string id in case doc ID differs
+  try {
+    const numId = Number(matchId);
+    const snap = await getDocs(collection(db, 'matches'));
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.forEach((d) => {
+        const data = d.data();
+        if (
+          String(d.id) === String(matchId) ||
+          String(data.id) === String(matchId) ||
+          (!isNaN(numId) && data.id === numId)
+        ) {
+          batch.delete(d.ref);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+      }
+    }
+  } catch (err) {
+    console.warn('Query fallback deleteMatchFromFirestore:', err);
+  }
+}
+
+/**
+ * Deletes a batch of matches from Firestore
+ */
+export async function deleteMatchesBatchFromFirestore(matchIds: (string | number)[]): Promise<void> {
+  if (!matchIds || matchIds.length === 0) return;
+  const idSet = new Set(matchIds.map((id) => String(id)));
+
+  // Try direct batch deletion
+  try {
+    const batch = writeBatch(db);
+    matchIds.forEach((id) => {
+      const directDocRef = doc(db, 'matches', String(id));
+      batch.delete(directDocRef);
+    });
+    await batch.commit();
+  } catch (e) {
+    console.warn('Batch direct delete error:', e);
+  }
+
+  // Also ensure any matches matching by data.id are deleted
+  try {
+    const snap = await getDocs(collection(db, 'matches'));
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.forEach((d) => {
+        const data = d.data();
+        if (idSet.has(String(d.id)) || (data.id !== undefined && idSet.has(String(data.id)))) {
+          batch.delete(d.ref);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+      }
+    }
+  } catch (err) {
+    console.warn('Batch query delete fallback:', err);
+  }
 }
 
 // ----------------- ADMIN LOGIN (Firestore-only) -----------------

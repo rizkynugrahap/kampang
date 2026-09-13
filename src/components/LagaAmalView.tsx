@@ -109,6 +109,8 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
   // Selected player detail modal
   const [detailPlayer, setDetailPlayer] = useState<LagaAmalPlayerStat | null>(null);
+  const [showDeleteSeasonConfirm, setShowDeleteSeasonConfirm] = useState(false);
+  const [isDeletingSeason, setIsDeletingSeason] = useState(false);
 
   // Sort and filter players for standings
   const filteredPlayers = useMemo(() => {
@@ -381,20 +383,51 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
             )}
 
             {isAdmin && onDeleteSeason && (
-              <button
-                id="btn-delete-season"
-                onClick={() => onDeleteSeason(currentSeason.id)}
-                disabled={seasons.length <= 1}
-                title={
-                  seasons.length <= 1
-                    ? 'Tidak bisa menghapus satu-satunya season yang tersisa'
-                    : `Hapus klasemen ${currentSeason.title}`
-                }
-                className="flex items-center gap-1.5 rounded-lg border border-rose-800/40 bg-rose-950/20 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-950/40 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Trash2 size={14} />
-                <span>Hapus Klasemen</span>
-              </button>
+              showDeleteSeasonConfirm ? (
+                <div className="flex items-center gap-1.5 rounded-lg border border-red-900/60 bg-red-950/50 p-1">
+                  <span className="text-xs font-semibold text-red-300 pl-1">Hapus klasemen ini?</span>
+                  <button
+                    id="btn-confirm-delete-season"
+                    onClick={async () => {
+                      setIsDeletingSeason(true);
+                      try {
+                        await onDeleteSeason(currentSeason.id);
+                      } finally {
+                        setIsDeletingSeason(false);
+                        setShowDeleteSeasonConfirm(false);
+                      }
+                    }}
+                    disabled={isDeletingSeason}
+                    className="flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Trash2 size={12} />
+                    <span>{isDeletingSeason ? 'Menghapus...' : 'Ya, Hapus'}</span>
+                  </button>
+                  <button
+                    id="btn-cancel-delete-season"
+                    onClick={() => setShowDeleteSeasonConfirm(false)}
+                    disabled={isDeletingSeason}
+                    className="rounded-md border border-[#332C25] bg-[#1D1916] px-2 py-1 text-xs text-[#9C948A] hover:text-[#F2EDE4] cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                </div>
+              ) : (
+                <button
+                  id="btn-delete-season"
+                  onClick={() => setShowDeleteSeasonConfirm(true)}
+                  disabled={seasons.length <= 1}
+                  title={
+                    seasons.length <= 1
+                      ? 'Tidak bisa menghapus satu-satunya season yang tersisa'
+                      : `Hapus klasemen ${currentSeason.title}`
+                  }
+                  className="flex items-center gap-1.5 rounded-lg border border-rose-800/40 bg-rose-950/20 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-950/40 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={14} />
+                  <span>Hapus Klasemen</span>
+                </button>
+              )
             )}
           </div>
         </div>

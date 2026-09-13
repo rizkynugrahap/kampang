@@ -365,3 +365,111 @@ export function applyMatchToSeason(season: LagaAmalSeasonData, match: Match): La
 
   return recalculateSeasonStats(updated);
 }
+
+/**
+ * Reverts a deleted match from a season, adjusting player stats,
+ * hero picks, hero pool, and match logs synchronously.
+ */
+export function revertMatchFromSeason(season: LagaAmalSeasonData, match: Match): LagaAmalSeasonData {
+  const updated = JSON.parse(JSON.stringify(season)) as LagaAmalSeasonData;
+  const allMatchPlayers = [...match.pohon, ...match.lobby];
+
+  // 1. Remove from matchRows
+  if (updated.matchRows) {
+    updated.matchRows = updated.matchRows.filter(
+      (row) => !row.id.startsWith(`match-${match.id}-`)
+    );
+  }
+
+  // 2. Remove from matchLogs
+  if (updated.matchLogs) {
+    updated.matchLogs = updated.matchLogs.filter(
+      (log) => !(log.date === match.date && log.winner === match.winner)
+    );
+    // re-number matchLogs
+    const total = updated.matchLogs.length;
+    updated.matchLogs.forEach((log, idx) => {
+      log.matchNumber = total - idx;
+    });
+  }
+
+  // 3. Subtract player stats
+  allMatchPlayers.forEach((mp) => {
+    const playerStat = (updated.players || []).find(
+      (p) => p.nickname.toLowerCase() === mp.player_name.toLowerCase()
+    );
+    if (!playerStat) return;
+
+    const isWinner =
+      (mp.team === 'Pohon' && match.winner === 'Tim Pohon') ||
+      (mp.team === 'Lobby' && match.winner === 'Tim Lobby');
+
+    const scoreDelta =
+      typeof mp.score === 'number' && !isNaN(mp.score)
+        ? mp.score
+        : mp.medal === 'MVP'
+        ? 10.0
+        : mp.medal === 'Gold'
+        ? 8.5
+        : mp.medal === 'Silver'
+        ? 6.0
+        : 3.5;
+
+    if (playerStat.matches > 1) {
+      const currentWins = Math.round(((playerStat.winRate || 0) * playerStat.matches) / 100);
+      const newWins = Math.max(0, currentWins - (isWinner ? 1 : 0));
+      playerStat.matches -= 1;
+      playerStat.winRate = parseFloat(((newWins / playerStat.matches) * 100).toFixed(2));
+      playerStat.score = parseFloat(Math.max(0, playerStat.score - scoreDelta).toFixed(1));
+      playerStat.avgScore = parseFloat((playerStat.score / playerStat.matches).toFixed(2));
+
+      if (mp.medal === 'Coklat') playerStat.coklat = Math.max(0, playerStat.coklat - 1);
+      else if (mp.medal === 'Silver') playerStat.silver = Math.max(0, playerStat.silver - 1);
+      else if (mp.medal === 'Gold') playerStat.antam = Math.max(0, playerStat.antam - 1);
+      else if (mp.medal === 'MVP') playerStat.mvp = Math.max(0, playerStat.mvp - 1);
+    } else {
+      playerStat.matches = 0;
+      playerStat.score = 0;
+      playerStat.avgScore = 0;
+      playerStat.winRate = 0;
+      playerStat.coklat = 0;
+      playerStat.silver = 0;
+      playerStat.antam = 0;
+      playerStat.mvp = 0;
+    }
+
+    // 4. Update hero picks
+    if (updated.heroPicksByUser) {
+      const heroPick = updated.heroPicksByUser.find(
+        (hp) =>
+          hp.player.toLowerCase() === mp.player_name.toLowerCase() &&
+          hp.hero.toLowerCase() === mp.hero_name.toLowerCase()
+      );
+      if (heroPick) {
+        heroPick.total = Math.max(0, heroPick.total - 1);
+        if (mp.medal === 'Coklat') heroPick.coklat = Math.max(0, heroPick.coklat - 1);
+        else if (mp.medal === 'Silver') heroPick.silver = Math.max(0, heroPick.silver - 1);
+        else if (mp.medal === 'Gold') heroPick.antam = Math.max(0, heroPick.antam - 1);
+        else if (mp.medal === 'MVP') heroPick.mvp = Math.max(0, heroPick.mvp - 1);
+      }
+    }
+
+    // 5. Update hero pool
+    if (updated.heroPool) {
+      const poolItem = updated.heroPool.find(
+        (item: any) => (item.heroName || item.hero || '').toLowerCase() === mp.hero_name.toLowerCase()
+      );
+      if (poolItem) {
+        poolItem.picked = Math.max(0, (poolItem.picked || 0) - 1);
+        poolItem.timesPicked = Math.max(0, (poolItem.timesPicked || 0) - 1);
+      }
+    }
+  });
+
+  if (updated.heroPicksByUser) {
+    updated.heroPicksByUser = updated.heroPicksByUser.filter((hp) => hp.total > 0);
+    updated.heroPicks = deriveHeroPicksForUI(updated.heroPicksByUser);
+  }
+
+  return recalculateSeasonStats(updated);
+}

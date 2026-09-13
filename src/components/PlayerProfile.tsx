@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserRound,
   TrendingUp,
@@ -11,6 +11,9 @@ import {
   ChevronRight,
   Camera,
   Calendar,
+  Settings2,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import {
   PieChart,
@@ -23,7 +26,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Player, Match, LagaAmalSeasonData } from '../types';
+import { Player, Match, LagaAmalSeasonData, MLBB_TIER_OPTIONS } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
@@ -35,7 +38,10 @@ interface PlayerProfileProps {
   onSelectPlayer?: (id: number | string) => void;
   activeSeason?: LagaAmalSeasonData;
   matches?: Match[];
+  isAdmin?: boolean;
   onUpdatePlayerAvatar?: (playerId: number | string, newAvatarUrl: string) => Promise<boolean> | boolean;
+  onUpdatePlayerDetails?: (playerId: number | string, updates: Partial<Player>) => Promise<boolean> | boolean;
+  onGenerateJulukan?: (playerId: number | string) => Promise<string | null>;
 }
 
 export const PlayerProfile: React.FC<PlayerProfileProps> = ({
@@ -44,13 +50,18 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   onSelectPlayer,
   activeSeason,
   matches = [],
+  isAdmin = false,
   onUpdatePlayerAvatar,
+  onUpdatePlayerDetails,
+  onGenerateJulukan,
 }) => {
   const [internalSelectedId, setInternalSelectedId] = useState<number | string>(
     selectedPlayerId || (players[0] ? players[0].id : 1)
   );
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState<boolean>(false);
-  const [trendMetric, setTrendMetric] = useState<'performa' | 'rating'>('performa');
+  const [isEditBadgesOpen, setIsEditBadgesOpen] = useState<boolean>(false);
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState<boolean>(false);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
   const activeId = selectedPlayerId !== undefined ? selectedPlayerId : internalSelectedId;
   const player =
@@ -110,14 +121,83 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   // Daily Trend score & performa calculation
   const dailyTrendData = getPlayerPerformanceTrend(player.name, matches, activeSeason);
 
-  // Dynamic status title
+  // Dynamic status title (prefer saved julukan, fallback to heuristic)
   const getPlayerTitle = () => {
+    if (player.julukan) return player.julukan;
     if (seasonRank === 1) return 'Pemuncak Klasemen Laga Amal (Raja Pantos)';
     if (mvpCount >= 8) return 'Sang Penggendong Sejati (Tulang Punggung)';
     if (coklatCount >= 5) return 'Warga Kehormatan Kelas Semen';
     if (goldCount >= 6) return 'Kolektor Antam Konsisten (Anti Beban)';
     if (silverCount >= 7) return 'Spesialis Runner-up (Cukup Rapi)';
     return 'Peserta Aktif Laga Amal Pantos';
+  };
+
+  // Admin manual generate julukan
+  const handleManualGenerateTitle = async () => {
+    if (!player || !onGenerateJulukan || isGeneratingTitle) return;
+    try {
+      setIsGeneratingTitle(true);
+      setStatusFeedback('Membuat julukan baru dengan AI...');
+      const newTitle = await onGenerateJulukan(player.id);
+      if (newTitle) {
+        setStatusFeedback(`Julukan baru diperbarui: "${newTitle}"`);
+      } else {
+        setStatusFeedback('Julukan berhasil diperbarui');
+      }
+      setTimeout(() => setStatusFeedback(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatusFeedback('Gagal membuat julukan AI');
+      setTimeout(() => setStatusFeedback(null), 3000);
+    } finally {
+      setIsGeneratingTitle(false);
+    }
+  };
+
+  // Admin update status (Cabutan vs Aktif)
+  const handleToggleStatus = async (newStatus: 'Aktif' | 'Cabutan') => {
+    if (!player || !onUpdatePlayerDetails) return;
+    try {
+      await onUpdatePlayerDetails(player.id, { status: newStatus });
+      setStatusFeedback(`Status diubah menjadi: ${newStatus}`);
+      setTimeout(() => setStatusFeedback(null), 2500);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Admin update tier (Warrior, Epic, Legend, Mythic)
+  const handleSelectTier = async (newTier: string) => {
+    if (!player || !onUpdatePlayerDetails) return;
+    try {
+      await onUpdatePlayerDetails(player.id, { tier: newTier });
+      setStatusFeedback(`Tier diubah menjadi: ${newTier}`);
+      setTimeout(() => setStatusFeedback(null), 2500);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getTierBadgeStyle = (tierName: string = '') => {
+    const t = tierName.toLowerCase();
+    if (t.includes('immortal')) return 'bg-amber-950/80 text-amber-200 border-amber-400/80 shadow-[0_0_12px_rgba(232,179,61,0.3)]';
+    if (t.includes('glory')) return 'bg-red-950/60 text-red-300 border-red-500/60';
+    if (t.includes('honor')) return 'bg-purple-950/60 text-purple-300 border-purple-500/60';
+    if (t.includes('mythic') || t.includes('myth')) return 'bg-rose-950/50 text-rose-300 border-rose-500/50';
+    if (t.includes('legend')) return 'bg-[#E8B33D]/15 text-[#E8B33D] border-[#E8B33D]/40';
+    if (t.includes('epic')) return 'bg-emerald-950/50 text-emerald-300 border-emerald-500/50';
+    if (t.includes('grandma') || t.includes('grand')) return 'bg-cyan-950/50 text-cyan-300 border-cyan-500/50';
+    if (t.includes('master')) return 'bg-amber-950/40 text-amber-300 border-amber-500/40';
+    if (t.includes('elite')) return 'bg-slate-800 text-slate-200 border-slate-600';
+    if (t.includes('warrior')) return 'bg-stone-900 text-stone-300 border-stone-600';
+    return 'bg-[#241F1B] text-[#F2EDE4] border-[#332C25]';
+  };
+
+  const getStatusBadgeStyle = (statusName: string = '') => {
+    if (statusName === 'Cabutan') {
+      return 'bg-purple-950/40 text-purple-300 border-purple-500/40';
+    }
+    return 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40';
   };
 
   return (
@@ -174,6 +254,14 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
         })}
       </div>
 
+      {/* Status feedback toast if updated */}
+      {statusFeedback && (
+        <div className="rounded-lg bg-[#E8B33D]/10 border border-[#E8B33D]/40 px-3.5 py-2 text-xs font-semibold text-[#E8B33D] flex items-center gap-2 animate-fadeIn">
+          <Check size={14} />
+          <span>{statusFeedback}</span>
+        </div>
+      )}
+
       {/* Player overview card */}
       <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-lg space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#332C25] pb-5">
@@ -198,27 +286,84 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             </div>
 
             <div>
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-black text-2xl text-[#F2EDE4] tracking-tight">
                   {player.name}
                 </h3>
-                <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
+
+                {/* Status Badge (Cabutan / Aktif) */}
+                <span
+                  onClick={() => isAdmin && handleToggleStatus(player.status === 'Cabutan' ? 'Aktif' : 'Cabutan')}
+                  className={`rounded px-2.5 py-0.5 text-xs font-semibold border transition-all select-none ${getStatusBadgeStyle(
+                    player.status
+                  )} ${isAdmin ? 'cursor-pointer hover:ring-2 hover:ring-[#E8B33D]/50' : ''}`}
+                  title={isAdmin ? `Klik untuk ubah ke ${player.status === 'Cabutan' ? 'Aktif' : 'Cabutan'}` : player.status}
+                >
                   {player.status}
+                  {isAdmin && <span className="text-[9px] opacity-70 ml-1">⇄</span>}
                 </span>
-                <span className="rounded bg-[#E8B33D]/10 px-2 py-0.5 text-xs font-semibold text-[#E8B33D] border border-[#E8B33D]/20">
+
+                {/* Tier Badge (Warrior / Epic / Legend / Mythic) */}
+                <span
+                  onClick={() => isAdmin && setIsEditBadgesOpen(true)}
+                  className={`rounded px-2.5 py-0.5 text-xs font-semibold border transition-all select-none ${getTierBadgeStyle(
+                    player.tier
+                  )} ${isAdmin ? 'cursor-pointer hover:ring-2 hover:ring-[#E8B33D]/50' : ''}`}
+                  title={isAdmin ? 'Klik untuk ubah Tier' : `Tier ${player.tier}`}
+                >
                   {player.tier}
+                  {isAdmin && <ChevronDown size={10} className="inline ml-1 opacity-70" />}
                 </span>
+
+                {/* Admin Quick Action for Status and Tier */}
+                {isAdmin && (
+                  <button
+                    onClick={() => setIsEditBadgesOpen(!isEditBadgesOpen)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#332C25] bg-[#241F1B] hover:bg-[#2A241E] hover:border-[#E8B33D]/50 px-2.5 py-1 text-[11px] font-bold text-[#E8B33D] transition-colors cursor-pointer"
+                    title="Ubah Badge Cabutan dan Tier"
+                  >
+                    <Settings2 size={12} />
+                    <span>Ubah Badge & Tier</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setIsAvatarModalOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[#332C25] bg-[#241F1B] hover:bg-[#2A241E] hover:border-[#E8B33D]/50 px-2.5 py-1 text-[11px] font-bold text-[#E8B33D] transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-lg border border-[#332C25] bg-[#241F1B] hover:bg-[#2A241E] hover:border-[#E8B33D]/50 px-2.5 py-1 text-[11px] font-bold text-[#9C948A] hover:text-[#F2EDE4] transition-colors cursor-pointer"
                 >
                   <Camera size={12} />
-                  <span>Update Foto Profil</span>
+                  <span>Update Foto</span>
                 </button>
               </div>
-              <p className="mt-1 text-xs text-[#9C948A]">
-                Julukan Pantos: <span className="text-[#F2EDE4] font-medium italic">"{getPlayerTitle()}"</span>
-              </p>
+
+              {/* Julukan Pantos (AI Generated) */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <p className="text-xs text-[#9C948A]">
+                  Julukan Pantos:{' '}
+                  <span className="text-[#F2EDE4] font-medium italic">
+                    "{getPlayerTitle()}"
+                  </span>
+                </p>
+
+                {isAdmin && (
+                  <button
+                    id="btn-generate-julukan"
+                    onClick={handleManualGenerateTitle}
+                    disabled={isGeneratingTitle}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[#E8B33D]/40 bg-[#E8B33D]/10 hover:bg-[#E8B33D]/25 px-2.5 py-0.5 text-[11px] font-bold text-[#E8B33D] transition-all cursor-pointer disabled:opacity-50 shadow-sm"
+                    title="Buat julukan baru dengan AI Gemini"
+                  >
+                    <Sparkles size={11} className={isGeneratingTitle ? 'animate-spin text-[#E8B33D]' : 'text-[#E8B33D]'} />
+                    <span>{isGeneratingTitle ? 'Membuat AI...' : 'Generate Julukan'}</span>
+                  </button>
+                )}
+              </div>
+
+              {player.julukan_updated_at && (
+                <p className="text-[10px] text-[#9C948A]/70 mt-0.5">
+                  Update mingguan: {new Date(player.julukan_updated_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              )}
             </div>
           </div>
 
@@ -250,6 +395,79 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Inline Admin Editor for Status (Cabutan) & Tier */}
+        {isAdmin && isEditBadgesOpen && (
+          <div className="rounded-xl border border-[#E8B33D]/30 bg-[#241F1B] p-4 space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#E8B33D] flex items-center gap-1.5 uppercase tracking-wider">
+                <Settings2 size={14} /> Pengaturan Badge Cabutan & Tier Pemain (Admin)
+              </span>
+              <button
+                onClick={() => setIsEditBadgesOpen(false)}
+                className="text-[11px] text-[#9C948A] hover:text-[#F2EDE4] font-medium cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Badge Cabutan / Aktif */}
+              <div>
+                <label className="text-[11px] font-semibold text-[#9C948A] block mb-1.5">
+                  Badge Status Pemain:
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleToggleStatus('Aktif')}
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold border transition-all cursor-pointer ${
+                      player.status === 'Aktif'
+                        ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/80 shadow'
+                        : 'bg-[#1D1916] text-[#9C948A] border-[#332C25] hover:border-emerald-500/40'
+                    }`}
+                  >
+                    Aktif (Member Tetap)
+                  </button>
+                  <button
+                    onClick={() => handleToggleStatus('Cabutan')}
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold border transition-all cursor-pointer ${
+                      player.status === 'Cabutan'
+                        ? 'bg-purple-950/60 text-purple-300 border-purple-500/80 shadow'
+                        : 'bg-[#1D1916] text-[#9C948A] border-[#332C25] hover:border-purple-500/40'
+                    }`}
+                  >
+                    Cabutan (Tamu)
+                  </button>
+                </div>
+              </div>
+
+              {/* Tier Selection Dropdown */}
+              <div>
+                <label className="text-[11px] font-semibold text-[#9C948A] block mb-1.5">
+                  Tier Pemain:
+                </label>
+                <div className="relative">
+                  <select
+                    id="select-player-tier"
+                    value={player.tier}
+                    onChange={(e) => handleSelectTier(e.target.value)}
+                    className="w-full appearance-none rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2 pr-9 text-xs font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer transition-colors shadow-sm"
+                  >
+                    {MLBB_TIER_OPTIONS.map((t) => (
+                      <option key={t} value={t} className="bg-[#1D1916] text-[#F2EDE4]">
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#E8B33D]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4 Medals Breakdown Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -344,112 +562,99 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             </div>
           </div>
 
-          {/* Line Chart: Tren Skor & Performa Harian (Daily) */}
+          {/* Line Chart: Tren Rating Skor (7 Hari Terakhir) */}
           <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-4 flex flex-col justify-between">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="flex items-center gap-1.5 font-bold text-xs text-[#E8B33D] uppercase tracking-wider">
-                  <TrendingUp size={14} /> Tren Skor & Performa Harian (Daily)
+                  <TrendingUp size={14} /> Tren Rating Skor (7 Hari Terakhir)
                 </span>
                 <span className="text-[11px] text-[#9C948A] block">
-                  Dihitung dari riwayat skor harian (Daily Trend)
+                  Diambil dari klasemen & skor laga amal setiap match pemain (rentang 7 hari)
                 </span>
               </div>
 
-              {/* Metric Toggle */}
-              <div className="flex items-center rounded-lg border border-[#332C25] bg-[#1D1916] p-0.5 text-[11px]">
-                <button
-                  id="btn-metric-performa"
-                  onClick={() => setTrendMetric('performa')}
-                  className={`rounded-md px-2.5 py-1 font-bold transition-all cursor-pointer ${
-                    trendMetric === 'performa'
-                      ? 'bg-[#E8B33D] text-[#161311] shadow'
-                      : 'text-[#9C948A] hover:text-[#F2EDE4]'
-                  }`}
-                >
-                  Poin Performa (0-3)
-                </button>
-                <button
-                  id="btn-metric-rating"
-                  onClick={() => setTrendMetric('rating')}
-                  className={`rounded-md px-2.5 py-1 font-bold transition-all cursor-pointer ${
-                    trendMetric === 'rating'
-                      ? 'bg-[#E8B33D] text-[#161311] shadow'
-                      : 'text-[#9C948A] hover:text-[#F2EDE4]'
-                  }`}
-                >
-                  Rating Skor (0-10)
-                </button>
+              <div className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#1D1916] px-2.5 py-1 text-[11px] font-bold text-[#E8B33D]">
+                <Zap size={12} className="text-[#E8B33D]" />
+                <span>Skala Rating (0 - 10)</span>
               </div>
             </div>
 
-            <div className="h-48 w-full mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyTrendData}>
-                  <XAxis
-                    dataKey="label"
-                    stroke="#9C948A"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={{ stroke: '#332C25' }}
-                  />
-                  <YAxis
-                    domain={trendMetric === 'performa' ? [0, 3] : [0, 10]}
-                    ticks={trendMetric === 'performa' ? [0, 1, 2, 3] : [0, 2, 4, 6, 8, 10]}
-                    stroke="#9C948A"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1D1916',
-                      borderColor: '#332C25',
-                      color: '#F2EDE4',
-                      borderRadius: '10px',
-                      fontSize: '12px',
-                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
-                    }}
-                    formatter={(val: any, name: any, item: any) => {
-                      const payload = item.payload;
-                      if (trendMetric === 'performa') {
+            {dailyTrendData.some((d) => d.hasMatch) ? (
+              <div className="h-48 w-full mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailyTrendData}>
+                    <XAxis
+                      dataKey="label"
+                      stroke="#9C948A"
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={{ stroke: '#332C25' }}
+                    />
+                    <YAxis
+                      domain={[0, 10]}
+                      ticks={[0, 2, 4, 6, 8, 10]}
+                      stroke="#9C948A"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#1D1916',
+                        borderColor: '#332C25',
+                        color: '#F2EDE4',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                      }}
+                      formatter={(val: any, name: any, item: any) => {
+                        const payload = item.payload;
+                        if (!payload.hasMatch || val === null || val === undefined) {
+                          return ['Tidak ada match', 'Rating Skor'];
+                        }
                         return [
-                          <div key="tooltip-performa" className="space-y-1">
-                            <p className="font-bold text-[#E8B33D]">{val} Poin Performa</p>
-                            <p className="text-[11px] text-[#9C948A]">Rating Skor MLBB: <span className="text-[#F2EDE4] font-semibold">{payload.rating}</span></p>
-                            <p className="text-[11px] text-[#9C948A]">{payload.detail}</p>
+                          <div key="tooltip-rating" className="space-y-1">
+                            <p className="font-bold text-[#E8B33D] text-sm">{val} / 10.0</p>
+                            <p className="text-[11px] text-[#9C948A]">
+                              Total Pertandingan: <span className="text-[#F2EDE4] font-semibold">{payload.matchesCount || 0} Match</span>
+                            </p>
+                            {payload.detail && (
+                              <p className="text-[11px] text-[#9C948A]">{payload.detail}</p>
+                            )}
                           </div>,
-                          'Daily Score'
+                          'Rating Skor'
                         ];
-                      }
-                      return [
-                        <div key="tooltip-rating" className="space-y-1">
-                          <p className="font-bold text-[#E8B33D]">{val} (Rating MLBB)</p>
-                          <p className="text-[11px] text-[#9C948A]">Poin Performa: <span className="text-[#F2EDE4] font-semibold">{payload.score} Poin</span></p>
-                          <p className="text-[11px] text-[#9C948A]">{payload.detail}</p>
-                        </div>,
-                        'Daily Score'
-                      ];
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey={trendMetric === 'performa' ? 'score' : 'rating'}
-                    stroke="#E8B33D"
-                    strokeWidth={2.5}
-                    dot={{ r: 4, fill: '#E8B33D', stroke: '#1D1916', strokeWidth: 1.5 }}
-                    activeDot={{ r: 6, fill: '#F2EDE4' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="rating"
+                      connectNulls={false}
+                      stroke="#E8B33D"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#E8B33D', stroke: '#1D1916', strokeWidth: 1.5 }}
+                      activeDot={{ r: 6, fill: '#F2EDE4' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-44 w-full rounded-xl border border-dashed border-[#332C25] bg-[#241F1B]/40 p-4 text-center my-2">
+                <TrendingUp size={24} className="text-[#9C948A]/40 mb-1.5" />
+                <p className="text-xs font-bold text-[#F2EDE4]">Belum Ada Pertandingan dalam 7 Hari Terakhir</p>
+                <p className="text-[11px] text-[#9C948A] max-w-sm mt-1">
+                  Rating skor dihitung otomatis dari riwayat skor match Laga Amal. Belum ada pertandingan tercatat untuk {player.name} pada rentang 7 hari ini.
+                </p>
+              </div>
+            )}
 
             <div className="mt-2 flex items-center justify-between text-[11px] text-[#9C948A] border-t border-[#332C25]/50 pt-2">
               <span className="flex items-center gap-1">
                 <Calendar size={12} className="text-[#E8B33D]" />
-                <span>Tren skor diakumulasi harian (Daily)</span>
+                <span>Rentang waktu 7 hari terakhir disinkronkan dengan data match Laga Amal</span>
               </span>
-              <span>{trendMetric === 'performa' ? 'MVP=3, Gold=2, Silver=1, Coklat=0' : 'Skala Skor Standar MLBB'}</span>
+              <span className="text-[#E8B33D] font-semibold">Standar Skor Laga Amal</span>
             </div>
           </div>
         </div>
@@ -466,40 +671,50 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {topHeroes.map((h, i) => (
-              <div
-                key={h.hero}
-                className="rounded-xl border border-[#332C25] bg-[#241F1B] p-3.5"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex h-5 w-5 items-center justify-center rounded bg-[#161311] font-bold text-xs text-[#E8B33D]">
-                      #{i + 1}
-                    </span>
-                    <HeroAvatar heroName={h.hero} size="sm" shape="rounded" />
-                    <span className="font-bold text-sm text-[#F2EDE4]">
-                      {h.hero}
+            {topHeroes.length > 0 ? (
+              topHeroes.map((h, i) => (
+                <div
+                  key={h.hero}
+                  className="rounded-xl border border-[#332C25] bg-[#241F1B] p-3.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-[#161311] font-bold text-xs text-[#E8B33D]">
+                        #{i + 1}
+                      </span>
+                      <HeroAvatar heroName={h.hero} size="sm" shape="rounded" />
+                      <span className="font-bold text-sm text-[#F2EDE4]">
+                        {h.hero}
+                      </span>
+                    </div>
+                    <span className="font-bold text-xs text-[#E8B33D]">
+                      {h.mvpRate}% MVP
                     </span>
                   </div>
-                  <span className="font-bold text-xs text-[#E8B33D]">
-                    {h.mvpRate}% MVP
-                  </span>
-                </div>
 
-                <div className="mt-2 flex items-center justify-between text-[11px] text-[#9C948A]">
-                  <span>{h.games} Pertandingan</span>
-                  <span>{h.mvpCount} Kali MVP</span>
-                </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#9C948A]">
+                    <span>{h.games} Pertandingan</span>
+                    <span>{h.mvpCount} Kali MVP</span>
+                  </div>
 
-                {/* Progress bar */}
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#161311]">
-                  <div
-                    className="h-full rounded-full bg-[#E8B33D]"
-                    style={{ width: `${Math.max(8, h.mvpRate)}%` }}
-                  />
+                  {/* Progress bar */}
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#161311]">
+                    <div
+                      className="h-full rounded-full bg-[#E8B33D]"
+                      style={{ width: `${Math.max(8, h.mvpRate)}%` }}
+                    />
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="col-span-full rounded-xl border border-dashed border-[#332C25] bg-[#241F1B]/40 p-6 text-center">
+                <Shield size={22} className="mx-auto text-[#9C948A]/40 mb-1.5" />
+                <p className="font-semibold text-xs text-[#F2EDE4]">Belum Ada Riwayat Pertandingan Hero</p>
+                <p className="text-[11px] text-[#9C948A] mt-1 max-w-md mx-auto">
+                  Hero andalan {player.name} akan tercatat dan tersinkronisasi otomatis saat pertandingan baru disimpan di Laga Amal.
+                </p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>

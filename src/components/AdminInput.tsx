@@ -15,7 +15,7 @@ import {
   Calendar,
   Layers,
 } from 'lucide-react';
-import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, LagaAmalSeasonData } from '../types';
+import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, LagaAmalSeasonData, MLBB_TIER_OPTIONS } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 
@@ -704,13 +704,13 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                 <select
                   value={newPlayerTier}
                   onChange={(e) => setNewPlayerTier(e.target.value)}
-                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:outline-none"
+                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-[#F2EDE4] focus:outline-none cursor-pointer"
                 >
-                  <option value="Mythic Immortal">Mythic Immortal</option>
-                  <option value="Mythical Glory">Mythical Glory</option>
-                  <option value="Mythic">Mythic</option>
-                  <option value="Legend">Legend</option>
-                  <option value="Epic">Epic</option>
+                  {MLBB_TIER_OPTIONS.map((t) => (
+                    <option key={t} value={t} className="bg-[#1D1916] text-[#F2EDE4]">
+                      {t}
+                    </option>
+                  ))}
                 </select>
               </div>
 

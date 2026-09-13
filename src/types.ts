@@ -1,5 +1,20 @@
 export type Medal = 'MVP' | 'Gold' | 'Silver' | 'Coklat';
 
+export const MLBB_TIER_OPTIONS = [
+  'Warrior',
+  'Elite',
+  'Master',
+  'Grandmaster',
+  'Epic',
+  'Legend',
+  'Mythic',
+  'Mythical Honor',
+  'Mythical Glory',
+  'Mythical Immortal',
+] as const;
+
+export type MLBBTier = typeof MLBB_TIER_OPTIONS[number];
+
 export type TeamName = 'Tim Pohon' | 'Tim Lobby';
 export type TeamShort = 'Pohon' | 'Lobby';
 
@@ -25,6 +40,8 @@ export interface Player {
   score?: number; // Total season score
   avgScore?: number;
   winRate?: number;
+  julukan?: string;
+  julukan_updated_at?: string;
 }
 
 export interface Hero {

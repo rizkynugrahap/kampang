@@ -32,10 +32,12 @@ import {
   syncLagaAmalToFirestore,
   syncPlayersBatchToFirestore,
   deleteLagaAmalFromFirestore,
+  deleteMatchFromFirestore,
+  deleteMatchesBatchFromFirestore,
 } from './services/firestoreSync';
 import { MLBB_HEROES } from './data/heroes';
-import { INITIAL_PLAYERS, INITIAL_MATCHES } from './data/seed';
-import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './data/seasonsSeed';
+import { INITIAL_PLAYERS } from './data/seed';
+import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason } from './data/seasonsSeed';
 import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 
@@ -67,7 +69,19 @@ export default function App() {
 
   // Player roster always strictly follows the active Laga Amal season
   const [players, setPlayers] = useState<Player[]>(() => buildPlayersFromSeason(activeSeason));
-  const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
+  // Primary source of truth for matches (persisted in cache and synced with backend & Firestore)
+  const [matches, setMatches] = useState<Match[]>(() => {
+    const saved = localStorage.getItem('pantos_matches_cache');
+    if (saved !== null) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.warn('Failed to parse matches cache:', e);
+      }
+    }
+    return [];
+  });
   const [heroes, setHeroes] = useState<Hero[]>(MLBB_HEROES);
 
   // Matches that belong to the currently selected Laga Amal season only.
@@ -140,8 +154,9 @@ export default function App() {
 
       if (matchesRes.ok) {
         const mData = await matchesRes.json();
-        if (Array.isArray(mData) && mData.length > 0) {
+        if (Array.isArray(mData)) {
           setMatches(mData);
+          localStorage.setItem('pantos_matches_cache', JSON.stringify(mData));
         }
       }
 
@@ -193,8 +208,9 @@ export default function App() {
 
     const unsubMatches = subscribeToMatches(
       (remoteMatches) => {
-        if (remoteMatches && remoteMatches.length > 0) {
+        if (Array.isArray(remoteMatches)) {
           setMatches(remoteMatches);
+          localStorage.setItem('pantos_matches_cache', JSON.stringify(remoteMatches));
           setLastSyncedAt(new Date());
           setIsFirestoreConnected(true);
         }
@@ -254,7 +270,11 @@ export default function App() {
       const savedMatch: Match = resData.match || resData;
 
       // Update local matches
-      setMatches((prev) => [savedMatch, ...prev]);
+      setMatches((prev) => {
+        const next = [savedMatch, ...prev];
+        localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
+        return next;
+      });
 
       // Apply match to active season
       const updatedSeason = applyMatchToSeason(activeSeason, savedMatch);
@@ -355,16 +375,66 @@ export default function App() {
       return;
     }
 
-    if (!confirm(`Hapus pertandingan #${matchId}?`)) return;
-
     try {
-      await fetch(`/api/matches/${matchId}`, { method: 'DELETE' });
-      setMatches((prev) => prev.filter((m) => m.id !== matchId));
-      setSelectedMatch(null);
+      setIsLoading(true);
+
+      // 1. Delete from Firestore so it doesn't reappear on snapshot/refresh
+      await deleteMatchFromFirestore(matchId);
+
+      // 2. Delete from backend server
+      fetch(`/api/matches/${matchId}`, { method: 'DELETE' }).catch((e) =>
+        console.warn('Backend delete match sync:', e)
+      );
+
+      // 3. Find the deleted match for reverting season stats
+      const deletedMatch = matches.find((m) => m.id === matchId);
+
+      // 4. Update local matches state
+      setMatches((prev) => {
+        const next = prev.filter((m) => m.id !== matchId);
+        localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
+        return next;
+      });
+      if (selectedMatch && selectedMatch.id === matchId) {
+        setSelectedMatch(null);
+      }
+
+      // 5. If this match belonged to a season, revert its impact on that season
+      if (deletedMatch) {
+        setSeasons((prevSeasons) => {
+          const nextSeasons = prevSeasons.map((s) => {
+            const extractNum = (str?: string) => str?.match(/(\d+)/)?.[1];
+            const sNum = extractNum(s.title) || extractNum(s.id);
+            const mNum = extractNum(deletedMatch.season);
+            const isTargetSeason =
+              (sNum && mNum === sNum) ||
+              s.id === deletedMatch.season ||
+              s.title === deletedMatch.season;
+
+            if (isTargetSeason) {
+              const reverted = revertMatchFromSeason(s, deletedMatch);
+              // sync reverted season to firestore & API
+              syncLagaAmalToFirestore(reverted).catch((err) => console.warn('Sync reverted season:', err));
+              return reverted;
+            }
+            return s;
+          });
+          localStorage.setItem('pantos_seasons_cache', JSON.stringify(nextSeasons));
+          return nextSeasons;
+        });
+      }
     } catch (err) {
       console.warn('Error deleting match:', err);
-      setMatches((prev) => prev.filter((m) => m.id !== matchId));
-      setSelectedMatch(null);
+      setMatches((prev) => {
+        const next = prev.filter((m) => m.id !== matchId);
+        localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
+        return next;
+      });
+      if (selectedMatch && selectedMatch.id === matchId) {
+        setSelectedMatch(null);
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -386,16 +456,14 @@ export default function App() {
         setMatches((prev) =>
           prev.map((m) => {
             if (m.id !== matchId) return m;
-            updatedMatch = { ...m, ai_analysis: data.ai_analysis };
+            updatedMatch = { ...m, ai_analysis: data.ai_analysis, is_generating_analysis: false };
             return updatedMatch;
           })
         );
         if (selectedMatch && selectedMatch.id === matchId) {
-          setSelectedMatch((prev) => (prev ? { ...prev, ai_analysis: data.ai_analysis } : null));
+          setSelectedMatch((prev) => (prev ? { ...prev, ai_analysis: data.ai_analysis, is_generating_analysis: false } : null));
         }
-        // Persist the regenerated analysis to Firestore too — otherwise it
-        // only lives in local state and reverts to the stale version on
-        // the next reload or for any other viewer.
+        // Persist the regenerated analysis to Firestore too
         if (updatedMatch) {
           await syncMatchToFirestore(updatedMatch);
         }
@@ -404,12 +472,9 @@ export default function App() {
       throw new Error('Backend analyze endpoint returned ' + res.status);
     } catch (err) {
       console.warn('Error analyzing match via backend, using local fallback:', err);
-      // Backend unreachable — generate a heuristic commentary locally so
-      // the admin still gets a real (if simpler) analysis instead of the
-      // request silently doing nothing.
       if (!targetMatch) return;
       const fallbackAnalysis = generateHeuristicMatchAnalysis(targetMatch);
-      const updatedMatch: Match = { ...targetMatch, ai_analysis: fallbackAnalysis };
+      const updatedMatch: Match = { ...targetMatch, ai_analysis: fallbackAnalysis, is_generating_analysis: false };
       setMatches((prev) => prev.map((m) => (m.id === matchId ? updatedMatch : m)));
       if (selectedMatch && selectedMatch.id === matchId) {
         setSelectedMatch(updatedMatch);
@@ -424,7 +489,7 @@ export default function App() {
 
   // Delete an entire season/klasemen — admin only. This removes it from
   // Firestore (the real-time source of truth), the local backend store,
-  // and local state. At least one season must always remain.
+  // and local state, along with all associated matches. At least one season must always remain.
   const handleDeleteSeason = async (seasonId: string) => {
     if (!isAdmin) {
       setIsLoginModalOpen(true);
@@ -435,22 +500,47 @@ export default function App() {
     if (!target) return;
 
     if (seasons.length <= 1) {
-      alert('Tidak bisa menghapus satu-satunya season yang tersisa.');
       return;
     }
 
-    if (!confirm(`Hapus klasemen "${target.title}" secara permanen? Tindakan ini tidak bisa dibatalkan.`)) {
-      return;
-    }
+    const extractSeasonNumber = (s?: string) => s?.match(/(\d+)/)?.[1];
+    const targetNum = extractSeasonNumber(target.title) || extractSeasonNumber(target.id);
+    const matchesToDelete = matches.filter((m) => {
+      const mNum = extractSeasonNumber(m.season);
+      return (
+        (targetNum && mNum === targetNum) ||
+        m.season === target.id ||
+        m.season === target.title ||
+        (m.season && m.season.toLowerCase().includes(target.id.toLowerCase()))
+      );
+    });
 
     try {
       setIsLoading(true);
+
+      // 1. Delete season doc from Firestore
       await deleteLagaAmalFromFirestore(seasonId);
 
+      // 2. Cascade delete all matching matches from Firestore
+      if (matchesToDelete.length > 0) {
+        await deleteMatchesBatchFromFirestore(matchesToDelete.map((m) => m.id));
+      }
+
+      // 3. Delete from backend server
       fetch(`/api/laga-amal/${seasonId}`, { method: 'DELETE' }).catch((e) =>
         console.warn('Backend delete season sync:', e)
       );
 
+      // 4. Update local matches state
+      if (matchesToDelete.length > 0) {
+        const toDeleteIds = new Set(matchesToDelete.map((m) => m.id));
+        setMatches((prev) => prev.filter((m) => !toDeleteIds.has(m.id)));
+        if (selectedMatch && toDeleteIds.has(selectedMatch.id)) {
+          setSelectedMatch(null);
+        }
+      }
+
+      // 5. Update local seasons state
       setSeasons((prev) => {
         const next = prev.filter((s) => s.id !== seasonId);
         localStorage.setItem('pantos_seasons_cache', JSON.stringify(next));
@@ -461,7 +551,6 @@ export default function App() {
       });
     } catch (err) {
       console.warn('Error deleting season:', err);
-      alert('Gagal menghapus klasemen. Coba lagi.');
     } finally {
       setIsLoading(false);
     }
@@ -526,6 +615,93 @@ export default function App() {
     } catch (err) {
       console.error('Error updating player avatar:', err);
       return false;
+    }
+  };
+
+  // Update player status, tier, or other profile details (Admin)
+  const handleUpdatePlayerDetails = async (
+    playerId: number | string,
+    updates: Partial<Player>
+  ): Promise<boolean> => {
+    try {
+      const targetPlayer = players.find(
+        (p) => String(p.id) === String(playerId) || p.name.toLowerCase() === String(playerId).toLowerCase()
+      );
+      if (!targetPlayer) return false;
+
+      const updatedPlayer: Player = { ...targetPlayer, ...updates };
+
+      // 1. Update state immediately
+      setPlayers((prev) =>
+        prev.map((p) =>
+          String(p.id) === String(playerId) || p.name.toLowerCase() === targetPlayer.name.toLowerCase()
+            ? updatedPlayer
+            : p
+        )
+      );
+
+      // 2. Persist to server API
+      try {
+        await fetch(`/api/players/${encodeURIComponent(String(playerId))}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: targetPlayer.name, ...updates }),
+        });
+      } catch (err) {
+        console.warn('Failed to update player details on backend:', err);
+      }
+
+      // 3. Persist to Cloud Firestore
+      await syncPlayerToFirestore(updatedPlayer);
+
+      return true;
+    } catch (err) {
+      console.error('Error updating player details:', err);
+      return false;
+    }
+  };
+
+  // Generate creative Pantos AI title for player (Weekly AI update or manual admin click)
+  const handleGeneratePlayerJulukan = async (playerId: number | string): Promise<string | null> => {
+    try {
+      const targetPlayer = players.find(
+        (p) => String(p.id) === String(playerId) || p.name.toLowerCase() === String(playerId).toLowerCase()
+      );
+      if (!targetPlayer) return null;
+
+      const res = await fetch(`/api/players/${encodeURIComponent(String(playerId))}/generate-title`, {
+        method: 'POST',
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.julukan) {
+          const nowIso = data.julukan_updated_at || new Date().toISOString();
+          const updatedPlayer: Player = {
+            ...targetPlayer,
+            julukan: data.julukan,
+            julukan_updated_at: nowIso,
+          };
+
+          // Update local state
+          setPlayers((prev) =>
+            prev.map((p) =>
+              String(p.id) === String(playerId) || p.name.toLowerCase() === targetPlayer.name.toLowerCase()
+                ? updatedPlayer
+                : p
+            )
+          );
+
+          // Sync to Cloud Firestore
+          await syncPlayerToFirestore(updatedPlayer);
+
+          return data.julukan;
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error('Error generating player title:', err);
+      return null;
     }
   };
 
@@ -729,8 +905,11 @@ export default function App() {
             selectedPlayerId={profilePlayerId}
             onSelectPlayer={(id) => setProfilePlayerId(id)}
             activeSeason={activeSeason}
-            matches={matches}
+            matches={seasonMatches}
+            isAdmin={isAdmin}
             onUpdatePlayerAvatar={handleUpdatePlayerAvatar}
+            onUpdatePlayerDetails={handleUpdatePlayerDetails}
+            onGenerateJulukan={handleGeneratePlayerJulukan}
           />
         )}
 

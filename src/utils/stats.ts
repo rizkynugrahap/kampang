@@ -5,6 +5,14 @@ export function getPlayerTopHeroes(
   matches: Match[] = [],
   seasonData?: LagaAmalSeasonData
 ): TopHeroStat[] {
+  const normName = playerName.trim().toLowerCase();
+
+  // If seasonData exists, verify if player actually has matches recorded
+  const playerSeasonStat = seasonData?.players.find(
+    (p) => p.nickname.toLowerCase() === normName
+  );
+  const hasSeasonMatchesRecorded = (playerSeasonStat?.matches || 0) > 0;
+
   const heroMap: Record<
     string,
     { games: number; mvp: number; gold: number; silver: number; coklat: number }
@@ -14,7 +22,7 @@ export function getPlayerTopHeroes(
   for (const match of matches) {
     const allRoster = [...(match.pohon || []), ...(match.lobby || [])];
     for (const p of allRoster) {
-      if (p.player_name.toLowerCase() === playerName.toLowerCase()) {
+      if (p.player_name.toLowerCase() === normName) {
         const hero = p.hero_name || 'Hero';
         if (!heroMap[hero]) {
           heroMap[hero] = { games: 0, mvp: 0, gold: 0, silver: 0, coklat: 0 };
@@ -28,24 +36,57 @@ export function getPlayerTopHeroes(
     }
   }
 
-  // Also check from seasonData.heroPicks
-  if (seasonData && seasonData.heroPicks) {
-    const playerPicks = seasonData.heroPicks.find(
-      (hp) => hp.user.toLowerCase() === playerName.toLowerCase()
-    );
-    if (playerPicks && playerPicks.heroes) {
-      playerPicks.heroes.forEach((h, idx) => {
-        if (!heroMap[h.heroName]) {
-          const estimatedMatches = Math.max(1, Math.round((h.percentage / 100) * (seasonData.players.find(p => p.nickname.toLowerCase() === playerName.toLowerCase())?.matches || 5)));
-          heroMap[h.heroName] = {
-            games: estimatedMatches,
-            mvp: idx === 0 ? Math.max(1, Math.round(estimatedMatches * 0.4)) : 0,
-            gold: Math.max(0, Math.round(estimatedMatches * 0.3)),
-            silver: Math.max(0, Math.round(estimatedMatches * 0.2)),
-            coklat: idx > 1 ? 1 : 0,
+  // Also check from seasonData.matchRows if available
+  if (seasonData?.matchRows && seasonData.matchRows.length > 0) {
+    for (const r of seasonData.matchRows) {
+      if (r.nickname.toLowerCase() === normName && r.hero) {
+        const hero = r.hero;
+        if (!heroMap[hero]) {
+          heroMap[hero] = { games: 0, mvp: 0, gold: 0, silver: 0, coklat: 0 };
+        }
+        heroMap[hero].games += 1;
+        if (r.mvp) heroMap[hero].mvp += 1;
+        if (r.antam) heroMap[hero].gold += 1;
+        if (r.silver) heroMap[hero].silver += 1;
+        if (r.coklat) heroMap[hero].coklat += 1;
+      }
+    }
+  }
+
+  // Also check from seasonData.heroPicksByUser / heroPicks ONLY IF player has matches > 0 in this season
+  // and heroMap is still empty (e.g. historical archive season without individual match rows)
+  if (Object.keys(heroMap).length === 0 && hasSeasonMatchesRecorded) {
+    if (seasonData?.heroPicksByUser && seasonData.heroPicksByUser.length > 0) {
+      const picks = seasonData.heroPicksByUser.filter(
+        (hp) => hp.player.toLowerCase() === normName
+      );
+      for (const hp of picks) {
+        if (hp.total > 0) {
+          heroMap[hp.hero] = {
+            games: hp.total,
+            mvp: hp.mvp,
+            gold: hp.antam,
+            silver: hp.silver,
+            coklat: hp.coklat,
           };
         }
-      });
+      }
+    } else if (seasonData?.heroPicks && seasonData.heroPicks.length > 0) {
+      const userPick = seasonData.heroPicks.find(
+        (hp) => hp.user.toLowerCase() === normName
+      );
+      if (userPick && userPick.heroes) {
+        for (const h of userPick.heroes) {
+          const estimatedMatches = Math.max(1, Math.round((h.percentage / 100) * (playerSeasonStat?.matches || 5)));
+          heroMap[h.heroName] = {
+            games: estimatedMatches,
+            mvp: 0,
+            gold: 0,
+            silver: 0,
+            coklat: 0,
+          };
+        }
+      }
     }
   }
 
@@ -66,63 +107,21 @@ export function getPlayerTopHeroes(
   // Sort by games descending, then mvpRate descending
   list.sort((a, b) => b.games - a.games || b.mvpRate - a.mvpRate);
 
-  if (list.length === 0) {
-    // Fallback signature MLBB heroes for Pantos roster
-    const fallbackSignatures: Record<string, TopHeroStat[]> = {
-      'LAH MANDOOR': [
-        { hero: 'Kadita', games: 16, mvpCount: 11, mvpRate: 69, goldCount: 4, silverCount: 1, coklatCount: 0 },
-        { hero: 'Lesley', games: 10, mvpCount: 6, mvpRate: 60, goldCount: 3, silverCount: 1, coklatCount: 0 },
-        { hero: 'Estes', games: 8, mvpCount: 3, mvpRate: 38, goldCount: 4, silverCount: 1, coklatCount: 0 },
-      ],
-      'Dignityzed': [
-        { hero: 'Claude', games: 14, mvpCount: 8, mvpRate: 57, goldCount: 4, silverCount: 2, coklatCount: 0 },
-        { hero: 'Estes', games: 9, mvpCount: 4, mvpRate: 44, goldCount: 3, silverCount: 2, coklatCount: 0 },
-        { hero: 'Moskov', games: 7, mvpCount: 3, mvpRate: 43, goldCount: 2, silverCount: 2, coklatCount: 0 },
-      ],
-      'KELUNG': [
-        { hero: 'Chou', games: 15, mvpCount: 4, mvpRate: 27, goldCount: 4, silverCount: 4, coklatCount: 3 },
-        { hero: 'Moskov', games: 10, mvpCount: 3, mvpRate: 30, goldCount: 3, silverCount: 2, coklatCount: 2 },
-        { hero: 'Kadita', games: 6, mvpCount: 1, mvpRate: 17, goldCount: 2, silverCount: 1, coklatCount: 2 },
-      ],
-      'irvantaufiq12': [
-        { hero: 'Yve', games: 18, mvpCount: 2, mvpRate: 11, goldCount: 4, silverCount: 6, coklatCount: 6 },
-        { hero: 'Hylos', games: 12, mvpCount: 1, mvpRate: 8, goldCount: 3, silverCount: 4, coklatCount: 4 },
-        { hero: 'Franco', games: 10, mvpCount: 1, mvpRate: 10, goldCount: 2, silverCount: 3, coklatCount: 4 },
-      ],
-      'Hees': [
-        { hero: 'Gusion', games: 14, mvpCount: 6, mvpRate: 43, goldCount: 4, silverCount: 3, coklatCount: 1 },
-        { hero: 'Paquito', games: 8, mvpCount: 3, mvpRate: 38, goldCount: 3, silverCount: 2, coklatCount: 0 },
-        { hero: 'Hylos', games: 6, mvpCount: 1, mvpRate: 17, goldCount: 2, silverCount: 2, coklatCount: 1 },
-      ],
-      'YY': [
-        { hero: 'Estes', games: 11, mvpCount: 4, mvpRate: 36, goldCount: 5, silverCount: 2, coklatCount: 0 },
-        { hero: 'Paquito', games: 7, mvpCount: 2, mvpRate: 29, goldCount: 3, silverCount: 2, coklatCount: 0 },
-        { hero: 'Franco', games: 5, mvpCount: 1, mvpRate: 20, goldCount: 2, silverCount: 2, coklatCount: 0 },
-      ],
-    };
-
-    return (
-      fallbackSignatures[playerName] || [
-        { hero: 'Kadita', games: 5, mvpCount: 2, mvpRate: 40, goldCount: 2, silverCount: 1, coklatCount: 0 },
-        { hero: 'Chou', games: 4, mvpCount: 1, mvpRate: 25, goldCount: 1, silverCount: 1, coklatCount: 1 },
-        { hero: 'Franco', games: 3, mvpCount: 0, mvpRate: 0, goldCount: 1, silverCount: 1, coklatCount: 1 },
-      ]
-    );
-  }
-
+  // Return real heroes only; no synthetic fallbacks
   return list.slice(0, 3);
 }
 
 export interface DailyPerformancePoint {
-  label: string; // e.g. "06 Sep" or "Sen 06/09"
+  label: string; // e.g. "Sen, 08 Sep" or "Hari Ini"
   date: string;
-  score: number; // Performa points (0 - 3, where MVP=3, Gold=2, Silver=1, Coklat=0)
-  rating: number; // MLBB match score rating (e.g. 8.6, 9.2)
+  rating: number | null; // MLBB match score rating (e.g. 8.6, 9.2) or null if no match
+  score?: number | null;
   detail: string;
   matchesCount: number;
+  hasMatch: boolean;
 }
 
-// Calculate daily performance and score trends
+// Calculate 7-day rating score trend from Laga Amal matches
 export function getPlayerPerformanceTrend(
   playerName: string,
   matches: Match[] = [],
@@ -130,157 +129,164 @@ export function getPlayerPerformanceTrend(
 ): DailyPerformancePoint[] {
   const normName = playerName.trim().toLowerCase();
 
-  // Find player season stats to calibrate baseline
-  const seasonStat = season?.players.find((p) => p.nickname.toLowerCase() === normName);
-  const baseAvgScore = seasonStat?.avgScore || 7.5;
-  const baseMvpRatio = seasonStat ? seasonStat.mvp / Math.max(1, seasonStat.matches) : 0.25;
-  const baseCoklatRatio = seasonStat ? seasonStat.coklat / Math.max(1, seasonStat.matches) : 0.05;
+  // Parse any date string into { year, month, day }
+  const parseToDateParts = (dateStr?: string): { year: number; month: number; day: number } | null => {
+    if (!dateStr) return null;
+    const cleanStr = dateStr.trim();
 
-  // 1. Collect all real match entries for this player
-  interface DayEntry {
-    date: string;
-    scores: number[];
-    performaPts: number[];
-    medals: string[];
-    heroes: string[];
-  }
+    // Check if standard parseable string or ISO
+    const d = new Date(cleanStr);
+    if (!isNaN(d.getTime())) {
+      return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+    }
 
-  const dayMap = new Map<string, DayEntry>();
+    // Indonesian text format: "13 Sep 2026" or "13 September 2026"
+    const parts = cleanStr.split(/[\s,/-]+/);
+    if (parts.length >= 3) {
+      const day = parseInt(parts[0], 10);
+      const mStr = parts[1].toLowerCase();
+      const year = parseInt(parts[2], 10);
 
-  // From state matches
-  matches.forEach((m) => {
+      const idMonths: Record<string, number> = {
+        jan: 0, januari: 0,
+        feb: 1, februari: 1,
+        mar: 2, maret: 2,
+        apr: 3, april: 3,
+        mei: 4, may: 4,
+        jun: 5, juni: 5,
+        jul: 6, juli: 6,
+        agu: 7, ags: 7, agustus: 7, aug: 7,
+        sep: 8, sept: 8, september: 8,
+        okt: 9, oktober: 9, oct: 9,
+        nov: 10, november: 10,
+        des: 11, desember: 11, dec: 11,
+      };
+
+      const month = idMonths[mStr];
+      if (month !== undefined && !isNaN(day) && !isNaN(year)) {
+        return { year, month, day };
+      }
+    }
+    return null;
+  };
+
+  const allPlayerMatches: Array<{
+    dateParts: { year: number; month: number; day: number };
+    score: number;
+    medal: string;
+    hero: string;
+  }> = [];
+
+  // Collect from matches
+  for (const m of matches) {
     const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
     const playerDetail = allRoster.find((p) => p.player_name.toLowerCase() === normName);
     if (playerDetail) {
-      const d = m.date || 'Hari Ini';
-      if (!dayMap.has(d)) {
-        dayMap.set(d, { date: d, scores: [], performaPts: [], medals: [], heroes: [] });
+      const parts = parseToDateParts(m.date);
+      if (parts) {
+        const scoreVal =
+          typeof playerDetail.score === 'number' && !isNaN(playerDetail.score) && playerDetail.score > 0
+            ? playerDetail.score
+            : playerDetail.medal === 'MVP'
+            ? 10.0
+            : playerDetail.medal === 'Gold'
+            ? 8.5
+            : playerDetail.medal === 'Silver'
+            ? 6.5
+            : 4.0;
+        allPlayerMatches.push({
+          dateParts: parts,
+          score: scoreVal,
+          medal: playerDetail.medal,
+          hero: playerDetail.hero_name || '',
+        });
       }
-      const entry = dayMap.get(d)!;
-      let pts = 1;
-      if (playerDetail.medal === 'MVP') pts = 3;
-      else if (playerDetail.medal === 'Gold') pts = 2;
-      else if (playerDetail.medal === 'Silver') pts = 1;
-      else if (playerDetail.medal === 'Coklat') pts = 0;
-
-      entry.performaPts.push(pts);
-      entry.medals.push(playerDetail.medal);
-      if (playerDetail.hero_name) entry.heroes.push(playerDetail.hero_name);
-      const scoreVal = typeof playerDetail.score === 'number' && !isNaN(playerDetail.score)
-        ? playerDetail.score
-        : pts === 3 ? 10.0 : pts === 2 ? 8.5 : pts === 1 ? 6.5 : 4.0;
-      entry.scores.push(scoreVal);
     }
-  });
+  }
 
-  // From season matchRows if available
+  // Collect from season matchRows
   if (season?.matchRows && season.matchRows.length > 0) {
-    season.matchRows.forEach((r) => {
+    for (const r of season.matchRows) {
       if (r.nickname.toLowerCase() === normName) {
-        const d = r.date || 'Laga';
-        if (!dayMap.has(d)) {
-          dayMap.set(d, { date: d, scores: [], performaPts: [], medals: [], heroes: [] });
+        const parts = parseToDateParts(r.date);
+        if (parts) {
+          const medal = r.mvp ? 'MVP' : r.antam ? 'Gold' : r.silver ? 'Silver' : 'Coklat';
+          const scoreVal =
+            typeof r.score === 'number' && !isNaN(r.score) && r.score > 0
+              ? r.score
+              : r.mvp
+              ? 10.0
+              : r.antam
+              ? 8.5
+              : r.silver
+              ? 6.5
+              : 4.0;
+          allPlayerMatches.push({
+            dateParts: parts,
+            score: scoreVal,
+            medal,
+            hero: r.hero || '',
+          });
         }
-        const entry = dayMap.get(d)!;
-        const pts = r.mvp ? 3 : r.antam ? 2 : r.silver ? 1 : 0;
-        const medal = r.mvp ? 'MVP' : r.antam ? 'Gold' : r.silver ? 'Silver' : 'Coklat';
-        entry.performaPts.push(pts);
-        entry.medals.push(medal);
-        if (r.hero) entry.heroes.push(r.hero);
-        entry.scores.push(r.score || (pts === 3 ? 10.0 : pts === 2 ? 8.5 : pts === 1 ? 6.5 : 4.0));
       }
-    });
+    }
   }
 
-  // If we have at least 4 distinct match days with real data, sort and return them
-  if (dayMap.size >= 4) {
-    const sortedEntries = Array.from(dayMap.values());
-    return sortedEntries.map((e) => {
-      const avgPts = e.performaPts.reduce((a, b) => a + b, 0) / e.performaPts.length;
-      const avgRating = e.scores.reduce((a, b) => a + b, 0) / e.scores.length;
-      const heroList = Array.from(new Set(e.heroes)).slice(0, 2).join(', ');
-      return {
-        label: e.date.length > 8 ? e.date.slice(0, 8) : e.date,
-        date: e.date,
-        score: parseFloat(avgPts.toFixed(1)),
-        rating: parseFloat(avgRating.toFixed(1)),
-        detail: `${e.performaPts.length} Match: ${e.medals.join(', ')}${heroList ? ` (${heroList})` : ''}`,
-        matchesCount: e.performaPts.length,
-      };
-    });
-  }
-
-  // Otherwise, construct a calibrated 7-Day Daily Trend (H-6 s/d Hari Ini)
-  // calibrated dynamically from the player's actual season average and medal percentages
+  // Build strict 7-day chronological window (H-6 s/d Hari Ini)
   const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
   const now = new Date();
   const dailyPoints: DailyPerformancePoint[] = [];
 
-  // Seeded variation based on name for consistent aesthetic curves
-  let hash = 0;
-  for (let i = 0; i < normName.length; i++) {
-    hash = (hash << 5) - hash + normName.charCodeAt(i);
-    hash |= 0;
-  }
-  const pseudoRandom = (seed: number) => {
-    const x = Math.sin(seed + Math.abs(hash)) * 10000;
-    return x - Math.floor(x);
-  };
-
   for (let offset = 6; offset >= 0; offset--) {
     const d = new Date(now);
     d.setDate(d.getDate() - offset);
 
+    const targetYear = d.getFullYear();
+    const targetMonth = d.getMonth();
+    const targetDay = d.getDate();
+
     const dayName = dayNames[d.getDay()];
-    const dateNum = String(d.getDate()).padStart(2, '0');
-    const monthName = monthNames[d.getMonth()];
-    const label = offset === 0 ? 'Hari Ini' : `${dayName}, ${dateNum} ${monthName}`;
-    const dateKey = `${dateNum} ${monthName} ${d.getFullYear()}`;
+    const dateNum = String(targetDay).padStart(2, '0');
+    const monthName = monthNames[targetMonth];
 
-    // Check if there is an exact real match recorded on this date
-    const realEntry = dayMap.get(dateKey) || dayMap.get(label) || dayMap.get(dateNum);
-    if (realEntry) {
-      const avgPts = realEntry.performaPts.reduce((a, b) => a + b, 0) / realEntry.performaPts.length;
-      const avgRating = realEntry.scores.reduce((a, b) => a + b, 0) / realEntry.scores.length;
+    const shortLabel = offset === 0 ? 'Hari Ini' : `${dayName}, ${dateNum} ${monthName}`;
+    const dateKeyFull = `${dateNum} ${monthName} ${targetYear}`;
+
+    // Find matches matching this exact day
+    const dayMatches = allPlayerMatches.filter(
+      (m) =>
+        m.dateParts.year === targetYear &&
+        m.dateParts.month === targetMonth &&
+        m.dateParts.day === targetDay
+    );
+
+    if (dayMatches.length > 0) {
+      const avgRating = dayMatches.reduce((sum, item) => sum + item.score, 0) / dayMatches.length;
+      const heroList = Array.from(new Set(dayMatches.map((m) => m.hero).filter(Boolean))).slice(0, 2).join(', ');
+      const medalList = dayMatches.map((m) => m.medal).join(', ');
+
       dailyPoints.push({
-        label,
-        date: dateKey,
-        score: parseFloat(avgPts.toFixed(1)),
+        label: shortLabel,
+        date: dateKeyFull,
         rating: parseFloat(avgRating.toFixed(1)),
-        detail: `${realEntry.performaPts.length} Match: ${realEntry.medals.join(', ')}`,
-        matchesCount: realEntry.performaPts.length,
+        score: parseFloat(avgRating.toFixed(1)),
+        detail: `${dayMatches.length} Match: ${medalList}${heroList ? ` (${heroList})` : ''}`,
+        matchesCount: dayMatches.length,
+        hasMatch: true,
       });
-      continue;
-    }
-
-    // Daily score synthesis calibrated to the player's official stats
-    const randFactor = pseudoRandom(offset * 17);
-    let dailyPts: number;
-    if (baseMvpRatio >= 0.28) {
-      // Top carry / MVP contender (LAH MANDOOR, Dignityzed)
-      dailyPts = randFactor > 0.35 ? 3 : randFactor > 0.1 ? 2 : 1;
-    } else if (baseCoklatRatio >= 0.12) {
-      // Kelas semen / prone to Coklat (irvantaufiq12)
-      dailyPts = randFactor > 0.65 ? 1 : randFactor > 0.4 ? 2 : 0;
     } else {
-      // Solid core player (Hees, YY, Gil, Portgas)
-      dailyPts = randFactor > 0.6 ? 2 : randFactor > 0.2 ? 2 : 1;
+      dailyPoints.push({
+        label: shortLabel,
+        date: dateKeyFull,
+        rating: null,
+        score: null,
+        detail: 'Tidak ada pertandingan pada tanggal ini',
+        matchesCount: 0,
+        hasMatch: false,
+      });
     }
-
-    // Correlated daily MLBB rating (e.g. 6.5 to 10.4)
-    const ratingVariance = (pseudoRandom(offset * 31) - 0.5) * 1.4;
-    const dailyRating = Math.max(3.2, Math.min(10.8, baseAvgScore + ratingVariance));
-
-    dailyPoints.push({
-      label,
-      date: dateKey,
-      score: dailyPts,
-      rating: parseFloat(dailyRating.toFixed(1)),
-      detail: dailyPts === 3 ? 'MVP (3 Poin)' : dailyPts === 2 ? 'Gold (2 Poin)' : dailyPts === 1 ? 'Silver (1 Poin)' : 'Coklat (0 Poin)',
-      matchesCount: 1,
-    });
   }
 
   return dailyPoints;
