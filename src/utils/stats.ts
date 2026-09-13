@@ -36,8 +36,16 @@ export function getPlayerTopHeroes(
     }
   }
 
+  // A match submitted through the admin panel is recorded in BOTH `matches`
+  // (the live match-tracking system) AND `season.matchRows` (written by
+  // applyMatchToSeason for every match). Summing both sources
+  // unconditionally double-counted every such match. `matchRows` is now
+  // only used as a legacy fallback for players/seasons with no live-tracked
+  // games at all (e.g. an old CSV-imported season with no Match objects).
+  const hasLiveTrackedGames = Object.keys(heroMap).length > 0;
+
   // Also check from seasonData.matchRows if available
-  if (seasonData?.matchRows && seasonData.matchRows.length > 0) {
+  if (!hasLiveTrackedGames && seasonData?.matchRows && seasonData.matchRows.length > 0) {
     for (const r of seasonData.matchRows) {
       if (r.nickname.toLowerCase() === normName && r.hero) {
         const hero = r.hero;
@@ -204,8 +212,14 @@ export function getPlayerPerformanceTrend(
     }
   }
 
+  // Same double-counting issue as getPlayerTopHeroes: a match submitted via
+  // the admin panel lives in both `matches` and `season.matchRows`.
+  // matchRows is only used here as a legacy fallback when this player has
+  // no live-tracked matches at all for this season.
+  const hasLiveTrackedMatches = allPlayerMatches.length > 0;
+
   // Collect from season matchRows
-  if (season?.matchRows && season.matchRows.length > 0) {
+  if (!hasLiveTrackedMatches && season?.matchRows && season.matchRows.length > 0) {
     for (const r of season.matchRows) {
       if (r.nickname.toLowerCase() === normName) {
         const parts = parseToDateParts(r.date);

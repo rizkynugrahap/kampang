@@ -27,6 +27,8 @@ import {
   subscribeToMatches,
   subscribeToLagaAmal,
   seedAdminIfEmpty,
+  subscribeToBackgroundSettings,
+  syncBackgroundSettingsToFirestore,
   syncPlayerToFirestore,
   syncMatchToFirestore,
   syncLagaAmalToFirestore,
@@ -40,6 +42,8 @@ import { INITIAL_PLAYERS } from './data/seed';
 import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason } from './data/seasonsSeed';
 import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
+import { generateHeuristicPlayerJulukan } from './utils/julukan';
+import { getPlayerTopHeroes } from './utils/stats';
 
 type ActiveTab = 'dashboard' | 'lagaAmal' | 'admin' | 'profile';
 
@@ -69,6 +73,29 @@ export default function App() {
 
   // Player roster always strictly follows the active Laga Amal season
   const [players, setPlayers] = useState<Player[]>(() => buildPlayersFromSeason(activeSeason));
+
+  // Tier ("Ubah Badge & Tier"), status ("badge" Aktif/Cabutan), julukan, and
+  // custom avatar are admin-set fields that live only in Firestore's
+  // `players` collection — they aren't part of the season roster stats at
+  // all. Whenever the player list gets rebuilt from season data (below),
+  // those fields must be carried over instead of silently reset to their
+  // auto-computed defaults, which is why badge/tier edits used to "revert"
+  // on refresh or after any new match was added.
+  const mergePlayerOverrides = (basePlayers: Player[], overridesSource: Player[]): Player[] => {
+    return basePlayers.map((base) => {
+      const override = overridesSource.find((o) => o.name.toLowerCase() === base.name.toLowerCase());
+      if (!override) return base;
+      return {
+        ...base,
+        tier: override.tier ?? base.tier,
+        status: override.status ?? base.status,
+        julukan: override.julukan,
+        julukan_updated_at: override.julukan_updated_at,
+        avatar_url: override.avatar_url ?? base.avatar_url,
+      };
+    });
+  };
+
   // Primary source of truth for matches (persisted in cache and synced with backend & Firestore)
   const [matches, setMatches] = useState<Match[]>(() => {
     const saved = localStorage.getItem('pantos_matches_cache');
@@ -107,7 +134,10 @@ export default function App() {
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
 
-  // Background state (default to user's Git repo URL and brighter default opacity)
+  // Background state — cached instantly from localStorage on load (so
+  // there's no flash of the default image), then kept permanently in sync
+  // with Firestore below so it survives refresh AND carries over to every
+  // device/browser, not just the one that set it.
   const [bgUrl, setBgUrl] = useState<string>(() => {
     return localStorage.getItem('pantos_custom_bg') || DEFAULT_GIT_BACKGROUND_URL;
   });
@@ -120,17 +150,23 @@ export default function App() {
   const handleSaveBgUrl = (newUrl: string) => {
     setBgUrl(newUrl);
     localStorage.setItem('pantos_custom_bg', newUrl);
+    syncBackgroundSettingsToFirestore({ bgUrl: newUrl }).catch((e) =>
+      console.warn('Gagal menyimpan background ke Firestore:', e)
+    );
   };
 
   const handleSaveBgOpacity = (newOpacity: number) => {
     setBgOpacity(newOpacity);
     localStorage.setItem('pantos_bg_opacity', String(newOpacity));
+    syncBackgroundSettingsToFirestore({ bgOpacity: newOpacity }).catch((e) =>
+      console.warn('Gagal menyimpan opacity background ke Firestore:', e)
+    );
   };
 
   // Keep players in sync when activeSeason changes
   useEffect(() => {
     const derived = buildPlayersFromSeason(activeSeason);
-    setPlayers(derived);
+    setPlayers((prev) => mergePlayerOverrides(derived, prev));
   }, [activeSeason]);
 
   // Initial load from backend API
@@ -168,7 +204,7 @@ export default function App() {
       if (playersRes.ok) {
         const pData = await playersRes.json();
         if (Array.isArray(pData) && pData.length > 0) {
-          setPlayers(pData);
+          setPlayers((prev) => mergePlayerOverrides(prev, pData));
         }
       }
     } catch (err) {
@@ -218,9 +254,44 @@ export default function App() {
       () => setIsFirestoreConnected(false)
     );
 
+    // Live-sync admin-set player fields (badge/status, tier, julukan,
+    // custom avatar) across every device. This was imported but never
+    // actually wired up before, so those edits only ever lived in
+    // whichever browser made them (and got wiped out on top of that by the
+    // season-sync effect above) — never truly saved anywhere permanent.
+    const unsubPlayers = subscribeToPlayers(
+      (remotePlayers) => {
+        if (Array.isArray(remotePlayers) && remotePlayers.length > 0) {
+          setPlayers((prev) => mergePlayerOverrides(prev, remotePlayers));
+          localStorage.setItem('pantos_players_cache', JSON.stringify(remotePlayers));
+          setLastSyncedAt(new Date());
+          setIsFirestoreConnected(true);
+        }
+      },
+      () => setIsFirestoreConnected(false)
+    );
+
+    // Keep background image/opacity permanently in sync across every
+    // device — this used to only live in localStorage, so it "reset" on
+    // any other browser/device and never actually persisted anywhere
+    // shared.
+    const unsubBackground = subscribeToBackgroundSettings((remoteBg) => {
+      if (!remoteBg) return;
+      if (typeof remoteBg.bgUrl === 'string' && remoteBg.bgUrl) {
+        setBgUrl(remoteBg.bgUrl);
+        localStorage.setItem('pantos_custom_bg', remoteBg.bgUrl);
+      }
+      if (typeof remoteBg.bgOpacity === 'number' && !isNaN(remoteBg.bgOpacity)) {
+        setBgOpacity(remoteBg.bgOpacity);
+        localStorage.setItem('pantos_bg_opacity', String(remoteBg.bgOpacity));
+      }
+    });
+
     return () => {
       unsubLagaAmal();
       unsubMatches();
+      unsubPlayers();
+      unsubBackground();
     };
   }, []);
 
@@ -663,14 +734,20 @@ export default function App() {
 
   // Generate creative Pantos AI title for player (Weekly AI update or manual admin click)
   const handleGeneratePlayerJulukan = async (playerId: number | string): Promise<string | null> => {
-    try {
-      const targetPlayer = players.find(
-        (p) => String(p.id) === String(playerId) || p.name.toLowerCase() === String(playerId).toLowerCase()
-      );
-      if (!targetPlayer) return null;
+    const targetPlayer = players.find(
+      (p) => String(p.id) === String(playerId) || p.name.toLowerCase() === String(playerId).toLowerCase()
+    );
+    if (!targetPlayer) return null;
 
+    try {
+      // Send the player we already have (from Firestore) as a fallback —
+      // this backend's own local store can be stale/out of sync with real
+      // player data, which used to 404 silently here.
+      const topHeroNames = getPlayerTopHeroes(targetPlayer.name, seasonMatches, activeSeason).map((h) => h.hero);
       const res = await fetch(`/api/players/${encodeURIComponent(String(playerId))}/generate-title`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player: targetPlayer, topHeroes: topHeroNames }),
       });
 
       if (res.ok) {
@@ -698,10 +775,34 @@ export default function App() {
           return data.julukan;
         }
       }
-      return null;
+      throw new Error('Backend generate-title endpoint returned ' + res.status);
     } catch (err) {
-      console.error('Error generating player title:', err);
-      return null;
+      console.warn('Error generating player title via backend, using local fallback:', err);
+      // Backend unreachable — generate a heuristic julukan locally instead
+      // of silently returning nothing (which is what made this feature
+      // look broken).
+      const seasonStat = activeSeason.players.find(
+        (p) => p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
+      );
+      const fallbackJulukan = generateHeuristicPlayerJulukan(targetPlayer, seasonStat);
+      const nowIso = new Date().toISOString();
+      const updatedPlayer: Player = { ...targetPlayer, julukan: fallbackJulukan, julukan_updated_at: nowIso };
+
+      setPlayers((prev) =>
+        prev.map((p) =>
+          String(p.id) === String(playerId) || p.name.toLowerCase() === targetPlayer.name.toLowerCase()
+            ? updatedPlayer
+            : p
+        )
+      );
+
+      try {
+        await syncPlayerToFirestore(updatedPlayer);
+      } catch (syncErr) {
+        console.warn('Error syncing fallback julukan to Firestore:', syncErr);
+      }
+
+      return fallbackJulukan;
     }
   };
 

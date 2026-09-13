@@ -8,6 +8,7 @@ import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalc
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
 import { generateHeuristicMatchAnalysis } from './src/utils/matchAnalysis.ts';
+import { generateHeuristicPlayerJulukan } from './src/utils/julukan.ts';
 
 const app = express();
 const PORT = 3000;
@@ -127,8 +128,11 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
 
   const ai = getGenAI();
   if (ai) {
-    // Valid Gemini model ids per AI Studio SDK guidance
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    // These model ids used to be 'gemini-3.8-flash' / 'gemini-flash-latest' /
+    // 'gemini-3.1-flash-lite' — none of which are real Gemini models, so
+    // every single call failed here too (same root cause as the match
+    // analysis bug). Using real, current model ids instead.
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -164,23 +168,6 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
 
   // Fallback heuristic commentary if API key is not present or call fails
   return generateHeuristicMatchAnalysis(match);
-}
-
-// Heuristic fallback for Pantos player titles
-function generateHeuristicPlayerJulukan(player: Player, seasonStat?: any): string {
-  const mvp = seasonStat ? seasonStat.mvp : player.medals.MVP;
-  const coklat = seasonStat ? seasonStat.coklat : player.medals.Coklat;
-  const antam = seasonStat ? seasonStat.antam : player.medals.Gold;
-  const winRate = seasonStat ? seasonStat.winRate : player.winRate || 50;
-
-  if (mvp >= 8 || winRate >= 70) return 'Sang Penggendong Patah Tulang';
-  if (coklat >= 5) return 'Warga Kehormatan Kelas Semen';
-  if (antam >= 6) return 'Kolektor Antam Anti Beban';
-  if (player.status === 'Cabutan') return 'Joker Cabutan Penentu Nasib';
-  if (player.tier === 'Mythic') return 'Sepuh Mythic Pantos';
-  if (player.tier === 'Epic') return 'Abadi di Neraka Epic';
-  if (mvp >= 4) return 'Pencuri Gelar MVP Handal';
-  return 'Pejuang Laga Amal Pantos';
 }
 
 // Generate creative Pantos nickname using Gemini AI
@@ -220,7 +207,7 @@ Panduan julukan:
 
   const ai = getGenAI();
   if (ai) {
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -411,10 +398,18 @@ app.put('/api/players/:id', (req, res) => {
 });
 
 // POST /api/players/:id/generate-title (Generate or refresh creative Pantos title using Gemini)
+// Accepts an optional `{ player, seasonStat, topHeroes }` payload as a
+// fallback — this backend's own local store can easily be stale/out of
+// sync with the real Firestore player data (e.g. a player added or only
+// ever synced through Firestore), which silently 404'd here before and
+// made "Generate Julukan" look like it did nothing.
 app.post('/api/players/:id/generate-title', async (req, res) => {
   try {
     const rawId = req.params.id;
     const decodedId = decodeURIComponent(rawId).trim().toLowerCase();
+    const bodyPlayer: Player | undefined = req.body?.player;
+    const bodySeasonStat = req.body?.seasonStat;
+    const bodyTopHeroes: string[] = Array.isArray(req.body?.topHeroes) ? req.body.topHeroes : [];
 
     let playerIndex = store.players.findIndex(
       (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === decodedId
@@ -441,19 +436,26 @@ app.post('/api/players/:id/generate-title', async (req, res) => {
       }
     }
 
+    // Last resort: use the player object the client already has (from
+    // Firestore) instead of failing outright.
+    if (playerIndex === -1 && bodyPlayer && bodyPlayer.name) {
+      store.players.push(bodyPlayer);
+      playerIndex = store.players.length - 1;
+    }
+
     if (playerIndex === -1) {
       return res.status(404).json({ error: `Pemain '${rawId}' tidak ditemukan` });
     }
 
     const player = store.players[playerIndex];
     const activeSeason = store.lagaAmalSeasons?.[0];
-    const seasonPlayerStat = activeSeason?.players.find(
-      (p) => p.nickname.toLowerCase() === player.name.toLowerCase()
-    );
+    const seasonPlayerStat =
+      bodySeasonStat ||
+      activeSeason?.players.find((p) => p.nickname.toLowerCase() === player.name.toLowerCase());
 
     // Extract top heroes for player
-    const topHeroNames: string[] = [];
-    if (activeSeason?.heroPicks) {
+    const topHeroNames: string[] = [...bodyTopHeroes];
+    if (topHeroNames.length === 0 && activeSeason?.heroPicks) {
       const hp = activeSeason.heroPicks.find((h) => h.user.toLowerCase() === player.name.toLowerCase());
       if (hp && hp.heroes) {
         topHeroNames.push(...hp.heroes.slice(0, 3).map((h) => h.heroName));
@@ -485,9 +487,11 @@ app.post('/api/players/:id/generate-title', async (req, res) => {
     });
   } catch (err: any) {
     const rawId = req.params.id;
-    const player = store.players.find(
-      (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === String(rawId).toLowerCase()
-    );
+    const bodyPlayer: Player | undefined = req.body?.player;
+    const player =
+      store.players.find(
+        (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === String(rawId).toLowerCase()
+      ) || bodyPlayer;
     const fallbackTitle = player ? generateHeuristicPlayerJulukan(player) : 'Pejuang Laga Amal Pantos';
     res.json({
       success: true,

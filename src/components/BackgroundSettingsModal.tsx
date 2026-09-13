@@ -67,6 +67,16 @@ export const BackgroundSettingsModal: React.FC<BackgroundSettingsModalProps> = (
   };
 
   const handleSave = () => {
+    // A directly-uploaded image is stored as a base64 data URL. Firestore
+    // caps a single document at ~1MB, so an oversized upload would fail to
+    // sync (and silently fall back to being local-only again). Catch that
+    // here with a clear message instead of a confusing save failure.
+    if (previewUrl.startsWith('data:') && previewUrl.length > 700_000) {
+      setErrorStatus(
+        'Ukuran file terlalu besar untuk disimpan permanen (maks. ±500KB). Kompres gambarnya dulu, atau gunakan URL gambar (mis. link GitHub/Imgur) di kolom "Gunakan URL Gambar Lain".'
+      );
+      return;
+    }
     onSaveBgUrl(previewUrl);
     if (onSaveOpacity) {
       onSaveOpacity(opacityVal);

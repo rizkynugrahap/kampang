@@ -104,15 +104,31 @@ export function subscribeToLagaAmal(
 
 // ----------------- WRITE & MUTATION METHODS -----------------
 
+// Player docs are keyed by a normalized version of their nickname rather
+// than `player.id` — that id is just an array position (idx + 1) computed
+// fresh from the season roster every load, so it can shift whenever the
+// roster order changes (a new player added, roster re-sorted, etc). Keying
+// by id meant a player's admin-set tier/badge could silently get written
+// under a *different* Firestore document than the one it was read from
+// previously, orphaning the old data.
+function getPlayerDocId(player: Player): string {
+  const slug = (player.name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || String(player.id);
+}
+
 export async function syncPlayerToFirestore(player: Player): Promise<void> {
-  const docRef = doc(db, 'players', String(player.id));
+  const docRef = doc(db, 'players', getPlayerDocId(player));
   await setDoc(docRef, sanitizeForFirestore(player), { merge: true });
 }
 
 export async function syncPlayersBatchToFirestore(players: Player[]): Promise<void> {
   const batch = writeBatch(db);
   players.forEach((p) => {
-    const docRef = doc(db, 'players', String(p.id));
+    const docRef = doc(db, 'players', getPlayerDocId(p));
     batch.set(docRef, sanitizeForFirestore(p), { merge: true });
   });
   await batch.commit();
@@ -223,6 +239,47 @@ export async function deleteMatchesBatchFromFirestore(matchIds: (string | number
   } catch (err) {
     console.warn('Batch query delete fallback:', err);
   }
+}
+
+// ----------------- BACKGROUND SETTINGS (app-wide, Firestore-synced) -----------------
+
+export interface BackgroundSettings {
+  bgUrl?: string;
+  bgOpacity?: number;
+}
+
+const BACKGROUND_DOC_ID = 'background_settings';
+
+/**
+ * Live-subscribes to the shared background/opacity settings document, so a
+ * change made on one device (or by any admin) reflects on every other
+ * device in real time — this used to only live in each browser's own
+ * localStorage, which is why it never "traveled" between devices.
+ */
+export function subscribeToBackgroundSettings(
+  callback: (settings: BackgroundSettings | null) => void
+): Unsubscribe {
+  const docRef = doc(db, 'app_meta', BACKGROUND_DOC_ID);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      callback(snap.exists() ? (snap.data() as BackgroundSettings) : null);
+    },
+    (err) => {
+      console.warn('Firestore background settings subscription error:', err);
+      callback(null);
+    }
+  );
+}
+
+/**
+ * Persists background/opacity settings to Firestore (merged — passing just
+ * one field won't wipe the other) so they're permanent across refreshes
+ * and shared across every device, not just the browser that set them.
+ */
+export async function syncBackgroundSettingsToFirestore(settings: BackgroundSettings): Promise<void> {
+  const docRef = doc(db, 'app_meta', BACKGROUND_DOC_ID);
+  await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 // ----------------- ADMIN LOGIN (Firestore-only) -----------------
