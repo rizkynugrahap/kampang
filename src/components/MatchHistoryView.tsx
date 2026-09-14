@@ -13,6 +13,7 @@ import {
 import { Match, LagaAmalSeasonData } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
+import { ScoreBanner } from './ScoreBanner';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 
 interface MatchHistoryViewProps {
@@ -143,6 +144,11 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
             </span>
           </div>
         </div>
+      </section>
+
+      {/* Pertandingan Kemenangan (ScoreBanner Tim Pohon vs Tim Lobby) — Intact as requested */}
+      <section id="section-pertandingan-kemenangan">
+        <ScoreBanner matches={matches} seasonTitle={activeSeason.title} />
       </section>
 
       {/* Match Cards List */}

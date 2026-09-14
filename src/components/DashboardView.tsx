@@ -370,7 +370,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div id="dashboard-view-container" className="space-y-6">
-      {/* Top Banner Card: Season Selector + Team Filter + 7 KPI Cards (Matches Screenshot) */}
+      {/* Top Banner Card: Season Selector + Team Filter*/}
       <section
         id="dashboard-header-card"
         className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl"
@@ -471,10 +471,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </section>
 
-      {/* Pertandingan Kemenangan (ScoreBanner Tim Pohon vs Tim Lobby) — Intact as requested */}
-      <section id="section-pertandingan-kemenangan">
-        <ScoreBanner matches={seasonMatches} seasonTitle={activeSeason.title} />
-      </section>
+
 
       {/* KPI Section: Left (KPI Score Bar Chart) & Right (KPI Total Medal Pie Chart) */}
       <section id="section-kpi-charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
