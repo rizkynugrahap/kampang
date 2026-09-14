@@ -14,6 +14,7 @@ import {
   Settings2,
   ChevronDown,
   Check,
+  ZoomIn,
 } from 'lucide-react';
 import {
   PieChart,
@@ -31,6 +32,7 @@ import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
 import { UpdateAvatarModal } from './UpdateAvatarModal';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface PlayerProfileProps {
   players: Player[];
@@ -59,6 +61,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
     selectedPlayerId || (players[0] ? players[0].id : 1)
   );
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState<boolean>(false);
+  const [isImagePreviewOpen, setIsImagePreviewOpen] = useState<boolean>(false);
   const [isEditBadgesOpen, setIsEditBadgesOpen] = useState<boolean>(false);
   const [isGeneratingTitle, setIsGeneratingTitle] = useState<boolean>(false);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
@@ -267,22 +270,24 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#332C25] pb-5">
           <div className="flex items-center gap-4">
             <div className="relative group">
-              <PlayerAvatar
-                name={player.name}
-                avatarUrl={player.avatar_url}
-                size="xl"
-                status={player.status}
-                showStatusDot
-              />
-              <button
-                id={`btn-edit-photo-${player.id}`}
-                onClick={() => setIsAvatarModalOpen(true)}
-                className="absolute inset-0 flex flex-col items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity text-[#E8B33D] cursor-pointer"
-                title="Ganti Foto Profil"
+              <div
+                id={`player-avatar-preview-btn-${player.id}`}
+                onClick={() => setIsImagePreviewOpen(true)}
+                className="cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                title="Klik untuk memperbesar foto profil"
               >
-                <Camera size={20} />
-                <span className="text-[9px] font-bold mt-0.5">Ubah</span>
-              </button>
+                <PlayerAvatar
+                  name={player.name}
+                  avatarUrl={player.avatar_url}
+                  size="xl"
+                  status={player.status}
+                  showStatusDot
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity text-[#E8B33D] cursor-pointer">
+                  <ZoomIn size={20} />
+                  <span className="text-[9px] font-bold mt-0.5 text-[#F2EDE4]">Perbesar</span>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -562,38 +567,38 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             </div>
           </div>
 
-          {/* Line Chart: Tren Rating Skor (7 Hari Terakhir) */}
+          {/* Line Chart: Tren Rating Skor (10 Match Terakhir) */}
           <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-4 flex flex-col justify-between">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="flex items-center gap-1.5 font-bold text-xs text-[#E8B33D] uppercase tracking-wider">
-                  <TrendingUp size={14} /> Tren Rating Skor (7 Hari Terakhir)
+                  <TrendingUp size={14} /> Tren Rating Skor (10 Match Terakhir)
                 </span>
                 <span className="text-[11px] text-[#9C948A] block">
-                  Diambil dari klasemen & skor laga amal setiap match pemain (rentang 7 hari)
+                  Fluktuasi skor performa pada 10 pertandingan resmi Laga Amal terakhir
                 </span>
               </div>
 
               <div className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#1D1916] px-2.5 py-1 text-[11px] font-bold text-[#E8B33D]">
                 <Zap size={12} className="text-[#E8B33D]" />
-                <span>Skala Rating (0 - 10)</span>
+                <span>Skala Rating (0 - 12)</span>
               </div>
             </div>
 
-            {dailyTrendData.some((d) => d.hasMatch) ? (
+            {dailyTrendData.length > 0 ? (
               <div className="h-48 w-full mt-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={dailyTrendData}>
                     <XAxis
                       dataKey="label"
                       stroke="#9C948A"
-                      fontSize={10}
+                      fontSize={11}
                       tickLine={false}
                       axisLine={{ stroke: '#332C25' }}
                     />
                     <YAxis
-                      domain={[0, 10]}
-                      ticks={[0, 2, 4, 6, 8, 10]}
+                      domain={[0, 12]}
+                      ticks={[0, 3, 6, 8, 10, 12]}
                       stroke="#9C948A"
                       fontSize={11}
                       tickLine={false}
@@ -608,29 +613,26 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                         fontSize: '12px',
                         boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
                       }}
-                      formatter={(val: any, name: any, item: any) => {
+                      formatter={(val: any, _name: any, item: any) => {
                         const payload = item.payload;
-                        if (!payload.hasMatch || val === null || val === undefined) {
-                          return ['Tidak ada match', 'Rating Skor'];
-                        }
                         return [
                           <div key="tooltip-rating" className="space-y-1">
                             <p className="font-bold text-[#E8B33D] text-sm">{val} / 10.0</p>
                             <p className="text-[11px] text-[#9C948A]">
-                              Total Pertandingan: <span className="text-[#F2EDE4] font-semibold">{payload.matchesCount || 0} Match</span>
+                              {payload.fullLabel || payload.label} &bull; {payload.date}
                             </p>
                             {payload.detail && (
-                              <p className="text-[11px] text-[#9C948A]">{payload.detail}</p>
+                              <p className="text-[11px] text-[#F2EDE4] font-medium">{payload.detail}</p>
                             )}
                           </div>,
-                          'Rating Skor'
+                          'Rating Skor',
                         ];
                       }}
                     />
                     <Line
                       type="monotone"
                       dataKey="rating"
-                      connectNulls={false}
+                      connectNulls={true}
                       stroke="#E8B33D"
                       strokeWidth={2.5}
                       dot={{ r: 4, fill: '#E8B33D', stroke: '#1D1916', strokeWidth: 1.5 }}
@@ -642,19 +644,39 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             ) : (
               <div className="flex flex-col items-center justify-center h-44 w-full rounded-xl border border-dashed border-[#332C25] bg-[#241F1B]/40 p-4 text-center my-2">
                 <TrendingUp size={24} className="text-[#9C948A]/40 mb-1.5" />
-                <p className="text-xs font-bold text-[#F2EDE4]">Belum Ada Pertandingan dalam 7 Hari Terakhir</p>
+                <p className="text-xs font-bold text-[#F2EDE4]">Belum Ada Pertandingan Tercatat</p>
                 <p className="text-[11px] text-[#9C948A] max-w-sm mt-1">
-                  Rating skor dihitung otomatis dari riwayat skor match Laga Amal. Belum ada pertandingan tercatat untuk {player.name} pada rentang 7 hari ini.
+                  Rating skor dihitung otomatis dari 10 pertandingan terakhir yang dimainkan oleh {player.name} di Laga Amal.
                 </p>
               </div>
             )}
 
-            <div className="mt-2 flex items-center justify-between text-[11px] text-[#9C948A] border-t border-[#332C25]/50 pt-2">
-              <span className="flex items-center gap-1">
+            <div className="mt-2 flex flex-wrap items-center justify-between text-[11px] text-[#9C948A] border-t border-[#332C25]/50 pt-2 gap-2">
+              <span className="flex items-center gap-1.5">
                 <Calendar size={12} className="text-[#E8B33D]" />
-                <span>Rentang waktu 7 hari terakhir disinkronkan dengan data match Laga Amal</span>
+                <span>
+                  {dailyTrendData.length > 0
+                    ? `Menampilkan ${dailyTrendData.length} pertandingan terakhir`
+                    : 'Belum ada data riwayat pertandingan'}
+                </span>
               </span>
-              <span className="text-[#E8B33D] font-semibold">Standar Skor Laga Amal</span>
+              {dailyTrendData.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[#9C948A]">
+                    Rata-rata: <strong className="text-[#E8B33D]">
+                      {(
+                        dailyTrendData.reduce((acc, cur) => acc + (cur.rating || 0), 0) /
+                        dailyTrendData.length
+                      ).toFixed(2)}
+                    </strong>
+                  </span>
+                  <span className="text-[#9C948A]">
+                    Tertinggi: <strong className="text-emerald-400">
+                      {Math.max(...dailyTrendData.map((d) => d.rating || 0))}
+                    </strong>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -732,6 +754,21 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             }
             return true;
           }}
+        />
+      )}
+
+      {/* Image Preview Modal */}
+      {isImagePreviewOpen && (
+        <ImagePreviewModal
+          isOpen={isImagePreviewOpen}
+          onClose={() => setIsImagePreviewOpen(false)}
+          imageUrl={player.avatar_url || ''}
+          playerName={player.name}
+          tier={player.tier}
+          status={player.status}
+          julukan={getPlayerTitle()}
+          isAdmin={isAdmin}
+          onEditPhoto={() => setIsAvatarModalOpen(true)}
         />
       )}
     </div>

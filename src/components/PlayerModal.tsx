@@ -1,9 +1,10 @@
-import React from 'react';
-import { X, Trophy, Sparkles, Shield, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Trophy, Sparkles, Shield, User, ZoomIn } from 'lucide-react';
 import { Player, Match } from '../types';
 import { getPlayerTopHeroes } from '../utils/stats';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface PlayerModalProps {
   player: Player | null;
@@ -18,6 +19,8 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
   onClose,
   onViewProfile,
 }) => {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
   if (!player) return null;
 
   const topHeroes = getPlayerTopHeroes(player.name, matches);
@@ -29,47 +32,58 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
       player.medals.Coklat || 1;
 
   return (
-    <div
-      id="player-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-xs sm:items-center sm:p-4"
-      onClick={onClose}
-    >
+    <>
       <div
-        id="player-modal-card"
-        className="w-full max-w-md rounded-t-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
+        id="player-modal-backdrop"
+        className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-xs sm:items-center sm:p-4"
+        onClick={onClose}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-[#332C25] pb-4">
-          <div className="flex items-center gap-3">
-            <PlayerAvatar
-              name={player.name}
-              avatarUrl={player.avatar_url}
-              size="lg"
-              status={player.status}
-              showStatusDot
-            />
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-lg text-[#F2EDE4]">{player.name}</h3>
-                <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
-                  {player.status}
-                </span>
+        <div
+          id="player-modal-card"
+          className="w-full max-w-md rounded-t-2xl border border-[#332C25] bg-[#1D1916] p-5 shadow-2xl sm:rounded-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-start justify-between border-b border-[#332C25] pb-4">
+            <div className="flex items-center gap-3">
+              <div
+                id={`modal-avatar-preview-trigger-${player.id}`}
+                onClick={() => setIsPreviewOpen(true)}
+                className="relative group cursor-pointer"
+                title="Klik untuk memperbesar foto profil"
+              >
+                <PlayerAvatar
+                  name={player.name}
+                  avatarUrl={player.avatar_url}
+                  size="lg"
+                  status={player.status}
+                  showStatusDot
+                />
+                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity text-[#E8B33D]">
+                  <ZoomIn size={16} />
+                </div>
               </div>
-              <p className="text-xs text-[#9C948A]">
-                Tier: <span className="text-[#F2EDE4]">{player.tier}</span> · Total {player.total_match} Pertandingan
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-lg text-[#F2EDE4]">{player.name}</h3>
+                  <span className="rounded bg-[#241F1B] px-2 py-0.5 text-xs text-[#9C948A]">
+                    {player.status}
+                  </span>
+                </div>
+                <p className="text-xs text-[#9C948A]">
+                  Tier: <span className="text-[#F2EDE4]">{player.tier}</span> · Total {player.total_match} Pertandingan
+                </p>
+              </div>
             </div>
+            <button
+              id="close-player-modal-button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#241F1B] hover:text-[#F2EDE4]"
+              aria-label="Tutup"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            id="close-player-modal-button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#241F1B] hover:text-[#F2EDE4]"
-            aria-label="Tutup"
-          >
-            <X size={18} />
-          </button>
-        </div>
 
         {/* Medals overview */}
         <div className="my-4 grid grid-cols-4 gap-2 text-center">
@@ -176,5 +190,18 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
         </div>
       </div>
     </div>
+
+    {/* Image Preview Modal */}
+    {isPreviewOpen && (
+      <ImagePreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        imageUrl={player.avatar_url || ''}
+        playerName={player.name}
+        tier={player.tier}
+        status={player.status}
+      />
+    )}
+  </>
   );
 };

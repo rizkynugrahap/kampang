@@ -114,8 +114,8 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
   const [showDeleteSeasonConfirm, setShowDeleteSeasonConfirm] = useState(false);
   const [isDeletingSeason, setIsDeletingSeason] = useState(false);
 
-  // View mode for standings: 'cards' is mobile-friendly, 'table' is traditional table
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  // View mode for standings: 'table' is default, 'cards' is mobile-friendly card mode
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
   // Sort and filter players for standings
   const filteredPlayers = useMemo(() => {

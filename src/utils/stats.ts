@@ -120,20 +120,27 @@ export function getPlayerTopHeroes(
 }
 
 export interface DailyPerformancePoint {
-  label: string; // e.g. "Sen, 08 Sep" or "Hari Ini"
+  label: string; // e.g. "M1", "M2" or "M10"
+  fullLabel?: string;
   date: string;
-  rating: number | null; // MLBB match score rating (e.g. 8.6, 9.2) or null if no match
+  rating: number | null; // MLBB match score rating (e.g. 8.6, 10.4)
   score?: number | null;
   detail: string;
   matchesCount: number;
   hasMatch: boolean;
+  matchIndex?: number;
+  hero?: string;
+  medal?: string;
+  result?: 'VICTORY' | 'DEFEAT' | '-';
+  matchId?: string | number;
 }
 
-// Calculate 7-day rating score trend from Laga Amal matches
+// Calculate rating score trend for the last 10 matches of a player
 export function getPlayerPerformanceTrend(
   playerName: string,
   matches: Match[] = [],
-  season?: LagaAmalSeasonData
+  season?: LagaAmalSeasonData,
+  maxMatches = 10
 ): DailyPerformancePoint[] {
   const normName = playerName.trim().toLowerCase();
 
@@ -178,132 +185,132 @@ export function getPlayerPerformanceTrend(
     return null;
   };
 
-  const allPlayerMatches: Array<{
-    dateParts: { year: number; month: number; day: number };
+  const parseTimestamp = (dateStr?: string, fallbackId = 0): number => {
+    const parts = parseToDateParts(dateStr);
+    if (parts) {
+      return new Date(parts.year, parts.month, parts.day).getTime() + (Number(fallbackId) || 0);
+    }
+    return Number(fallbackId) || 0;
+  };
+
+  interface PlayerMatchRecord {
+    timestamp: number;
+    matchId: string | number;
+    date: string;
     score: number;
     medal: string;
     hero: string;
-  }> = [];
+    result: 'VICTORY' | 'DEFEAT' | '-';
+  }
 
-  // Collect from matches
+  const playerRecords: PlayerMatchRecord[] = [];
+
+  // 1. Collect from live matches
   for (const m of matches) {
-    const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
-    const playerDetail = allRoster.find((p) => p.player_name.toLowerCase() === normName);
+    const pohonRoster = m.pohon || [];
+    const lobbyRoster = m.lobby || [];
+    const inPohon = pohonRoster.find((p) => p.player_name.toLowerCase() === normName);
+    const inLobby = lobbyRoster.find((p) => p.player_name.toLowerCase() === normName);
+    const playerDetail = inPohon || inLobby;
+
     if (playerDetail) {
-      const parts = parseToDateParts(m.date);
-      if (parts) {
+      const isWinner =
+        (Boolean(inPohon) && m.winner === 'Tim Pohon') ||
+        (Boolean(inLobby) && m.winner === 'Tim Lobby');
+
+      const scoreVal =
+        typeof playerDetail.score === 'number' && !isNaN(playerDetail.score) && playerDetail.score > 0
+          ? playerDetail.score
+          : playerDetail.medal === 'MVP'
+          ? 10.0
+          : playerDetail.medal === 'Gold'
+          ? 8.5
+          : playerDetail.medal === 'Silver'
+          ? 6.5
+          : 4.0;
+
+      playerRecords.push({
+        timestamp: parseTimestamp(m.date, Number(m.id) || 0),
+        matchId: m.id,
+        date: m.date || 'Laga Amal',
+        score: scoreVal,
+        medal: playerDetail.medal,
+        hero: playerDetail.hero_name || '',
+        result: isWinner ? 'VICTORY' : 'DEFEAT',
+      });
+    }
+  }
+
+  // 2. Fallback to season matchRows if no live matches recorded for this player
+  if (playerRecords.length === 0 && season?.matchRows && season.matchRows.length > 0) {
+    for (const r of season.matchRows) {
+      if (r.nickname.toLowerCase() === normName) {
+        const medal = r.mvp ? 'MVP' : r.antam ? 'Gold' : r.silver ? 'Silver' : 'Coklat';
         const scoreVal =
-          typeof playerDetail.score === 'number' && !isNaN(playerDetail.score) && playerDetail.score > 0
-            ? playerDetail.score
-            : playerDetail.medal === 'MVP'
+          typeof r.score === 'number' && !isNaN(r.score) && r.score > 0
+            ? r.score
+            : r.mvp
             ? 10.0
-            : playerDetail.medal === 'Gold'
+            : r.antam
             ? 8.5
-            : playerDetail.medal === 'Silver'
+            : r.silver
             ? 6.5
             : 4.0;
-        allPlayerMatches.push({
-          dateParts: parts,
+
+        playerRecords.push({
+          timestamp: parseTimestamp(r.date, 0),
+          matchId: r.id || 'row',
+          date: r.date || 'Laga Amal',
           score: scoreVal,
-          medal: playerDetail.medal,
-          hero: playerDetail.hero_name || '',
+          medal,
+          hero: r.hero || '',
+          result: r.result || (r.mvp || r.antam ? 'VICTORY' : 'DEFEAT'),
         });
       }
     }
   }
 
-  // Same double-counting issue as getPlayerTopHeroes: a match submitted via
-  // the admin panel lives in both `matches` and `season.matchRows`.
-  // matchRows is only used here as a legacy fallback when this player has
-  // no live-tracked matches at all for this season.
-  const hasLiveTrackedMatches = allPlayerMatches.length > 0;
-
-  // Collect from season matchRows
-  if (!hasLiveTrackedMatches && season?.matchRows && season.matchRows.length > 0) {
-    for (const r of season.matchRows) {
-      if (r.nickname.toLowerCase() === normName) {
-        const parts = parseToDateParts(r.date);
-        if (parts) {
-          const medal = r.mvp ? 'MVP' : r.antam ? 'Gold' : r.silver ? 'Silver' : 'Coklat';
-          const scoreVal =
-            typeof r.score === 'number' && !isNaN(r.score) && r.score > 0
-              ? r.score
-              : r.mvp
-              ? 10.0
-              : r.antam
-              ? 8.5
-              : r.silver
-              ? 6.5
-              : 4.0;
-          allPlayerMatches.push({
-            dateParts: parts,
-            score: scoreVal,
-            medal,
-            hero: r.hero || '',
-          });
-        }
-      }
-    }
+  if (playerRecords.length === 0) {
+    return [];
   }
 
-  // Build strict 7-day chronological window (H-6 s/d Hari Ini)
-  const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  // Sort chronologically (oldest to newest)
+  playerRecords.sort((a, b) => a.timestamp - b.timestamp);
 
-  const now = new Date();
-  const dailyPoints: DailyPerformancePoint[] = [];
+  // Take the most recent `maxMatches` (default: 10 matches)
+  const recentRecords = playerRecords.slice(-maxMatches);
 
-  for (let offset = 6; offset >= 0; offset--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - offset);
+  return recentRecords.map((rec, idx) => {
+    const matchNum = idx + 1;
+    const cleanScore = parseFloat(rec.score.toFixed(1));
+    const medalLabel =
+      rec.medal === 'MVP'
+        ? '👑 MVP'
+        : rec.medal === 'Gold' || rec.medal === 'Antam'
+        ? '🥇 Antam'
+        : rec.medal === 'Silver'
+        ? '🥈 Silver'
+        : '🍫 Coklat';
 
-    const targetYear = d.getFullYear();
-    const targetMonth = d.getMonth();
-    const targetDay = d.getDate();
+    const resultLabel = rec.result === 'VICTORY' ? '🏆 Menang' : 'Kalah';
+    const detailStr = `${medalLabel} (${cleanScore}) · ${rec.hero || 'Hero'} · ${resultLabel}`;
 
-    const dayName = dayNames[d.getDay()];
-    const dateNum = String(targetDay).padStart(2, '0');
-    const monthName = monthNames[targetMonth];
-
-    const shortLabel = offset === 0 ? 'Hari Ini' : `${dayName}, ${dateNum} ${monthName}`;
-    const dateKeyFull = `${dateNum} ${monthName} ${targetYear}`;
-
-    // Find matches matching this exact day
-    const dayMatches = allPlayerMatches.filter(
-      (m) =>
-        m.dateParts.year === targetYear &&
-        m.dateParts.month === targetMonth &&
-        m.dateParts.day === targetDay
-    );
-
-    if (dayMatches.length > 0) {
-      const avgRating = dayMatches.reduce((sum, item) => sum + item.score, 0) / dayMatches.length;
-      const heroList = Array.from(new Set(dayMatches.map((m) => m.hero).filter(Boolean))).slice(0, 2).join(', ');
-      const medalList = dayMatches.map((m) => m.medal).join(', ');
-
-      dailyPoints.push({
-        label: shortLabel,
-        date: dateKeyFull,
-        rating: parseFloat(avgRating.toFixed(1)),
-        score: parseFloat(avgRating.toFixed(1)),
-        detail: `${dayMatches.length} Match: ${medalList}${heroList ? ` (${heroList})` : ''}`,
-        matchesCount: dayMatches.length,
-        hasMatch: true,
-      });
-    } else {
-      dailyPoints.push({
-        label: shortLabel,
-        date: dateKeyFull,
-        rating: null,
-        score: null,
-        detail: 'Tidak ada pertandingan pada tanggal ini',
-        matchesCount: 0,
-        hasMatch: false,
-      });
-    }
-  }
-
-  return dailyPoints;
+    return {
+      label: `M${matchNum}`,
+      fullLabel: `Match #${matchNum}`,
+      date: rec.date,
+      rating: cleanScore,
+      score: cleanScore,
+      detail: detailStr,
+      matchesCount: 1,
+      hasMatch: true,
+      matchIndex: matchNum,
+      hero: rec.hero,
+      medal: rec.medal,
+      result: rec.result,
+      matchId: rec.matchId,
+    };
+  });
 }
 
 // Sort for "Kelas Semen" leaderboard:
