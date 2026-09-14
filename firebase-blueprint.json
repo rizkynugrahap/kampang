@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "Player": {
+      "title": "Player",
+      "description": "Profil dan akumulasi statistik pemain Laga Amal Pantos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["Aktif", "Cabutan"] },
+        "tier": { "type": "string", "enum": ["Mythic", "Legend", "Epic", "Honor", "Glory", "Immortal"] },
+        "julukan": { "type": "string", "maxLength": 200 },
+        "julukan_updated_at": { "type": "string" },
+        "avatar_url": { "type": "string", "maxLength": 500 },
+        "total_match": { "type": "number" },
+        "winRate": { "type": "number" },
+        "score": { "type": "number" },
+        "avgScore": { "type": "number" }
+      },
+      "required": ["id", "name"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Dokumen pertandingan MLBB Laga Amal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "season": { "type": "string" },
+        "winner": { "type": "string" },
+        "ai_analysis": { "type": "string" },
+        "pohon": { "type": "array" },
+        "lobby": { "type": "array" }
+      },
+      "required": ["id", "date", "winner"]
+    },
+    "LagaAmalSeason": {
+      "title": "LagaAmalSeason",
+      "description": "Klasemen season Laga Amal Pantos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "seasonNumber": { "type": "number" },
+        "period": { "type": "string" },
+        "status": { "type": "string" },
+        "players": { "type": "array" }
+      },
+      "required": ["id", "name", "players"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Kredensial akun admin Firestore",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["email", "password"]
+    },
+    "AppMeta": {
+      "title": "AppMeta",
+      "description": "Pengaturan metadata dan tampilan aplikasi",
+      "type": "object",
+      "properties": {
+        "bgUrl": { "type": "string" },
+        "bgOpacity": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/players/{playerId}": {
+      "schema": "Player",
+      "description": "Dokumen pemain Laga Amal Pantos"
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Dokumen pertandingan MLBB"
+    },
+    "/laga_amal_seasons/{seasonId}": {
+      "schema": "LagaAmalSeason",
+      "description": "Dokumen klasemen season"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Dokumen akun admin"
+    },
+    "/app_meta/{metaId}": {
+      "schema": "AppMeta",
+      "description": "Pengaturan metadata aplikasi"
+    }
+  }
+}

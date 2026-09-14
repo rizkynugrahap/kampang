@@ -10,8 +10,56 @@ import {
   writeBatch,
   Unsubscribe,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { Player, Match, LagaAmalSeasonData } from '../types';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
+      tenantId: auth?.currentUser?.tenantId,
+      providerInfo:
+        auth?.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 /**
  * Remove undefined values as Firestore rejects undefined fields
@@ -121,36 +169,60 @@ function getPlayerDocId(player: Player): string {
 }
 
 export async function syncPlayerToFirestore(player: Player): Promise<void> {
-  const docRef = doc(db, 'players', getPlayerDocId(player));
-  await setDoc(docRef, sanitizeForFirestore(player), { merge: true });
+  const docId = getPlayerDocId(player);
+  const path = `players/${docId}`;
+  try {
+    const docRef = doc(db, 'players', docId);
+    await setDoc(docRef, sanitizeForFirestore(player), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
 }
 
 export async function syncPlayersBatchToFirestore(players: Player[]): Promise<void> {
-  const batch = writeBatch(db);
-  players.forEach((p) => {
-    const docRef = doc(db, 'players', getPlayerDocId(p));
-    batch.set(docRef, sanitizeForFirestore(p), { merge: true });
-  });
-  await batch.commit();
+  try {
+    const batch = writeBatch(db);
+    players.forEach((p) => {
+      const docRef = doc(db, 'players', getPlayerDocId(p));
+      batch.set(docRef, sanitizeForFirestore(p), { merge: true });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'players');
+  }
 }
 
 export async function syncMatchToFirestore(match: Match): Promise<void> {
-  const docRef = doc(db, 'matches', String(match.id));
-  await setDoc(docRef, sanitizeForFirestore(match), { merge: true });
+  const path = `matches/${match.id}`;
+  try {
+    const docRef = doc(db, 'matches', String(match.id));
+    await setDoc(docRef, sanitizeForFirestore(match), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
 }
 
 export async function syncLagaAmalToFirestore(season: LagaAmalSeasonData): Promise<void> {
-  const docRef = doc(db, 'laga_amal_seasons', String(season.id));
-  await setDoc(docRef, sanitizeForFirestore(season), { merge: true });
+  const path = `laga_amal_seasons/${season.id}`;
+  try {
+    const docRef = doc(db, 'laga_amal_seasons', String(season.id));
+    await setDoc(docRef, sanitizeForFirestore(season), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
 }
 
 export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[]): Promise<void> {
-  const batch = writeBatch(db);
-  seasons.forEach((s) => {
-    const docRef = doc(db, 'laga_amal_seasons', String(s.id));
-    batch.set(docRef, sanitizeForFirestore(s), { merge: true });
-  });
-  await batch.commit();
+  try {
+    const batch = writeBatch(db);
+    seasons.forEach((s) => {
+      const docRef = doc(db, 'laga_amal_seasons', String(s.id));
+      batch.set(docRef, sanitizeForFirestore(s), { merge: true });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'laga_amal_seasons');
+  }
 }
 
 /**
@@ -158,19 +230,28 @@ export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[])
  * the caller is responsible for checking permission before calling this.
  */
 export async function deleteLagaAmalFromFirestore(seasonId: string): Promise<void> {
-  const docRef = doc(db, 'laga_amal_seasons', String(seasonId));
-  await deleteDoc(docRef);
+  const path = `laga_amal_seasons/${seasonId}`;
+  try {
+    const docRef = doc(db, 'laga_amal_seasons', String(seasonId));
+    await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
 }
 
 /**
  * Deletes a single match from Firestore
  */
 export async function deleteMatchFromFirestore(matchId: string | number): Promise<void> {
-  const docRef = doc(db, 'matches', String(matchId));
+  const path = `matches/${matchId}`;
   try {
+    const docRef = doc(db, 'matches', String(matchId));
     await deleteDoc(docRef);
-  } catch (e) {
-    console.warn('Direct doc delete error:', e);
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('permission')) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+    console.warn('Direct doc delete error:', error);
   }
 
   // Also query by numeric or string id in case doc ID differs

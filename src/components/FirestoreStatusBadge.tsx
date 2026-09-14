@@ -1,8 +1,17 @@
 import React, { useState } from 'react';
-import { Database, RefreshCw, CheckCircle2, Cloud, X, AlertCircle } from 'lucide-react';
+import { Database, RefreshCw, CheckCircle2, Cloud, X, AlertCircle, Copy, ExternalLink, ShieldAlert } from 'lucide-react';
 import { firebaseConfig } from '../lib/firebase';
 import { forceSyncAllToFirestore } from '../services/firestoreSync';
 import { Player, Match, LagaAmalSeasonData } from '../types';
+
+const RECOMMENDED_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}`;
 
 interface FirestoreStatusBadgeProps {
   players: Player[];
@@ -24,6 +33,14 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [showRulesGuide, setShowRulesGuide] = useState(false);
+
+  const handleCopyRules = () => {
+    navigator.clipboard.writeText(RECOMMENDED_RULES);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   const handleManualSync = async () => {
     setIsSyncing(true);
@@ -35,9 +52,16 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
         seasons,
       });
       setSyncMessage('Berhasil menyinkronkan seluruh database ke Cloud Firestore!');
+      setShowRulesGuide(false);
       if (onSyncSuccess) onSyncSuccess();
     } catch (err: any) {
-      setSyncMessage(`Gagal sinkronisasi: ${err?.message || 'Koneksi terputus'}`);
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('permission') || errMsg.includes('insufficient')) {
+        setSyncMessage('Izin ditolak (Missing or insufficient permissions). Pastikan aturan keamanan (Rules) di Firebase Console sudah di-publish.');
+        setShowRulesGuide(true);
+      } else {
+        setSyncMessage(`Gagal sinkronisasi: ${errMsg}`);
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -141,24 +165,72 @@ export const FirestoreStatusBadge: React.FC<FirestoreStatusBadgeProps> = ({
 
             {syncMessage && (
               <div
-                className={`rounded-lg p-2.5 text-xs flex items-center gap-2 ${
-                  syncMessage.includes('Gagal')
+                className={`rounded-lg p-3 text-xs flex items-start gap-2.5 ${
+                  syncMessage.includes('Gagal') || syncMessage.includes('Izin ditolak')
                     ? 'bg-rose-950/50 border border-rose-800/40 text-rose-300'
                     : 'bg-emerald-950/50 border border-emerald-800/40 text-emerald-300'
                 }`}
               >
-                {syncMessage.includes('Gagal') ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
+                {syncMessage.includes('Gagal') || syncMessage.includes('Izin ditolak') ? (
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                )}
                 <span>{syncMessage}</span>
               </div>
             )}
 
+            {/* Rules Helper Section */}
+            {(showRulesGuide || syncMessage?.includes('Izin ditolak')) && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3.5 space-y-2.5 text-xs text-[#E8DCCB]">
+                <div className="flex items-center gap-2 font-semibold text-amber-300">
+                  <ShieldAlert size={16} />
+                  <span>Aturan Keamanan (Firestore Rules) untuk Project Ini:</span>
+                </div>
+                <p className="text-[11px] text-[#C5BCAD]">
+                  Karena project <strong>{firebaseConfig.projectId}</strong> adalah project Firebase pribadi Anda, pastikan aturan keamanan di Firebase Console mengizinkan read & write:
+                </p>
+                <div className="relative">
+                  <pre className="rounded-lg bg-[#141210] p-2.5 font-mono text-[11px] text-amber-200 overflow-x-auto border border-[#332C25]">
+                    {RECOMMENDED_RULES}
+                  </pre>
+                  <button
+                    type="button"
+                    onClick={handleCopyRules}
+                    className="absolute top-2 right-2 flex items-center gap-1 rounded bg-[#251E17] hover:bg-[#332C25] border border-amber-500/30 px-2 py-1 text-[10px] font-semibold text-amber-300 cursor-pointer"
+                  >
+                    <Copy size={11} />
+                    {copied ? 'Tersalin!' : 'Salin Rules'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-[#9C948A]">Buka tab Rules di Console:</span>
+                  <a
+                    href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/rules`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 underline font-semibold"
+                  >
+                    Buka Firebase Console Rules <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            )}
+
             {/* Action buttons */}
-            <div className="pt-2 flex items-center justify-between gap-2">
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRulesGuide(!showRulesGuide)}
+                className="w-full sm:w-auto text-xs text-amber-400/80 hover:text-amber-300 underline py-1 cursor-pointer text-left sm:text-center"
+              >
+                {showRulesGuide ? 'Sembunyikan Panduan Rules' : 'Lihat Aturan Security Rules'}
+              </button>
               <button
                 id="btn-trigger-manual-firestore-sync"
                 onClick={handleManualSync}
                 disabled={isSyncing}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
               >
                 <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
                 <span>{isSyncing ? 'Menyinkronkan ke Cloud...' : 'Upload & Sinkronkan Sekarang'}</span>

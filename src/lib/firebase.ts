@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
+import { getAuth, Auth } from 'firebase/auth';
 import configJson from '../../firebase-applet-config.json';
 
 export const firebaseConfig = configJson;
@@ -11,9 +12,12 @@ if (!getApps().length) {
   app = getApp();
 }
 
-// In modern Firebase, pass the databaseId if specified
-export const db: Firestore = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+export const auth: Auth = getAuth(app);
+
+// In modern Firebase, pass the databaseId if custom, otherwise use default
+export const db: Firestore =
+  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+    : getFirestore(app);
 
 export { app };

@@ -133,6 +133,14 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
+  const [firestoreNotice, setFirestoreNotice] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  const showFirestoreNotice = (msg: string, isError = true) => {
+    setFirestoreNotice({ message: msg, isError });
+    setTimeout(() => {
+      setFirestoreNotice((prev) => (prev?.message === msg ? null : prev));
+    }, 7000);
+  };
 
   // Background state — cached instantly from localStorage on load (so
   // there's no flash of the default image), then kept permanently in sync
@@ -320,10 +328,8 @@ export default function App() {
       }).catch((e) => console.warn('API sync season:', e));
     } catch (err: any) {
       console.error('Sync season to Firestore failed:', err);
-      alert(
-        `Perubahan klasemen TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
-        `Pesan error: ${err?.message || err}\n\n` +
-        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      showFirestoreNotice(
+        `Perubahan klasemen tersimpan lokal, namun gagal disinkronkan ke Firestore: ${err?.message || 'Missing or insufficient permissions'}. Cek tab Rules di Firebase Console.`
       );
     }
   };
@@ -386,10 +392,8 @@ export default function App() {
       setLastSyncedAt(new Date());
     } catch (syncErr: any) {
       console.error('Error syncing match to Firestore:', syncErr);
-      alert(
-        `Pertandingan tersimpan sementara, TAPI gagal disinkronkan ke Firestore — artinya akan hilang saat refresh.\n\n` +
-        `Pesan error: ${syncErr?.message || syncErr}\n\n` +
-        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      showFirestoreNotice(
+        `Pertandingan tersimpan lokal, namun gagal disinkronkan ke Firestore: ${syncErr?.message || 'Missing or insufficient permissions'}. Cek tab Rules di Firebase Console.`
       );
     }
 
@@ -452,10 +456,8 @@ export default function App() {
       return true;
     } catch (err: any) {
       console.error('Error adding player:', err);
-      alert(
-        `Pemain baru TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
-        `Pesan error: ${err?.message || err}\n\n` +
-        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      showFirestoreNotice(
+        `Pemain baru tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Missing or insufficient permissions'}. Cek tab Rules.`
       );
       return false;
     }
@@ -509,10 +511,8 @@ export default function App() {
               // sync reverted season to firestore & API
               syncLagaAmalToFirestore(reverted).catch((err) => {
                 console.error('Sync reverted season:', err);
-                alert(
-                  `Statistik klasemen setelah hapus match TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
-                  `Pesan error: ${err?.message || err}\n\n` +
-                  `Cek Firebase Console → Firestore Database → tab Rules.`
+                showFirestoreNotice(
+                  `Statistik klasemen tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Izin ditolak'}.`
                 );
               });
               return reverted;
@@ -525,9 +525,8 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Error deleting match:', err);
-      alert(
-        `Gagal menghapus pertandingan dari Firestore.\n\nPesan error: ${err?.message || err}\n\n` +
-        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      showFirestoreNotice(
+        `Pertandingan dihapus dari tampilan, namun gagal di Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
       );
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
@@ -655,11 +654,8 @@ export default function App() {
       });
     } catch (err: any) {
       console.error('Error deleting season:', err);
-      alert(
-        `Gagal menghapus klasemen dari Firestore.\n\nPesan error: ${err?.message || err}\n\n` +
-        `Ini biasanya berarti Firestore Rules belum di-deploy ke project Firebase yang sekarang dipakai, ` +
-        `atau Firestore Database itu sendiri belum diaktifkan di project tersebut. ` +
-        `Cek Firebase Console → Firestore Database → tab Rules.`
+      showFirestoreNotice(
+        `Klasemen dihapus dari tampilan, namun gagal di Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
       );
     } finally {
       setIsLoading(false);
@@ -767,10 +763,8 @@ export default function App() {
       return true;
     } catch (err: any) {
       console.error('Error updating player details:', err);
-      alert(
-        `Perubahan badge/tier TIDAK tersimpan ke Firestore (akan hilang saat refresh).\n\n` +
-        `Pesan error: ${err?.message || err}\n\n` +
-        `Cek Firebase Console → Firestore Database → tab Rules, dan pastikan Firestore sudah diaktifkan di project yang sekarang dipakai.`
+      showFirestoreNotice(
+        `Perubahan pemain tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
       );
       return false;
     }
@@ -1002,6 +996,31 @@ export default function App() {
           </nav>
         </div>
       </header>
+
+      {/* Non-blocking Firestore Banner / Notification */}
+      {firestoreNotice && (
+        <div className="sticky top-[61px] z-30 px-4 py-2 bg-gradient-to-r from-amber-950/95 to-[#2A1D13] border-b border-amber-500/40 text-xs text-[#F2EDE4] flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
+            <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0 animate-pulse" />
+            <span className="font-medium text-amber-200">{firestoreNotice.message}</span>
+            <button
+              onClick={() => {
+                const btn = document.getElementById('btn-firestore-status');
+                if (btn) btn.click();
+              }}
+              className="ml-2 text-xs text-amber-300 underline hover:text-amber-200 font-semibold cursor-pointer shrink-0"
+            >
+              Panduan Rules
+            </button>
+          </div>
+          <button
+            onClick={() => setFirestoreNotice(null)}
+            className="text-[#9C948A] hover:text-[#F2EDE4] px-2 py-1 rounded text-sm cursor-pointer ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Main Content Body */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
