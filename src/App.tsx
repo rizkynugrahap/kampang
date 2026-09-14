@@ -9,11 +9,12 @@ import {
   Sparkles,
   Flame,
   Image as ImageIcon,
+  History,
 } from 'lucide-react';
 import { Player, Match, Hero, LagaAmalSeasonData } from './types';
 import { ScoreBanner } from './components/ScoreBanner';
-import { KelasSemenTable } from './components/KelasSemenTable';
-import { MatchFeed } from './components/MatchFeed';
+import { DashboardView } from './components/DashboardView';
+import { MatchHistoryView } from './components/MatchHistoryView';
 import { MatchDetailModal } from './components/MatchDetailModal';
 import { PlayerModal } from './components/PlayerModal';
 import { AdminInput } from './components/AdminInput';
@@ -45,7 +46,7 @@ import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
 
-type ActiveTab = 'dashboard' | 'lagaAmal' | 'admin' | 'profile';
+type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'admin' | 'profile';
 
 export default function App() {
   const [tab, setTab] = useState<ActiveTab>('dashboard');
@@ -863,48 +864,38 @@ export default function App() {
       />
       {/* Top Main Navigation */}
       <header className="sticky top-0 z-40 border-b border-[#332C25] bg-[#1D1916]/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-3 py-2.5 sm:px-6 sm:py-3">
           {/* Brand Logo */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#E8B33D] to-[#b8764a] text-[#161311] shadow-md font-black text-lg">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#E8B33D] to-[#b8764a] text-[#161311] shadow-md font-black text-base sm:text-lg">
               LP
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black tracking-tight text-[#F2EDE4]">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="text-sm sm:text-lg font-black tracking-tight text-[#F2EDE4]">
                   LAGA AMAL PANTOS
                 </h1>
-                <span className="rounded bg-[#E8B33D]/20 border border-[#E8B33D]/30 px-2 py-0.5 text-[10px] font-bold text-[#E8B33D]">
-                  MLBB E-Sport
+                <span className="rounded bg-[#E8B33D]/20 border border-[#E8B33D]/30 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-[#E8B33D]">
+                  MLBB
                 </span>
               </div>
-              <p className="text-[11px] text-[#9C948A] hidden sm:block">
+              <p className="text-[10px] sm:text-[11px] text-[#9C948A] hidden sm:block">
                 Sistem Papan Klasemen Season & Tracker Medali Komunitas Pantos
               </p>
             </div>
           </div>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-2.5">
-            {/* Live Cloud Firestore Badge */}
-            <FirestoreStatusBadge
-              players={players}
-              matches={matches}
-              seasons={seasons}
-              isConnected={isFirestoreConnected}
-              lastSyncedAt={lastSyncedAt}
-              onSyncSuccess={() => setLastSyncedAt(new Date())}
-            />
-
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             {/* Admin toggle button */}
             <button
               id="btn-bg-settings"
               onClick={() => setIsBgModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 text-xs font-semibold text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-xs font-semibold text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E] transition-colors cursor-pointer min-h-[38px]"
               title="Atur Background Laga Amal (Git / Unggah)"
             >
-              <ImageIcon size={13} className="text-[#E8B33D]" />
-              <span className="hidden sm:inline">Background</span>
+              <ImageIcon size={14} className="text-[#E8B33D]" />
+              <span className="hidden md:inline">Background</span>
             </button>
 
             {isAdmin ? (
@@ -914,53 +905,73 @@ export default function App() {
                   localStorage.removeItem('pantos_admin_token');
                   setIsAdmin(false);
                 }}
-                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/40 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-900/50 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/40 px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-900/50 transition-colors cursor-pointer min-h-[38px]"
                 title="Klik untuk keluar dari Mode Admin"
               >
-                <Unlock size={13} />
+                <Unlock size={14} />
                 <span className="hidden sm:inline">Admin Aktif</span>
               </button>
             ) : (
               <button
                 id="btn-admin-login"
                 onClick={() => setIsLoginModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-1.5 text-xs font-semibold text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E] transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-xs font-semibold text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E] transition-colors cursor-pointer min-h-[38px]"
               >
-                <Lock size={13} />
+                <Lock size={14} />
                 <span className="hidden sm:inline">Masuk Admin</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Primary Tabs (No Tournaments, No CSV export) */}
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <nav className="flex space-x-1 sm:space-x-2 border-t border-[#332C25]/50 py-1.5 overflow-x-auto">
+        {/* Primary Tabs: Only shown on Tablet / Desktop (md+) */}
+        <div className="hidden md:block mx-auto max-w-7xl px-2 sm:px-6">
+          <nav className="flex space-x-1 sm:space-x-2 border-t border-[#332C25]/50 py-1.5 overflow-x-auto no-scrollbar scroll-smooth">
             <button
               id="nav-tab-dashboard"
               onClick={() => setTab('dashboard')}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'dashboard'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
-              <Trophy size={16} />
+              <Trophy size={15} className="shrink-0" />
               <span>Dashboard</span>
+            </button>
+
+            <button
+              id="nav-tab-match-history"
+              onClick={() => setTab('matchHistory')}
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
+                tab === 'matchHistory'
+                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+              }`}
+            >
+              <History size={15} className="shrink-0" />
+              <span>Riwayat Pertandingan</span>
+              <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                tab === 'matchHistory' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
+              }`}>
+                {seasonMatches.length}
+              </span>
             </button>
 
             <button
               id="nav-tab-laga-amal"
               onClick={() => setTab('lagaAmal')}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'lagaAmal'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
-              <Flame size={16} />
+              <Flame size={15} className="shrink-0" />
               <span>Klasemen Laga Amal</span>
-              <span className="rounded-full bg-[#E8B33D]/20 px-1.5 py-0.2 text-[10px] text-[#E8B33D]">
+              <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                tab === 'lagaAmal' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
+              }`}>
                 {activeSeason.title.split('-')[1]?.trim() || 'S41'}
               </span>
             </button>
@@ -968,26 +979,26 @@ export default function App() {
             <button
               id="nav-tab-profile"
               onClick={() => setTab('profile')}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'profile'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
-              <UserRound size={16} />
+              <UserRound size={15} className="shrink-0" />
               <span>Profil Pemain</span>
             </button>
 
             <button
               id="nav-tab-admin"
               onClick={() => setTab('admin')}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'admin'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md'
+                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
-              <ClipboardList size={16} />
+              <ClipboardList size={15} className="shrink-0" />
               <span>Input Pertandingan</span>
               {isAdmin && (
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -1023,30 +1034,32 @@ export default function App() {
       )}
 
       {/* Main Content Body */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
-        {/* TAB 1: DASHBOARD (Follows Laga Amal Season) */}
+      <main className="mx-auto w-full max-w-7xl flex-1 px-3 sm:px-6 py-4 pb-24 md:py-6 md:pb-8">
+        {/* TAB 1: DASHBOARD (Refurbished according to user requirements) */}
         {tab === 'dashboard' && (
-          <div className="space-y-6">
-            {/* Split score banner */}
-            <ScoreBanner matches={seasonMatches} seasonTitle={activeSeason.title} />
+          <DashboardView
+            seasons={seasons}
+            selectedSeasonId={selectedSeasonId}
+            onSeasonChange={(id) => setSelectedSeasonId(id)}
+            activeSeason={activeSeason}
+            seasonMatches={seasonMatches}
+            players={players}
+            onSelectPlayer={(pName) => handleViewPlayerProfile(pName)}
+          />
+        )}
 
-            {/* Grid: Kelas Semen Leaderboard & Recent Match Feed */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-              <div className="lg:col-span-7">
-                <KelasSemenTable
-                  players={players}
-                  onSelectPlayer={(p) => handleViewPlayerProfile(p.name)}
-                />
-              </div>
-
-              <div className="lg:col-span-5">
-                <MatchFeed
-                  matches={matches}
-                  onSelectMatch={(m) => setSelectedMatch(m)}
-                />
-              </div>
-            </div>
-          </div>
+        {/* TAB 2: RIWAYAT PERTANDINGAN (New dedicated tab with AI analysis highlight) */}
+        {tab === 'matchHistory' && (
+          <MatchHistoryView
+            seasons={seasons}
+            selectedSeasonId={selectedSeasonId}
+            onSeasonChange={(id) => setSelectedSeasonId(id)}
+            activeSeason={activeSeason}
+            matches={seasonMatches}
+            onSelectMatch={(m) => setSelectedMatch(m)}
+            onDeleteMatch={handleDeleteMatch}
+            isAdmin={isAdmin}
+          />
         )}
 
         {/* TAB 2: KLASEMEN LAGA AMAL (Multi-Season History) */}
@@ -1093,7 +1106,7 @@ export default function App() {
       </main>
 
       {/* FOOTER */}
-      <footer className="border-t border-[#332C25] bg-[#191513] py-5 text-center text-xs text-[#9C948A]">
+      <footer className="border-t border-[#332C25] bg-[#191513] py-5 pb-24 md:pb-5 text-center text-xs text-[#9C948A]">
         <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-bold text-[#F2EDE4]">Laga Amal Pantos</span>
@@ -1107,6 +1120,188 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Mobile Bottom Navigation Bar: Visible ONLY on mobile, hidden on md+ */}
+      <nav
+        id="mobile-bottom-nav"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#332C25] bg-[#191513]/95 backdrop-blur-xl px-2 pt-1.5 shadow-[0_-10px_25px_rgba(0,0,0,0.6)]"
+        style={{ paddingBottom: 'max(0.4rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
+          {/* 1. Dashboard */}
+          <button
+            id="mobile-btn-dashboard"
+            type="button"
+            onClick={() => {
+              setTab('dashboard');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
+              tab === 'dashboard'
+                ? 'text-[#E8B33D]'
+                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+            }`}
+          >
+            <div
+              className={`flex items-center justify-center h-7 w-12 rounded-full transition-all ${
+                tab === 'dashboard' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
+              }`}
+            >
+              <Trophy
+                size={18}
+                className={tab === 'dashboard' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+              />
+            </div>
+            <span
+              className={`text-[10px] tracking-tight mt-0.5 ${
+                tab === 'dashboard' ? 'font-black text-[#E8B33D]' : 'font-medium'
+              }`}
+            >
+              Dashboard
+            </span>
+          </button>
+
+          {/* 2. Riwayat */}
+          <button
+            id="mobile-btn-history"
+            type="button"
+            onClick={() => {
+              setTab('matchHistory');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
+              tab === 'matchHistory'
+                ? 'text-[#E8B33D]'
+                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+            }`}
+          >
+            <div
+              className={`relative flex items-center justify-center h-7 w-12 rounded-full transition-all ${
+                tab === 'matchHistory' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
+              }`}
+            >
+              <History
+                size={18}
+                className={tab === 'matchHistory' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+              />
+              {seasonMatches.length > 0 && (
+                <span className="absolute -top-0.5 right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[#E8B33D] px-1 text-[9px] font-black text-[#161311]">
+                  {seasonMatches.length}
+                </span>
+              )}
+            </div>
+            <span
+              className={`text-[10px] tracking-tight mt-0.5 ${
+                tab === 'matchHistory' ? 'font-black text-[#E8B33D]' : 'font-medium'
+              }`}
+            >
+              Riwayat
+            </span>
+          </button>
+
+          {/* 3. Klasemen */}
+          <button
+            id="mobile-btn-standings"
+            type="button"
+            onClick={() => {
+              setTab('lagaAmal');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
+              tab === 'lagaAmal'
+                ? 'text-[#E8B33D]'
+                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+            }`}
+          >
+            <div
+              className={`flex items-center justify-center h-7 w-12 rounded-full transition-all ${
+                tab === 'lagaAmal' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
+              }`}
+            >
+              <Flame
+                size={18}
+                className={tab === 'lagaAmal' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+              />
+            </div>
+            <span
+              className={`text-[10px] tracking-tight mt-0.5 ${
+                tab === 'lagaAmal' ? 'font-black text-[#E8B33D]' : 'font-medium'
+              }`}
+            >
+              Klasemen
+            </span>
+          </button>
+
+          {/* 4. Profil */}
+          <button
+            id="mobile-btn-profile"
+            type="button"
+            onClick={() => {
+              setTab('profile');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
+              tab === 'profile'
+                ? 'text-[#E8B33D]'
+                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+            }`}
+          >
+            <div
+              className={`flex items-center justify-center h-7 w-12 rounded-full transition-all ${
+                tab === 'profile' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
+              }`}
+            >
+              <UserRound
+                size={18}
+                className={tab === 'profile' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+              />
+            </div>
+            <span
+              className={`text-[10px] tracking-tight mt-0.5 ${
+                tab === 'profile' ? 'font-black text-[#E8B33D]' : 'font-medium'
+              }`}
+            >
+              Profil
+            </span>
+          </button>
+
+          {/* 5. Input */}
+          <button
+            id="mobile-btn-admin"
+            type="button"
+            onClick={() => {
+              setTab('admin');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
+              tab === 'admin'
+                ? 'text-[#E8B33D]'
+                : 'text-[#9C948A] hover:text-[#F2EDE4]'
+            }`}
+          >
+            <div
+              className={`relative flex items-center justify-center h-7 w-12 rounded-full transition-all ${
+                tab === 'admin' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
+              }`}
+            >
+              <ClipboardList
+                size={18}
+                className={tab === 'admin' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+              />
+              {isAdmin && (
+                <span className="absolute top-1 right-2.5 h-2 w-2 rounded-full bg-emerald-400 animate-pulse ring-2 ring-[#191513]" />
+              )}
+            </div>
+            <span
+              className={`text-[10px] tracking-tight mt-0.5 ${
+                tab === 'admin' ? 'font-black text-[#E8B33D]' : 'font-medium'
+              }`}
+            >
+              Input
+            </span>
+          </button>
+        </div>
+      </nav>
 
       {/* MODALS */}
       {/* Player Modal */}

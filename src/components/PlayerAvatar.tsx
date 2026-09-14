@@ -5,7 +5,7 @@ import { PlayerStatus, TeamShort, TeamName } from '../types';
 interface PlayerAvatarProps {
   name: string;
   avatarUrl?: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   status?: PlayerStatus;
   team?: TeamShort | TeamName;
   tier?: string;
@@ -19,6 +19,7 @@ const SIZE_MAP = {
   md: 'h-10 w-10 text-sm',
   lg: 'h-14 w-14 text-base',
   xl: 'h-20 w-20 text-xl',
+  '2xl': 'h-28 w-28 text-3xl',
 };
 
 export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
