@@ -477,87 +477,109 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* KPI Section: Left (KPI Score Bar Chart) & Right (KPI Total Medal Pie Chart) */}
       <section id="section-kpi-charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: KPI Score (Grafik Score Setiap Player) */}
-        <div
-          id="card-kpi-score-chart"
-          className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E8B33D]/10 text-[#E8B33D]">
-                <BarChart3 size={18} />
-              </div>
-              <div>
-                <h3 className="font-bold text-base text-[#F2EDE4]">KPI Score Pemain</h3>
-                <p className="text-xs text-[#9C948A]">
-                  Grafik total perolehan skor setiap pemain ({computedStats.length} pemain)
-                </p>
-              </div>
+        {/* Left: KPI Score (Grafik Score Setiap Player) */}
+      <div
+        id="card-kpi-score-chart"
+        className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl flex flex-col"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E8B33D]/10 text-[#E8B33D]">
+              <BarChart3 size={18} />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-[#F2EDE4]">KPI Score Pemain</h3>
+              <p className="text-xs text-[#9C948A]">
+                Grafik total perolehan skor setiap pemain ({computedStats.length} pemain)
+              </p>
             </div>
           </div>
-
-          <div className="h-80 sm:h-96 w-full pt-2 overflow-y-auto pr-1">
-            {scoreChartData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
-                Tidak ada data score untuk filter ini
-              </div>
-            ) : (
-              <div style={{ height: Math.max(340, scoreChartData.length * 28), minHeight: '340px' }} className="w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    layout="vertical"
-                    data={scoreChartData}
-                    margin={{ top: 10, right: 35, left: 10, bottom: 10 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#332C25" horizontal={false} opacity={0.6} />
-                    <XAxis
-                      type="number"
-                      stroke="#9C948A"
-                      fontSize={10}
-                      tickLine={false}
-                      axisLine={{ stroke: '#332C25' }}
-                      domain={[0, 'auto']}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      stroke="#9C948A"
-                      fontSize={11}
-                      width={95}
-                      tickLine={false}
-                      axisLine={{ stroke: '#332C25' }}
-                      interval={0}
-                    />
-                    <RechartsTooltip
-                      content={({ active, payload }) => {
-                        if (!active || !payload || !payload.length) return null;
-                        const data = payload[0].payload;
-                        return (
-                          <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
-                            <div className="font-bold text-[#E8B33D]">{data.name}</div>
-                            <div className="mt-1 text-[#F2EDE4]">
-                              Total Score: <span className="font-bold">{data.score}</span>
-                            </div>
-                            <div className="text-[#9C948A] text-[11px]">
-                              Rata-rata: {data.avgScore} ({data.matches} match)
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Bar
-                      dataKey="score"
-                      fill={teamFilter === 'Pohon' ? '#4F7942' : teamFilter === 'Lobby' ? '#C97A3D' : '#E8B33D'}
-                      radius={[0, 4, 4, 0]}
-                      barSize={16}
-                    >
-                      <LabelList dataKey="score" position="right" fill="#F2EDE4" fontSize={10} fontWeight="bold" />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
         </div>
+
+        {/* Chart area — TANPA overflow, tinggi auto mengikuti jumlah pemain */}
+        <div className="flex-1 w-full pt-2 min-h-[320px]">
+          {scoreChartData.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
+              Tidak ada data score untuk filter ini
+            </div>
+          ) : (
+            <div
+              style={{ height: Math.max(320, scoreChartData.length * 32) }}
+              className="w-full"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  layout="vertical"
+                  data={scoreChartData}
+                  margin={{ top: 8, right: 40, left: 4, bottom: 8 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#332C25"
+                    horizontal={false}
+                    opacity={0.6}
+                  />
+                  <XAxis
+                    type="number"
+                    stroke="#9C948A"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={{ stroke: '#332C25' }}
+                    domain={[0, 'auto']}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="shortName"
+                    stroke="#9C948A"
+                    fontSize={10}
+                    width={70}
+                    tickLine={false}
+                    axisLine={{ stroke: '#332C25' }}
+                    interval={0}
+                  />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const data = payload[0].payload;
+                      return (
+                        <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
+                          <div className="font-bold text-[#E8B33D]">{data.name}</div>
+                          <div className="mt-1 text-[#F2EDE4]">
+                            Total Score: <span className="font-bold">{data.score}</span>
+                          </div>
+                          <div className="text-[#9C948A] text-[11px]">
+                            Rata-rata: {data.avgScore} ({data.matches} match)
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar
+                    dataKey="score"
+                    fill={
+                      teamFilter === 'Pohon'
+                        ? '#4F7942'
+                        : teamFilter === 'Lobby'
+                        ? '#C97A3D'
+                        : '#E8B33D'
+                    }
+                    radius={[0, 4, 4, 0]}
+                    barSize={14}
+                  >
+                    <LabelList
+                      dataKey="score"
+                      position="right"
+                      fill="#F2EDE4"
+                      fontSize={10}
+                      fontWeight="bold"
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </div>
 
         {/* Right: KPI Total Medal (Pie Chart Total Medal) */}
         <div
