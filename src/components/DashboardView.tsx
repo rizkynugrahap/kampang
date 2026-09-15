@@ -25,6 +25,7 @@ import {
   Pie,
   Cell,
   Legend,
+  LabelList,
 } from 'recharts';
 import { LagaAmalSeasonData, Match, Player, TeamShort } from '../types';
 import { ScoreBanner } from './ScoreBanner';
@@ -494,49 +495,66 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="h-60 sm:h-72 w-full pt-2">
+          <div className="h-80 sm:h-96 w-full pt-2 overflow-y-auto pr-1">
             {scoreChartData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
                 Tidak ada data score untuk filter ini
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={scoreChartData} margin={{ top: 10, right: 10, left: -25, bottom: 35 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#332C25" opacity={0.6} />
-                  <XAxis
-                    dataKey="shortName"
-                    stroke="#9C948A"
-                    fontSize={9}
-                    interval={0}
-                    angle={-40}
-                    textAnchor="end"
-                    height={40}
-                  />
-                  <YAxis stroke="#9C948A" fontSize={10} />
-                  <RechartsTooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload || !payload.length) return null;
-                      const data = payload[0].payload;
-                      return (
-                        <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
-                          <div className="font-bold text-[#E8B33D]">{data.name}</div>
-                          <div className="mt-1 text-[#F2EDE4]">
-                            Total Score: <span className="font-bold">{data.score}</span>
+              <div style={{ height: Math.max(340, scoreChartData.length * 28), minHeight: '340px' }} className="w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={scoreChartData}
+                    margin={{ top: 10, right: 35, left: 10, bottom: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#332C25" horizontal={false} opacity={0.6} />
+                    <XAxis
+                      type="number"
+                      stroke="#9C948A"
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={{ stroke: '#332C25' }}
+                      domain={[0, 'auto']}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      stroke="#9C948A"
+                      fontSize={11}
+                      width={95}
+                      tickLine={false}
+                      axisLine={{ stroke: '#332C25' }}
+                      interval={0}
+                    />
+                    <RechartsTooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const data = payload[0].payload;
+                        return (
+                          <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
+                            <div className="font-bold text-[#E8B33D]">{data.name}</div>
+                            <div className="mt-1 text-[#F2EDE4]">
+                              Total Score: <span className="font-bold">{data.score}</span>
+                            </div>
+                            <div className="text-[#9C948A] text-[11px]">
+                              Rata-rata: {data.avgScore} ({data.matches} match)
+                            </div>
                           </div>
-                          <div className="text-[#9C948A] text-[11px]">
-                            Rata-rata: {data.avgScore} ({data.matches} match)
-                          </div>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Bar
-                    dataKey="score"
-                    fill={teamFilter === 'Pohon' ? '#4F7942' : teamFilter === 'Lobby' ? '#C97A3D' : '#E8B33D'}
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+                        );
+                      }}
+                    />
+                    <Bar
+                      dataKey="score"
+                      fill={teamFilter === 'Pohon' ? '#4F7942' : teamFilter === 'Lobby' ? '#C97A3D' : '#E8B33D'}
+                      radius={[0, 4, 4, 0]}
+                      barSize={16}
+                    >
+                      <LabelList dataKey="score" position="right" fill="#F2EDE4" fontSize={10} fontWeight="bold" />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
         </div>
