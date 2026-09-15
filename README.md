@@ -15,6 +15,10 @@ View your app in AI Studio: https://ai.studio/apps/ba19a5c7-e267-4a21-ac70-dc0c2
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. (Optional) Copy `.env.example` to `.env.local` and set `VITE_OPENROUTER_API_KEY`
+   if you want an OpenRouter free-tier backup on top of the default Puter.js
+   integration. No key is required to run the app — AI features work out of
+   the box via Puter.js, with a local heuristic fallback if that's ever
+   unavailable. See `src/services/aiClient.ts` for details.
 3. Run the app:
    `npm run dev`

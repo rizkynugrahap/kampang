@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PLAYERS } from './src/data/seed.ts';
 import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/data/seasonsSeed.ts';
@@ -79,173 +78,34 @@ function saveStore(data: StoreData) {
 
 let store = loadStore();
 
-// Gemini API lazy initialization
-let aiClient: GoogleGenAI | null = null;
-function getGenAI(): GoogleGenAI | null {
-  if (!aiClient && process.env.GEMINI_API_KEY) {
-    aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
+// AI generation now happens client-side (Puter.js -> OpenRouter free tier
+// -> heuristic fallback chain — see src/services/aiClient.ts). This server
+// no longer calls any AI provider itself; it just stores whatever text the
+// client already generated (ai_analysis / julukan in the request body). If
+// a client didn't supply one (older cached build, direct API call), fall
+// back to the local heuristic generator so these endpoints never return
+// empty text.
+
+// Match commentary: use client-supplied text if present, else heuristic
+function generateMatchAnalysis(match: Match, clientSuppliedAnalysis?: string): string {
+  if (clientSuppliedAnalysis && clientSuppliedAnalysis.trim()) {
+    return clientSuppliedAnalysis.trim();
   }
-  return aiClient;
-}
-
-if (!process.env.GEMINI_API_KEY) {
-  console.warn(
-    '[Gemini] GEMINI_API_KEY tidak ditemukan di environment — analisis pertandingan akan ' +
-    'memakai komentar cadangan (heuristik), bukan hasil AI asli. Set secret ini di panel ' +
-    'AI Studio / Cloud Run agar analisis Gemini aktif.'
-  );
-}
-
-// Generate match commentary using Gemini
-async function generateMatchAnalysis(match: Match): Promise<string> {
-  const winnerTeam = match.winner;
-  const loserTeam = winnerTeam === 'Tim Pohon' ? 'Tim Lobby' : 'Tim Pohon';
-
-  const winnerPlayers = (winnerTeam === 'Tim Pohon' ? match.pohon : match.lobby)
-    .map((p) => `${p.player_name} (${p.hero_name}/${p.medal} - Skor ${p.score || '-'})`)
-    .join(', ');
-
-  const loserPlayers = (loserTeam === 'Tim Pohon' ? match.pohon : match.lobby)
-    .map((p) => `${p.player_name} (${p.hero_name}/${p.medal} - Skor ${p.score || '-'})`)
-    .join(', ');
-
-  const promptText = `Match ${match.date}. ${winnerTeam} Menang. Tim Pemenang: ${winnerPlayers}. Tim Kalah (${loserTeam}): ${loserPlayers}.`;
-
-  const systemInstruction =
-    'Kamu adalah komentator e-sport Mobile Legends yang sarkastik, jenaka, namun analitis khas tongkrongan gamer Pantos. ' +
-    'Tugasmu menganalisis hasil pertandingan antara Tim Pohon dan Tim Lobby. ' +
-    'Bahas siapa pemain kunci/MVP yang tampil gemilang, siapa yang "makan Coklat" (jadi semen / beban tim), ' +
-    'serta dinamika hero yang dipakai. ' +
-    'Gunakan istilah khas MLBB (laning, teamfight, blunder, lord, rotasi, kena culik, solo kill). ' +
-    'Tulis dalam 2-3 paragraf ringkas, kocak tapi berbobot dalam bahasa Indonesia santai.';
-
-  const ai = getGenAI();
-  if (ai) {
-    // These model ids used to be 'gemini-3.8-flash' / 'gemini-flash-latest' /
-    // 'gemini-3.1-flash-lite' — none of which are real Gemini models, so
-    // every single call failed here too (same root cause as the match
-    // analysis bug). Using real, current model ids instead.
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-    for (const modelName of candidateModels) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: promptText,
-          config: {
-            systemInstruction,
-            temperature: 0.7,
-            maxOutputTokens: 1024,
-          },
-        });
-        if (response.text && response.text.trim()) {
-          return response.text.trim();
-        }
-      } catch (err: any) {
-        const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
-        const isQuota =
-          err?.status === 'RESOURCE_EXHAUSTED' ||
-          err?.code === 429 ||
-          errMsg.includes('429') ||
-          errMsg.includes('Quota exceeded') ||
-          errMsg.includes('RESOURCE_EXHAUSTED');
-
-        if (isQuota) {
-          console.info(`[Gemini] Match analysis quota reached on ${modelName}, switching to heuristic.`);
-          break;
-        } else {
-          console.info(`[Gemini] Model ${modelName} unavailable for match analysis, checking next candidate.`);
-        }
-      }
-    }
-  }
-
-  // Fallback heuristic commentary if API key is not present or call fails
   return generateHeuristicMatchAnalysis(match);
 }
 
-// Generate creative Pantos nickname using Gemini AI
-async function generatePlayerJulukan(
+// Pantos nickname: use client-supplied text if present, else heuristic
+function generatePlayerJulukan(
   player: Player,
   seasonStat?: any,
+  clientSuppliedJulukan?: string,
   topHeroes: string[] = []
-): Promise<string> {
-  const mvp = seasonStat ? seasonStat.mvp : player.medals.MVP;
-  const antam = seasonStat ? seasonStat.antam : player.medals.Gold;
-  const silver = seasonStat ? seasonStat.silver : player.medals.Silver;
-  const coklat = seasonStat ? seasonStat.coklat : player.medals.Coklat;
-  const winRate = seasonStat ? seasonStat.winRate : player.winRate || 50;
-  const avgScore = seasonStat ? seasonStat.avgScore : player.avgScore || 7.5;
-  const tier = player.tier || 'Legend';
-  const status = player.status || 'Aktif';
-
-  const promptText = `
-Buatlah 1 (satu) JULUKAN / GELAR PANTOS (hanya 2 sampai 5 kata, tanpa tanda kutip, tanpa penjelasan tambahan) yang kocak, bernuansa meme Mobile Legends / e-sport komunitas santai "Laga Amal Pantos" untuk pemain:
-Nama: "${player.name}"
-Tier: ${tier} (Status: ${status})
-MVP: ${mvp} kali
-Antam (Gold): ${antam} kali
-Silver: ${silver} kali
-Coklat (Beban/Feeder): ${coklat} kali
-Win Rate: ${winRate}%
-Rata-rata Skor: ${avgScore}
-Hero Favorit: ${topHeroes.join(', ') || 'Fleksibel'}
-
-Panduan julukan:
-- Bahasa Indonesia santai khas tongkrongan gamer MLBB (istilah: penggendong, tulang punggung, semen, feeder, lord, mekanik, sedekah bintang, penunggu lobby, preman lane).
-- Jika banyak MVP: beri julukan dewa carry / tulang punggung retak.
-- Jika banyak Coklat: julukan jenaka donatur poin / pelindung kelas semen / sedekah bintang.
-- Jika seimbang/solid: julukan spesialis pendamping / pilar rahasia / anti-tumbang.
-- Kembalikan HANYA teks julukannya saja. Contoh output: "Sang Penggendong Patah Tulang" atau "Duta Coklat Kelas Semen" atau "Preman Goldlane Anti Tumbang".
-`;
-
-  const ai = getGenAI();
-  if (ai) {
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-    for (const modelName of candidateModels) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: promptText,
-          config: {
-            temperature: 0.85,
-            maxOutputTokens: 100,
-          },
-        });
-        if (response.text && response.text.trim()) {
-          // Clean output from quotation marks or bullet points
-          let cleanTitle = response.text.trim().replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
-          if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
-          return cleanTitle;
-        }
-      } catch (err: any) {
-        const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
-        const isQuota =
-          err?.status === 'RESOURCE_EXHAUSTED' ||
-          err?.code === 429 ||
-          errMsg.includes('429') ||
-          errMsg.includes('Quota exceeded') ||
-          errMsg.includes('RESOURCE_EXHAUSTED');
-
-        if (isQuota) {
-          console.info(`[Gemini] Julukan generation quota reached on ${modelName}; applying heuristic title.`);
-          break;
-        } else {
-          console.info(`[Gemini] Model ${modelName} unavailable for title generation, trying next candidate.`);
-        }
-      }
-    }
+): string {
+  if (clientSuppliedJulukan && clientSuppliedJulukan.trim()) {
+    return clientSuppliedJulukan.trim();
   }
-
-  return generateHeuristicPlayerJulukan(player, seasonStat);
+  return generateHeuristicPlayerJulukan(player, seasonStat, topHeroes);
 }
-
 // ----------------- API ROUTES -----------------
 
 // GET /api/health
@@ -255,7 +115,7 @@ app.get('/api/health', (req, res) => {
     totalPlayers: store.players.length,
     totalMatches: store.matches.length,
     totalSeasons: store.lagaAmalSeasons.length,
-    hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    aiMode: 'client-side (Puter.js / OpenRouter / heuristic)',
   });
 });
 
@@ -397,12 +257,13 @@ app.put('/api/players/:id', (req, res) => {
   res.json(updatedPlayer);
 });
 
-// POST /api/players/:id/generate-title (Generate or refresh creative Pantos title using Gemini)
-// Accepts an optional `{ player, seasonStat, topHeroes }` payload as a
-// fallback — this backend's own local store can easily be stale/out of
-// sync with the real Firestore player data (e.g. a player added or only
-// ever synced through Firestore), which silently 404'd here before and
-// made "Generate Julukan" look like it did nothing.
+// POST /api/players/:id/generate-title (Store a Pantos title generated client-side)
+// Accepts an optional `{ player, seasonStat, topHeroes, julukan }` payload —
+// `julukan` is the text the client already generated via the Puter.js /
+// OpenRouter / heuristic chain (src/services/aiClient.ts). This backend's
+// own local store can easily be stale/out of sync with the real Firestore
+// player data (e.g. a player added or only ever synced through Firestore),
+// so `player` is accepted as a fallback too.
 app.post('/api/players/:id/generate-title', async (req, res) => {
   try {
     const rawId = req.params.id;
@@ -410,6 +271,8 @@ app.post('/api/players/:id/generate-title', async (req, res) => {
     const bodyPlayer: Player | undefined = req.body?.player;
     const bodySeasonStat = req.body?.seasonStat;
     const bodyTopHeroes: string[] = Array.isArray(req.body?.topHeroes) ? req.body.topHeroes : [];
+    const bodyJulukan: string | undefined =
+      typeof req.body?.julukan === 'string' ? req.body.julukan : undefined;
 
     let playerIndex = store.players.findIndex(
       (p) => String(p.id) === String(rawId) || p.name.toLowerCase() === decodedId
@@ -462,12 +325,7 @@ app.post('/api/players/:id/generate-title', async (req, res) => {
       }
     }
 
-    let generatedJulukan: string;
-    try {
-      generatedJulukan = await generatePlayerJulukan(player, seasonPlayerStat, topHeroNames);
-    } catch {
-      generatedJulukan = generateHeuristicPlayerJulukan(player, seasonPlayerStat);
-    }
+    const generatedJulukan = generatePlayerJulukan(player, seasonPlayerStat, bodyJulukan, topHeroNames);
     const nowIso = new Date().toISOString();
 
     const updatedPlayer: Player = {
@@ -515,7 +373,7 @@ app.get('/api/matches', (req, res) => {
 // POST /api/matches (Save new match + sync directly to active Laga Amal Season and Player profiles!)
 app.post('/api/matches', async (req, res) => {
   try {
-    const { date, season, winner, type, pohon, lobby } = req.body;
+    const { date, season, winner, type, pohon, lobby, ai_analysis } = req.body;
 
     if (!winner || !pohon || !lobby || pohon.length === 0 || lobby.length === 0) {
       return res.status(400).json({ error: 'Data tim dan pemain belum lengkap' });
@@ -528,14 +386,6 @@ app.post('/api/matches', async (req, res) => {
 
     const seasonLabel = season || 'Season 41';
 
-    // Generate the Gemini AI commentary BEFORE responding. Previously this
-    // ran in the background after the response was already sent, and the
-    // finished result only ever got written to the server's local
-    // data/store.json — it was never pushed back to Firestore, which is
-    // what the app actually reads from in real time. That's why the
-    // analysis card was stuck showing the generic offline placeholder
-    // instead of the real Gemini commentary: the real text was generated,
-    // but nothing downstream ever saw it.
     const draftMatch: Match = {
       id: nextId,
       date: date || new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -548,13 +398,11 @@ app.post('/api/matches', async (req, res) => {
       is_generating_analysis: false,
     };
 
-    let analysisText: string;
-    try {
-      analysisText = await generateMatchAnalysis(draftMatch);
-    } catch (aiErr) {
-      console.error('Error generating AI analysis:', aiErr);
-      analysisText = generateHeuristicMatchAnalysis(draftMatch);
-    }
+    // The client (src/services/aiClient.ts) generates commentary itself
+    // via Puter.js / OpenRouter / heuristic before it ever calls this
+    // endpoint, and sends the finished text as `ai_analysis`. We just
+    // store it — falling back to the local heuristic only if it's missing.
+    const analysisText = generateMatchAnalysis(draftMatch, ai_analysis);
 
     const newMatch: Match = { ...draftMatch, ai_analysis: analysisText, is_generating_analysis: false };
 
@@ -624,14 +472,19 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
   }
 
   try {
-    const analysis = await generateMatchAnalysis(match);
+    // Same pattern as POST /api/matches — the client already generated the
+    // text via the Puter.js / OpenRouter / heuristic chain and sends it as
+    // `ai_analysis`; we just persist it (heuristic fallback if absent).
+    const clientSuppliedAnalysis: string | undefined =
+      typeof req.body?.ai_analysis === 'string' ? req.body.ai_analysis : undefined;
+    const analysis = generateMatchAnalysis(match, clientSuppliedAnalysis);
     match.ai_analysis = analysis;
     if (isKnownLocally) {
       saveStore(store);
     }
     res.json({ id: matchId, ai_analysis: analysis });
   } catch (err: any) {
-    res.status(500).json({ error: 'Gagal membuat analisis AI: ' + err.message });
+    res.status(500).json({ error: 'Gagal menyimpan analisis: ' + err.message });
   }
 });
 

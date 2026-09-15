@@ -2,7 +2,7 @@ import { Match, MatchPlayerDetail } from '../types';
 
 /**
  * Produces a serviceable "Kelas Semen" style commentary paragraph from the
- * match data alone, with no AI call. Used as the fallback whenever Gemini
+ * match data alone, with no AI call. Used as the fallback whenever the AI provider chain
  * is unavailable (missing/invalid API key, model error, or the backend
  * itself being unreachable) so the analysis card never shows a flat,
  * generic placeholder like "Pertandingan selesai dengan sengit!".

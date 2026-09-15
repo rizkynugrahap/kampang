@@ -45,6 +45,7 @@ import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars'
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
+import { generateMatchAnalysisClient, generatePlayerJulukanClient } from './services/aiClient';
 
 type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'admin' | 'profile';
 
@@ -339,11 +340,18 @@ export default function App() {
   const handleSaveMatch = async (matchPayload: any): Promise<boolean> => {
     let savedMatch: Match;
 
+    // Generate the AI commentary client-side (Puter.js -> OpenRouter free
+    // tier -> heuristic) BEFORE sending the match to the backend, so the
+    // text can be sent along in one request and the backend just stores
+    // it — see src/services/aiClient.ts.
+    const { text: aiAnalysisText } = await generateMatchAnalysisClient(matchPayload as Match);
+    const matchPayloadWithAnalysis = { ...matchPayload, ai_analysis: aiAnalysisText };
+
     try {
       const res = await fetch('/api/matches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(matchPayload),
+        body: JSON.stringify(matchPayloadWithAnalysis),
       });
 
       if (!res.ok) {
@@ -362,14 +370,14 @@ export default function App() {
       });
     } catch (err: any) {
       console.error('Error saving match to backend, using local fallback:', err);
-      // Backend unreachable — still give a real (if simpler) commentary
-      // instead of a flat generic placeholder like "Pertandingan selesai
-      // dengan sengit!", which used to show up here every time.
+      // Backend unreachable — the client-generated commentary is still
+      // good (it never touched the backend), so reuse it here too instead
+      // of a flat generic placeholder.
       const fallbackId = Date.now();
       savedMatch = {
         id: fallbackId,
         ...matchPayload,
-        ai_analysis: generateHeuristicMatchAnalysis(matchPayload),
+        ai_analysis: aiAnalysisText || generateHeuristicMatchAnalysis(matchPayload),
       };
       setMatches((prev) => [savedMatch, ...prev]);
     }
@@ -548,11 +556,17 @@ export default function App() {
   // server's own local store.
   const handleAnalyzeMatch = async (matchId: number) => {
     const targetMatch = matches.find((m) => m.id === matchId);
+    if (!targetMatch) return;
+
+    // Generate the new commentary client-side first (Puter.js -> OpenRouter
+    // -> heuristic), then send the finished text to the backend to persist.
+    const { text: newAnalysisText } = await generateMatchAnalysisClient(targetMatch);
+
     try {
       const res = await fetch(`/api/matches/${matchId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(targetMatch || {}),
+        body: JSON.stringify({ ...targetMatch, ai_analysis: newAnalysisText }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -575,10 +589,15 @@ export default function App() {
       }
       throw new Error('Backend analyze endpoint returned ' + res.status);
     } catch (err) {
-      console.warn('Error analyzing match via backend, using local fallback:', err);
-      if (!targetMatch) return;
-      const fallbackAnalysis = generateHeuristicMatchAnalysis(targetMatch);
-      const updatedMatch: Match = { ...targetMatch, ai_analysis: fallbackAnalysis, is_generating_analysis: false };
+      console.warn('Error persisting analysis to backend, using local fallback:', err);
+      // The commentary itself was already generated client-side above and
+      // never depended on the backend — only its persistence failed, so
+      // reuse it rather than regenerating a plainer heuristic version.
+      const updatedMatch: Match = {
+        ...targetMatch,
+        ai_analysis: newAnalysisText || generateHeuristicMatchAnalysis(targetMatch),
+        is_generating_analysis: false,
+      };
       setMatches((prev) => prev.map((m) => (m.id === matchId ? updatedMatch : m)));
       if (selectedMatch && selectedMatch.id === matchId) {
         setSelectedMatch(updatedMatch);
@@ -778,15 +797,27 @@ export default function App() {
     );
     if (!targetPlayer) return null;
 
+    const seasonStat = activeSeason.players.find(
+      (p) => p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
+    );
+    const topHeroNames = getPlayerTopHeroes(targetPlayer.name, seasonMatches, activeSeason).map((h) => h.hero);
+
+    // Generate the julukan client-side first (Puter.js -> OpenRouter ->
+    // heuristic), then send the finished text to the backend to persist.
+    const { text: generatedJulukanText } = await generatePlayerJulukanClient(
+      targetPlayer,
+      seasonStat,
+      topHeroNames
+    );
+
     try {
       // Send the player we already have (from Firestore) as a fallback —
       // this backend's own local store can be stale/out of sync with real
       // player data, which used to 404 silently here.
-      const topHeroNames = getPlayerTopHeroes(targetPlayer.name, seasonMatches, activeSeason).map((h) => h.hero);
       const res = await fetch(`/api/players/${encodeURIComponent(String(playerId))}/generate-title`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player: targetPlayer, topHeroes: topHeroNames }),
+        body: JSON.stringify({ player: targetPlayer, topHeroes: topHeroNames, julukan: generatedJulukanText }),
       });
 
       if (res.ok) {
@@ -816,14 +847,12 @@ export default function App() {
       }
       throw new Error('Backend generate-title endpoint returned ' + res.status);
     } catch (err) {
-      console.warn('Error generating player title via backend, using local fallback:', err);
-      // Backend unreachable — generate a heuristic julukan locally instead
-      // of silently returning nothing (which is what made this feature
-      // look broken).
-      const seasonStat = activeSeason.players.find(
-        (p) => p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
-      );
-      const fallbackJulukan = generateHeuristicPlayerJulukan(targetPlayer, seasonStat);
+      console.warn('Error persisting player title to backend, using local fallback:', err);
+      // The julukan itself was already generated client-side above and
+      // never depended on the backend — only its persistence failed, so
+      // reuse it rather than regenerating a plainer heuristic version.
+      const fallbackJulukan =
+        generatedJulukanText || generateHeuristicPlayerJulukan(targetPlayer, seasonStat, topHeroNames);
       const nowIso = new Date().toISOString();
       const updatedPlayer: Player = { ...targetPlayer, julukan: fallbackJulukan, julukan_updated_at: nowIso };
 

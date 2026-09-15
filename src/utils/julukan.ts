@@ -10,7 +10,7 @@ interface SeasonPlayerStatLike {
 
 /**
  * Produces a super nyeleneh, ngeselin, and memorable Pantos-flavored nickname
- * from a player's stats when Gemini AI is offline, rate-limited, or as instant fallback.
+ * from a player's stats when the AI provider chain is offline, rate-limited, or as instant fallback.
  */
 export function generateHeuristicPlayerJulukan(
   player: Player,

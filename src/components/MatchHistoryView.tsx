@@ -135,7 +135,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
               Riwayat Pertandingan · {activeSeason.title}
             </h1>
             <p className="mt-0.5 text-xs text-[#9C948A]">
-              Seluruh rekap pertandingan resmi lengkap dengan analisis tajam AI Gemini sebagai highlight.
+              Seluruh rekap pertandingan resmi lengkap dengan analisis tajam AI sebagai highlight.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -232,7 +232,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                         <Sparkles size={16} className="animate-pulse" />
                       </div>
                       <span className="text-xs font-black uppercase tracking-wider text-[#E8B33D]">
-                        Highlight Analisis Pertandingan (AI Gemini)
+                        Highlight Analisis Pertandingan (AI)
                       </span>
                     </div>
 

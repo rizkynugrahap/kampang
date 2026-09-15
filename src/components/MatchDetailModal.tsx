@@ -223,7 +223,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 <Bot size={14} />
               </div>
               <h4 className="font-bold text-xs text-[#E8B33D] uppercase tracking-wider">
-                Analisis Pertandingan AI (Gemini)
+                Analisis Pertandingan AI
               </h4>
             </div>
             {isAdmin && reanalyzeFn && (
@@ -232,7 +232,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 onClick={handleReanalyze}
                 disabled={isReanalyzing}
                 className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#1D1916] px-2.5 py-1 text-[11px] font-medium text-[#E8B33D] hover:border-[#E8B33D]/40 hover:bg-[#241F1B] disabled:opacity-50 transition-all cursor-pointer"
-                title="Generate ulang analisis dengan Gemini AI"
+                title="Generate ulang analisis dengan AI"
               >
                 <RefreshCw
                   size={12}
@@ -248,7 +248,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
               <div className="space-y-2 py-1">
                 <div className="flex items-center gap-2 text-[#E8B33D]">
                   <RefreshCw size={14} className="animate-spin" />
-                  <span className="font-medium">AI Gemini sedang menganalisis jalannya pertandingan...</span>
+                  <span className="font-medium">AI sedang menganalisis jalannya pertandingan...</span>
                 </div>
                 <p className="text-[#9C948A] opacity-80 border-t border-[#332C25]/60 pt-2 text-[11px]">
                   {analysisDisplay}

@@ -25,7 +25,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
               Riwayat Pertandingan
             </h2>
             <p className="text-xs text-[#9C948A]">
-              Daftar match terbaru beserta analisis tajam AI Gemini
+              Daftar match terbaru beserta analisis tajam AI
             </p>
           </div>
         </div>
@@ -41,7 +41,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
           </div>
           <p className="font-semibold text-sm text-[#F2EDE4]">Belum Ada Riwayat Pertandingan</p>
           <p className="mt-1 text-xs text-[#9C948A] max-w-sm mx-auto">
-            Semua pertandingan telah dihapus. Pertandingan baru yang ditambahkan oleh Admin akan muncul di sini beserta analisis AI Gemini.
+            Semua pertandingan telah dihapus. Pertandingan baru yang ditambahkan oleh Admin akan muncul di sini beserta analisis AI.
           </p>
         </div>
       ) : (

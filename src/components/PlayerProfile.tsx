@@ -356,7 +356,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                     onClick={handleManualGenerateTitle}
                     disabled={isGeneratingTitle}
                     className="inline-flex items-center gap-1.5 rounded-md border border-[#E8B33D]/40 bg-[#E8B33D]/10 hover:bg-[#E8B33D]/25 px-2.5 py-0.5 text-[11px] font-bold text-[#E8B33D] transition-all cursor-pointer disabled:opacity-50 shadow-sm"
-                    title="Buat julukan baru dengan AI Gemini"
+                    title="Buat julukan baru dengan AI"
                   >
                     <Sparkles size={11} className={isGeneratingTitle ? 'animate-spin text-[#E8B33D]' : 'text-[#E8B33D]'} />
                     <span>{isGeneratingTitle ? 'Membuat AI...' : 'Generate Julukan'}</span>
