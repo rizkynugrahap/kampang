@@ -562,7 +562,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Right: KPI Total Medal (Pie Chart Total Medal) */}
         <div
           id="card-kpi-medal-chart"
-          className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-6 shadow-xl flex flex-col justify-between"
+          className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-6 shadow-xl flex flex-col"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -578,55 +578,74 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="h-60 sm:h-72 w-full pt-2">
+          <div className="h-64 sm:h-80 w-full pt-2 flex flex-col">
             {totalAllMedals === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
                 Belum ada perolehan medali untuk filter ini
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={medalPieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="42%"
-                    innerRadius={42}
-                    outerRadius={72}
-                    paddingAngle={4}
-                  >
-                    {medalPieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} stroke="#1D1916" strokeWidth={2} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload || !payload.length) return null;
-                      const data = payload[0];
-                      const pct =
-                        totalAllMedals > 0
-                          ? ((Number(data.value) / totalAllMedals) * 100).toFixed(1)
-                          : '0';
-                      return (
-                        <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
-                          <div className="font-bold" style={{ color: data.payload.color }}>
-                            {data.name}
-                          </div>
-                          <div className="mt-1 text-[#F2EDE4]">
-                            Total: <span className="font-bold">{data.value} medali</span> ({pct}%)
-                          </div>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    formatter={(val) => <span className="text-[11px] sm:text-xs text-[#C5BCAD]">{val}</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <>
+                {/* Chart area — flex-1 biar mengisi sisa ruang setelah legend */}
+                <div className="flex-1 min-h-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                      <Pie
+                        data={medalPieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        startAngle={90}
+                        endAngle={-270}
+                        innerRadius="45%"
+                        outerRadius="75%"
+                        paddingAngle={3}
+                        stroke="#1D1916"
+                        strokeWidth={2}
+                      >
+                        {medalPieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const data = payload[0];
+                          const pct =
+                            totalAllMedals > 0
+                              ? ((Number(data.value) / totalAllMedals) * 100).toFixed(1)
+                              : '0';
+                          return (
+                            <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
+                              <div className="font-bold" style={{ color: data.payload.color }}>
+                                {data.name}
+                              </div>
+                              <div className="mt-1 text-[#F2EDE4]">
+                                Total: <span className="font-bold">{data.value} medali</span> ({pct}%)
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Legend manual di luar chart — posisi 100% terkontrol */}
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-3">
+                  {medalPieData.map((entry) => (
+                    <div key={entry.name} className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full shrink-0"
+                        style={{ backgroundColor: entry.color }}
+                      />
+                      <span className="text-[11px] sm:text-xs text-[#C5BCAD] whitespace-nowrap">
+                        {entry.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>
