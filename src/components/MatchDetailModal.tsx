@@ -4,6 +4,7 @@ import { Match, Medal } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
+import { getMatchDisplayNumber } from '../utils/matchSequence';
 
 interface MatchDetailModalProps {
   match: Match | null;
@@ -83,7 +84,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="rounded bg-[#241F1B] px-2 py-0.5 font-bold text-xs text-[#E8B33D]">
-                Match #{match.id}
+                Match #{getMatchDisplayNumber(match)}
               </span>
               <span className="text-xs text-[#9C948A]">{match.type}</span>
               <span className="text-xs text-[#9C948A]">· {match.season}</span>

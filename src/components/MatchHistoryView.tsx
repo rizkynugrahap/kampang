@@ -15,6 +15,7 @@ import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
 import { ScoreBanner } from './ScoreBanner';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
+import { getMatchDisplayNumber } from '../utils/matchSequence';
 
 interface MatchHistoryViewProps {
   seasons: LagaAmalSeasonData[];
@@ -183,7 +184,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#332C25]/60 pb-3">
                   <div className="flex items-center gap-2.5">
                     <span className="rounded-lg bg-[#251F1B] border border-[#3D352E] px-2.5 py-1 text-xs font-black text-[#F2EDE4]">
-                      Match #{match.id}
+                      Match #{getMatchDisplayNumber(match, matches)}
                     </span>
                     <span className="flex items-center gap-1 text-xs text-[#9C948A]">
                       <Calendar size={12} className="text-[#E8B33D]" />

@@ -18,10 +18,12 @@ import {
 import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, LagaAmalSeasonData, MLBB_TIER_OPTIONS } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
+import { calculateNextMatchNumber } from '../utils/matchSequence';
 
 interface AdminInputProps {
   players: Player[];
   heroes: Hero[];
+  matches?: Match[];
   seasons?: LagaAmalSeasonData[];
   activeSeasonId?: string;
   isAdmin: boolean;
@@ -33,6 +35,7 @@ interface AdminInputProps {
 export const AdminInput: React.FC<AdminInputProps> = ({
   players,
   heroes,
+  matches = [],
   seasons = [],
   activeSeasonId = 's41',
   isAdmin,
@@ -53,6 +56,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   // Match meta
   const [winner, setWinner] = useState<TeamName>('Tim Pohon');
   const [selectedSeason, setSelectedSeason] = useState<string>(activeSeasonId);
+  const [matchNumber, setMatchNumber] = useState<number>(() =>
+    calculateNextMatchNumber(matches, activeSeasonId, seasons)
+  );
   const [matchDate, setMatchDate] = useState<string>(() => {
     return new Date().toLocaleDateString('id-ID', {
       day: '2-digit',
@@ -60,6 +66,12 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       year: 'numeric',
     });
   });
+
+  // Re-calculate next match sequence when selectedSeason or matches change
+  React.useEffect(() => {
+    const nextNum = calculateNextMatchNumber(matches, selectedSeason, seasons);
+    setMatchNumber(nextNum);
+  }, [selectedSeason, matches, seasons]);
 
   // UI States
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -202,8 +214,11 @@ export const AdminInput: React.FC<AdminInputProps> = ({
 
     const seasonObj = seasons.find((s) => s.id === selectedSeason) || seasons[0];
     const seasonLabel = seasonObj ? seasonObj.title : 'Season 41';
+    const targetMatchNumber = Math.max(1, Number(matchNumber) || 1);
 
     const payload = {
+      id: targetMatchNumber,
+      matchNumber: targetMatchNumber,
       date: matchDate,
       season: seasonLabel,
       winner,
@@ -217,10 +232,11 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       if (success) {
         setNotification({
           type: 'success',
-          message: 'Match tersimpan & langsung tersinkron ke Klasemen Laga Amal!',
+          message: `Match #${targetMatchNumber} tersimpan & langsung tersinkron ke Klasemen Laga Amal!`,
         });
         setPohonPlayers([]);
         setLobbyPlayers([]);
+        setMatchNumber(targetMatchNumber + 1);
       }
     } catch (err: any) {
       setNotification({
@@ -316,8 +332,30 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           </div>
         </div>
 
-        {/* Match Configurations (Date, Season, Winner) */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {/* Match Configurations (Number, Date, Season, Winner) */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-[#9C948A] mb-1 flex items-center justify-between">
+              <span>Nomor Match:</span>
+              <span className="text-[10px] text-[#E8B33D] font-mono font-bold">Auto-Sequence</span>
+            </label>
+            <div className="relative flex items-center">
+              <span className="absolute left-3 text-xs font-black text-[#E8B33D]">#</span>
+              <input
+                id="input-match-number"
+                type="number"
+                min={1}
+                value={matchNumber}
+                onChange={(e) => setMatchNumber(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-full rounded-xl border border-[#332C25] bg-[#161311] pl-7 pr-3 py-2 text-xs font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
+                placeholder="1"
+              />
+            </div>
+            <p className="text-[10px] text-[#9C948A] mt-1 truncate">
+              Match #{matchNumber} berurutan otomatis
+            </p>
+          </div>
+
           <div>
             <label className="block text-[11px] font-semibold text-[#9C948A] mb-1">
               Tanggal Match:
@@ -361,7 +399,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     : 'border border-[#332C25] bg-[#161311] text-[#9C948A] hover:text-[#F2EDE4]'
                 }`}
               >
-                🌳 Tim Pohon
+                🌳 Pohon
               </button>
               <button
                 type="button"
@@ -372,7 +410,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     : 'border border-[#332C25] bg-[#161311] text-[#9C948A] hover:text-[#F2EDE4]'
                 }`}
               >
-                🛋️ Tim Lobby
+                🛋️ Lobby
               </button>
             </div>
           </div>
@@ -656,7 +694,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           ) : (
             <Sparkles size={14} />
           )}
-          <span>{isSubmitting ? 'Menyimpan & Menganalisis...' : 'Simpan Pertandingan & Update Klasemen'}</span>
+          <span>{isSubmitting ? 'Menyimpan & Menganalisis...' : `Simpan Match #${matchNumber} & Update Klasemen`}</span>
         </button>
       </div>
 

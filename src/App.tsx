@@ -45,6 +45,7 @@ import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars'
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
+import { sanitizeMatches } from './utils/matchSequence';
 
 type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'admin' | 'profile';
 
@@ -200,8 +201,22 @@ export default function App() {
       if (matchesRes.ok) {
         const mData = await matchesRes.json();
         if (Array.isArray(mData)) {
-          setMatches(mData);
-          localStorage.setItem('pantos_matches_cache', JSON.stringify(mData));
+          const { sanitized, remapped } = sanitizeMatches(mData);
+          setMatches(sanitized);
+          localStorage.setItem('pantos_matches_cache', JSON.stringify(sanitized));
+          if (remapped.length > 0) {
+            remapped.forEach(async ({ oldId, newId }) => {
+              const corrected = sanitized.find((m) => m.id === newId);
+              if (corrected) {
+                try {
+                  await syncMatchToFirestore(corrected);
+                  await deleteMatchFromFirestore(oldId);
+                } catch (e) {
+                  console.warn('Match ID remapping sync error:', e);
+                }
+              }
+            });
+          }
         }
       }
 
@@ -254,10 +269,24 @@ export default function App() {
     const unsubMatches = subscribeToMatches(
       (remoteMatches) => {
         if (Array.isArray(remoteMatches)) {
-          setMatches(remoteMatches);
-          localStorage.setItem('pantos_matches_cache', JSON.stringify(remoteMatches));
+          const { sanitized, remapped } = sanitizeMatches(remoteMatches);
+          setMatches(sanitized);
+          localStorage.setItem('pantos_matches_cache', JSON.stringify(sanitized));
           setLastSyncedAt(new Date());
           setIsFirestoreConnected(true);
+          if (remapped.length > 0) {
+            remapped.forEach(async ({ oldId, newId }) => {
+              const corrected = sanitized.find((m) => m.id === newId);
+              if (corrected) {
+                try {
+                  await syncMatchToFirestore(corrected);
+                  await deleteMatchFromFirestore(oldId);
+                } catch (e) {
+                  console.warn('Match ID remapping sync error:', e);
+                }
+              }
+            });
+          }
         }
       },
       () => setIsFirestoreConnected(false)
@@ -339,11 +368,28 @@ export default function App() {
   const handleSaveMatch = async (matchPayload: any): Promise<boolean> => {
     let savedMatch: Match;
 
+    // Calculate reliable sequential ID (< 1,000,000)
+    const validMatchIds = matches
+      .map((m) => Number(m.id))
+      .filter((id) => !isNaN(id) && id > 0 && id < 1000000);
+    const targetId =
+      typeof matchPayload.id === 'number' && matchPayload.id > 0 && matchPayload.id < 1000000
+        ? matchPayload.id
+        : validMatchIds.length > 0
+        ? Math.max(...validMatchIds) + 1
+        : matches.length + 1;
+
+    const payloadWithId = {
+      ...matchPayload,
+      id: targetId,
+      matchNumber: targetId,
+    };
+
     try {
       const res = await fetch('/api/matches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(matchPayload),
+        body: JSON.stringify(payloadWithId),
       });
 
       if (!res.ok) {
@@ -352,26 +398,30 @@ export default function App() {
       }
 
       const resData = await res.json();
-      savedMatch = resData.match || resData;
+      const candidate = resData.match || resData;
+      const candidateId = Number(candidate.id);
+      savedMatch = {
+        ...candidate,
+        id: !isNaN(candidateId) && candidateId > 0 && candidateId < 1000000 ? candidateId : targetId,
+        matchNumber: targetId,
+      };
 
       // Update local matches
       setMatches((prev) => {
-        const next = [savedMatch, ...prev];
+        const next = [savedMatch, ...prev.filter((m) => m.id !== savedMatch.id)];
         localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
         return next;
       });
     } catch (err: any) {
       console.error('Error saving match to backend, using local fallback:', err);
-      // Backend unreachable — still give a real (if simpler) commentary
-      // instead of a flat generic placeholder like "Pertandingan selesai
-      // dengan sengit!", which used to show up here every time.
-      const fallbackId = Date.now();
+      // Fallback ALWAYS uses targetId — NEVER Date.now()!
       savedMatch = {
-        id: fallbackId,
+        id: targetId,
+        matchNumber: targetId,
         ...matchPayload,
         ai_analysis: generateHeuristicMatchAnalysis(matchPayload),
       };
-      setMatches((prev) => [savedMatch, ...prev]);
+      setMatches((prev) => [savedMatch, ...prev.filter((m) => m.id !== savedMatch.id)]);
     }
 
     // Apply match to active season (local + backend cache) regardless of
@@ -1095,6 +1145,7 @@ export default function App() {
           <AdminInput
             players={players}
             heroes={heroes}
+            matches={matches}
             seasons={seasons}
             activeSeasonId={selectedSeasonId}
             isAdmin={isAdmin}

@@ -3,6 +3,7 @@ import { Flame, Calendar, Sparkles, ChevronRight } from 'lucide-react';
 import { Match } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
+import { getMatchDisplayNumber } from '../utils/matchSequence';
 
 interface MatchFeedProps {
   matches: Match[];
@@ -64,7 +65,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-sm text-[#F2EDE4]">
-                      Match #{match.id}
+                      Match #{getMatchDisplayNumber(match, matches)}
                     </span>
                     <span className="text-xs text-[#9C948A]">· {match.date}</span>
                     <span className="rounded bg-[#241F1B] px-1.5 py-0.5 text-[10px] text-[#9C948A]">

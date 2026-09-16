@@ -1001,23 +1001,29 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
       {/* SUB-TAB 4: LOG MATCH */}
       {activeSubTab === 'matchLogs' && (
         <div className="space-y-3">
-          {(currentSeason.matchLogs || []).map((log) => (
-            <div
-              key={log.matchNumber}
-              className="rounded-xl border border-[#332C25] bg-[#1D1916] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-[#E8B33D]/20 px-2 py-0.5 text-[11px] font-bold text-[#E8B33D]">
-                    Match #{log.matchNumber}
-                  </span>
-                  <span className="text-xs text-[#9C948A]">{log.date}</span>
+          {(currentSeason.matchLogs || []).map((log, index) => {
+            const displayNum =
+              typeof log.matchNumber === 'number' && log.matchNumber > 0 && log.matchNumber < 1000000
+                ? log.matchNumber
+                : (currentSeason.matchLogs?.length || 0) - index;
+
+            return (
+              <div
+                key={`${log.matchNumber}-${index}`}
+                className="rounded-xl border border-[#332C25] bg-[#1D1916] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-[#E8B33D]/20 px-2 py-0.5 text-[11px] font-bold text-[#E8B33D]">
+                      Match #{displayNum}
+                    </span>
+                    <span className="text-xs text-[#9C948A]">{log.date}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-bold text-[#F2EDE4]">
+                    <span>Pemenang:</span>
+                    <span className="text-emerald-400">{log.winner}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-bold text-[#F2EDE4]">
-                  <span>Pemenang:</span>
-                  <span className="text-emerald-400">{log.winner}</span>
-                </div>
-              </div>
 
               <div className="flex items-center gap-3 text-xs">
                 {log.pohonMvp && (
@@ -1034,7 +1040,8 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                 )}
               </div>
             </div>
-          ))}
+          );
+        })}
         </div>
       )}
 

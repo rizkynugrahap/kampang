@@ -521,10 +521,19 @@ app.post('/api/matches', async (req, res) => {
       return res.status(400).json({ error: 'Data tim dan pemain belum lengkap' });
     }
 
+    const validIds = (store.matches || [])
+      .map((m) => Number(m.id))
+      .filter((id) => !isNaN(id) && id > 0 && id < 1000000);
+
+    const inputId = req.body.id ?? req.body.matchNumber;
+    const numInputId = Number(inputId);
+
     const nextId =
-      store.matches.length > 0
-        ? Math.max(...store.matches.map((m) => m.id)) + 1
-        : 1;
+      !isNaN(numInputId) && numInputId > 0 && numInputId < 1000000
+        ? numInputId
+        : validIds.length > 0
+        ? Math.max(...validIds) + 1
+        : (store.matches?.length || 0) + 1;
 
     const seasonLabel = season || 'Season 41';
 

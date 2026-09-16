@@ -352,8 +352,15 @@ export function applyMatchToSeason(season: LagaAmalSeasonData, match: Match): La
   if (!updated.matchLogs) updated.matchLogs = [];
   const pohonMvpEntry = match.pohon.find((mp) => mp.medal === 'MVP');
   const lobbyMvpEntry = match.lobby.find((mp) => mp.medal === 'MVP');
+  const validNum =
+    typeof (match as any).matchNumber === 'number' && (match as any).matchNumber > 0 && (match as any).matchNumber < 1000000
+      ? (match as any).matchNumber
+      : Number(match.id) > 0 && Number(match.id) < 1000000
+      ? Number(match.id)
+      : updated.matchLogs.length + 1;
+
   updated.matchLogs.unshift({
-    matchNumber: updated.matchLogs.length + 1,
+    matchNumber: validNum,
     date: match.date,
     winner: match.winner,
     pohonMvp: pohonMvpEntry?.player_name,

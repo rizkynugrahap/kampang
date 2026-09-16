@@ -67,6 +67,7 @@ export type MatchType = 'Laga Amal' | 'Ranked';
 
 export interface Match {
   id: number;
+  matchNumber?: number;
   date: string;
   season: string;
   winner: TeamName;
