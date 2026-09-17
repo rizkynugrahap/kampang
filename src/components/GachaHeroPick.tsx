@@ -65,6 +65,18 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
   const [pohonTeam, setPohonTeam] = useState<PlayerDraftSlot[]>([]);
   const [lobbyTeam, setLobbyTeam] = useState<PlayerDraftSlot[]>([]);
 
+  // Synchronous refs to prevent race conditions during rapid or auto spins
+  const lobbyTeamRef = useRef<PlayerDraftSlot[]>([]);
+  const pohonTeamRef = useRef<PlayerDraftSlot[]>([]);
+
+  useEffect(() => {
+    lobbyTeamRef.current = lobbyTeam;
+  }, [lobbyTeam]);
+
+  useEffect(() => {
+    pohonTeamRef.current = pohonTeam;
+  }, [pohonTeam]);
+
   // Active step: 'pick_players' | 'draft_hero'
   const [step, setStep] = useState<'pick_players' | 'draft_hero'>('pick_players');
 
@@ -89,6 +101,30 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 
   // Team shuffle spinning animation
   const [isTeamSpinning, setIsTeamSpinning] = useState(false);
+
+  // Status of available roles for the currently selected player's team (ANTI-ROLE CLASH)
+  const activeRoleStatus = useMemo(() => {
+    const isLobby = lobbyTeam.some((p) => p.playerName === activePlayerForSpin);
+    const teamSlots = isLobby ? lobbyTeam : pohonTeam;
+    const teamName = isLobby ? 'Tim Lobby' : 'Tim Pohon';
+
+    // Roles taken by OTHER players in this same team
+    const takenRolesInTeam = new Set<MLBBHeroRole>(
+      teamSlots
+        .filter((p) => p.playerName !== activePlayerForSpin && !!p.role)
+        .map((p) => p.role as MLBBHeroRole)
+    );
+
+    // Roles available to be rolled by this player
+    const availableRoles = MLBB_ROLES.filter((r) => !takenRolesInTeam.has(r.name));
+
+    return {
+      isLobby,
+      teamName,
+      takenRolesInTeam,
+      availableRoles,
+    };
+  }, [lobbyTeam, pohonTeam, activePlayerForSpin]);
 
   // Map of hero to roles for fast lookup
   const heroesByRole = useMemo(() => {
@@ -182,6 +218,8 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
         const lobby = shuffled.slice(0, 5).map((playerName) => ({ playerName }));
         const pohon = shuffled.slice(5, 10).map((playerName) => ({ playerName }));
 
+        lobbyTeamRef.current = lobby;
+        pohonTeamRef.current = pohon;
         setLobbyTeam(lobby);
         setPohonTeam(pohon);
         setIsTeamSpinning(false);
@@ -192,124 +230,146 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
     }, 100);
   };
 
-  // Perform slot spin for a single player
-  const spinForPlayer = (targetPlayerName: string) => {
-    if (isSpinning || !targetPlayerName) return;
-
-    setIsSpinning(true);
-
-    // List of heroes already picked by other players to avoid duplicate picks
-    const pickedHeroNames = new Set(
-      allTenPlayers
-        .filter((p) => p.playerName !== targetPlayerName && !!p.hero)
-        .map((p) => p.hero)
-    );
-
-    // Pick random target role
-    const randomRole = MLBB_ROLES[Math.floor(Math.random() * MLBB_ROLES.length)].name;
-
-    // Pick random hero matching that role
-    const candidates = (heroesByRole[randomRole] || []).filter(
-      (h) => !pickedHeroNames.has(h.name)
-    );
-    const selectedHeroObj =
-      candidates.length > 0
-        ? candidates[Math.floor(Math.random() * candidates.length)]
-        : heroes.find((h) => !pickedHeroNames.has(h.name)) || heroes[0];
-
-    const targetHeroName = selectedHeroObj?.name || 'Eudora';
-    const targetHeroAvatar = selectedHeroObj?.avatar_url || '';
-
-    // Animate slot reel cycling
-    let elapsed = 0;
-    const spinInterval = setInterval(() => {
-      elapsed += 80;
-      const tempRole = MLBB_ROLES[Math.floor(Math.random() * MLBB_ROLES.length)].name;
-      const tempHeroes = heroesByRole[tempRole] || heroes;
-      const tempHero = tempHeroes[Math.floor(Math.random() * tempHeroes.length)];
-
-      setDisplayRole(tempRole);
-      if (tempHero) {
-        setDisplayHero(tempHero.name);
-        setDisplayHeroAvatar(tempHero.avatar_url || '');
+  // Perform slot spin for a single player with strict team-level anti-role-clash
+  const spinForPlayer = (targetPlayerName: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (isSpinning || !targetPlayerName) {
+        resolve();
+        return;
       }
 
-      casinoSound.playReelTick();
+      setIsSpinning(true);
 
-      if (elapsed >= 1200) {
-        clearInterval(spinInterval);
+      const currentLobby = lobbyTeamRef.current;
+      const currentPohon = pohonTeamRef.current;
+      const isLobby = currentLobby.some((p) => p.playerName === targetPlayerName);
+      const teamSlots = isLobby ? currentLobby : currentPohon;
 
-        // Lock in final results
-        setDisplayRole(randomRole);
-        setDisplayHero(targetHeroName);
-        setDisplayHeroAvatar(targetHeroAvatar);
+      // STRICT RULE: Roles already assigned to teammates in THIS team are EXCLUDED
+      const takenRolesInThisTeam = new Set<MLBBHeroRole>(
+        teamSlots
+          .filter((p) => p.playerName !== targetPlayerName && !!p.role)
+          .map((p) => p.role as MLBBHeroRole)
+      );
 
-        // Update player slot
-        const updater = (slots: PlayerDraftSlot[]) =>
-          slots.map((s) =>
-            s.playerName === targetPlayerName
-              ? {
-                  ...s,
-                  role: randomRole,
-                  hero: targetHeroName,
-                  heroAvatar: targetHeroAvatar,
-                }
-              : s
-          );
+      // Available roles for this specific team (excluding any role already rolled by teammates)
+      const availableRoles = MLBB_ROLES.filter((r) => !takenRolesInThisTeam.has(r.name));
+      const candidateRoles = availableRoles.length > 0 ? availableRoles : MLBB_ROLES;
 
-        setLobbyTeam((prev) => updater(prev));
-        setPohonTeam((prev) => updater(prev));
+      // Pick random role strictly from the unassigned roles in this team
+      const chosenRoleObj = candidateRoles[Math.floor(Math.random() * candidateRoles.length)];
+      const chosenRole = chosenRoleObj.name;
 
-        // Set announcement banner
-        setLatestAnnouncement({
-          player: targetPlayerName,
-          role: randomRole,
-          hero: targetHeroName,
-        });
+      // Heroes already picked across BOTH teams (no mirror pick)
+      const pickedHeroNames = new Set(
+        [...currentLobby, ...currentPohon]
+          .filter((p) => p.playerName !== targetPlayerName && !!p.hero)
+          .map((p) => p.hero)
+      );
 
-        casinoSound.playJackpot();
-        setIsSpinning(false);
+      // Pick hero matching chosenRole that has not been picked
+      const heroPool = heroesByRole[chosenRole] || [];
+      const availableHeroes = heroPool.filter((h) => !pickedHeroNames.has(h.name));
+      const selectedHeroObj =
+        availableHeroes.length > 0
+          ? availableHeroes[Math.floor(Math.random() * availableHeroes.length)]
+          : heroPool[Math.floor(Math.random() * heroPool.length)] || heroes[0];
 
-        // Auto move to next unpicked player if any
-        setTimeout(() => {
-          const currentCombined = [...lobbyTeam, ...pohonTeam];
+      const targetHeroName = selectedHeroObj?.name || 'Eudora';
+      const targetHeroAvatar = selectedHeroObj?.avatar_url || '';
+
+      // Animate slot reel cycling
+      let elapsed = 0;
+      const spinInterval = setInterval(() => {
+        elapsed += 80;
+        // The slot reel cycles visually through the valid available roles for this team
+        const tempRole = candidateRoles[Math.floor(Math.random() * candidateRoles.length)].name;
+        const tempHeroes = heroesByRole[tempRole] || heroes;
+        const tempHero = tempHeroes[Math.floor(Math.random() * tempHeroes.length)];
+
+        setDisplayRole(tempRole);
+        if (tempHero) {
+          setDisplayHero(tempHero.name);
+          setDisplayHeroAvatar(tempHero.avatar_url || '');
+        }
+
+        casinoSound.playReelTick();
+
+        if (elapsed >= 1100) {
+          clearInterval(spinInterval);
+
+          // Lock in final results
+          setDisplayRole(chosenRole);
+          setDisplayHero(targetHeroName);
+          setDisplayHeroAvatar(targetHeroAvatar);
+
+          // Update player slot in synchronous ref & React state
+          const updatedSlot: PlayerDraftSlot = {
+            playerName: targetPlayerName,
+            role: chosenRole,
+            hero: targetHeroName,
+            heroAvatar: targetHeroAvatar,
+          };
+
+          if (isLobby) {
+            const nextLobby = lobbyTeamRef.current.map((s) =>
+              s.playerName === targetPlayerName ? updatedSlot : s
+            );
+            lobbyTeamRef.current = nextLobby;
+            setLobbyTeam(nextLobby);
+          } else {
+            const nextPohon = pohonTeamRef.current.map((s) =>
+              s.playerName === targetPlayerName ? updatedSlot : s
+            );
+            pohonTeamRef.current = nextPohon;
+            setPohonTeam(nextPohon);
+          }
+
+          // Set announcement banner
+          setLatestAnnouncement({
+            player: targetPlayerName,
+            role: chosenRole,
+            hero: targetHeroName,
+          });
+
+          casinoSound.playJackpot();
+          setIsSpinning(false);
+
+          // Auto move to next unpicked player if any
+          const currentCombined = [...lobbyTeamRef.current, ...pohonTeamRef.current];
           const nextUnpicked = currentCombined.find(
             (p) => p.playerName !== targetPlayerName && !p.hero
           );
           if (nextUnpicked) {
             setActivePlayerForSpin(nextUnpicked.playerName);
           }
-        }, 300);
-      }
-    }, 80);
+
+          resolve();
+        }
+      }, 80);
+    });
   };
 
   // Auto spin all remaining unpicked players sequentially
   const handleAutoSpinAll = async () => {
     if (isSpinning) return;
 
-    const unpicked = allTenPlayers.filter((p) => !p.hero);
-    if (unpicked.length === 0) {
-      // Re-spin everyone from scratch
-      const allNames = allTenPlayers.map((p) => p.playerName);
-      for (const name of allNames) {
-        setActivePlayerForSpin(name);
-        spinForPlayer(name);
-        await new Promise((res) => setTimeout(res, 1400));
-      }
-      return;
-    }
+    const currentCombined = [...lobbyTeamRef.current, ...pohonTeamRef.current];
+    const unpicked = currentCombined.filter((p) => !p.hero);
+    const targets = unpicked.length > 0 ? unpicked : currentCombined;
 
-    for (const p of unpicked) {
+    for (const p of targets) {
       setActivePlayerForSpin(p.playerName);
-      spinForPlayer(p.playerName);
-      await new Promise((res) => setTimeout(res, 1400));
+      await spinForPlayer(p.playerName);
+      await new Promise((res) => setTimeout(res, 300));
     }
   };
 
   // Reset all
   const handleReset = () => {
     setStep('pick_players');
+    lobbyTeamRef.current = [];
+    pohonTeamRef.current = [];
     setPohonTeam([]);
     setLobbyTeam([]);
     setLatestAnnouncement(null);
@@ -600,6 +660,63 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
               <RotateCcw size={14} />
               <span>Reset</span>
             </button>
+          </div>
+
+          {/* Anti-Bentrok 1 Tim Live Role Indicator */}
+          <div className="rounded-2xl border border-[#E8B33D]/30 bg-[#161210] p-3 sm:p-4 shadow-inner">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-2.5 border-b border-[#332C25]/80">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#E8B33D]/15 px-2.5 py-1 text-xs font-black text-[#E8B33D] border border-[#E8B33D]/40">
+                  <ShieldAlert size={14} className="text-[#E8B33D]" />
+                  <span>SISTEM ANTI-BENTROK 1 TIM</span>
+                </span>
+                <span className="text-xs font-bold text-[#F2EDE4]">
+                  {activeRoleStatus.teamName} — Giliran Spin:{' '}
+                  <strong className="text-[#E8B33D]">{activePlayerForSpin || '-'}</strong>
+                </span>
+              </div>
+              <div className="text-[11px] text-[#9C948A]">
+                Role tersedia di tim ini:{' '}
+                <strong className="text-[#E8B33D]">
+                  {activeRoleStatus.availableRoles.length}
+                </strong>{' '}
+                / 6 role
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 pt-2.5">
+              <span className="text-[11px] font-semibold text-[#9C948A] mr-1">
+                Ketersediaan Role:
+              </span>
+              {MLBB_ROLES.map((r) => {
+                const isTaken = activeRoleStatus.takenRolesInTeam.has(r.name);
+                return (
+                  <span
+                    key={`role-indicator-${r.name}`}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
+                      isTaken
+                        ? 'border-[#332C25] bg-[#1F1916] text-[#9C948A]/40 line-through opacity-40 select-none'
+                        : `${r.badgeClass} ring-1 ring-white/10 shadow-sm`
+                    }`}
+                    title={
+                      isTaken
+                        ? `${r.name} sudah dipakai rekan di ${activeRoleStatus.teamName} (dikecualikan)`
+                        : `${r.name} tersedia untuk di-roll`
+                    }
+                  >
+                    <span>{r.icon}</span>
+                    <span>{r.name}</span>
+                    {isTaken ? (
+                      <span className="text-[9px] no-underline font-normal text-rose-400">
+                        ✕
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-[#E8B33D] font-normal">●</span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
           </div>
 
           {/* THE CASINO SLOT REEL MACHINE (Matching exact 2-box design in screenshot) */}
