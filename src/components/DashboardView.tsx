@@ -73,6 +73,124 @@ const MEDAL_COLORS = {
   Coklat: '#78350F',   // Cocoa Bronze
 };
 
+export type KpiMetricType = 'coklat' | 'silver' | 'gold' | 'mvp' | 'match' | 'score' | 'wr';
+
+export interface KpiMetricConfig {
+  id: KpiMetricType;
+  label: string;
+  title: string;
+  description: string;
+  unit: string;
+  color: string;
+  activeBg: string;
+  activeBorder: string;
+  activeText: string;
+  iconText: string;
+  getValue: (p: PlayerStatsComputed) => number;
+  formatValue: (val: number) => string | number;
+}
+
+export const KPI_METRICS: KpiMetricConfig[] = [
+  {
+    id: 'coklat',
+    label: 'Coklat',
+    title: 'Medali Coklat',
+    description: 'total perolehan Medali Coklat',
+    unit: 'Medali',
+    color: '#A16207',
+    activeBg: 'bg-[#A16207]/25',
+    activeBorder: 'border-[#A16207]',
+    activeText: 'text-[#FDE68A]',
+    iconText: '🍫',
+    getValue: (p) => p.coklat,
+    formatValue: (v) => v,
+  },
+  {
+    id: 'silver',
+    label: 'Silver',
+    title: 'Medali Silver',
+    description: 'total perolehan Medali Silver',
+    unit: 'Medali',
+    color: '#94A3B8',
+    activeBg: 'bg-[#94A3B8]/25',
+    activeBorder: 'border-[#94A3B8]',
+    activeText: 'text-[#F1F5F9]',
+    iconText: '🥈',
+    getValue: (p) => p.silver,
+    formatValue: (v) => v,
+  },
+  {
+    id: 'gold',
+    label: 'Gold',
+    title: 'Medali Gold (Antam)',
+    description: 'total perolehan Medali Gold (Antam)',
+    unit: 'Medali',
+    color: '#D97706',
+    activeBg: 'bg-[#D97706]/25',
+    activeBorder: 'border-[#D97706]',
+    activeText: 'text-[#FDE047]',
+    iconText: '🥇',
+    getValue: (p) => p.antam,
+    formatValue: (v) => v,
+  },
+  {
+    id: 'mvp',
+    label: 'MVP',
+    title: 'Gelar MVP',
+    description: 'total perolehan Gelar MVP',
+    unit: 'Gelar',
+    color: '#F59E0B',
+    activeBg: 'bg-[#F59E0B]/25',
+    activeBorder: 'border-[#F59E0B]',
+    activeText: 'text-[#FBBF24]',
+    iconText: '👑',
+    getValue: (p) => p.mvp,
+    formatValue: (v) => v,
+  },
+  {
+    id: 'match',
+    label: 'Match',
+    title: 'Total Match',
+    description: 'jumlah pertandingan yang dimainkan',
+    unit: 'Match',
+    color: '#3B82F6',
+    activeBg: 'bg-[#3B82F6]/25',
+    activeBorder: 'border-[#3B82F6]',
+    activeText: 'text-[#93C5FD]',
+    iconText: '⚔️',
+    getValue: (p) => p.matches,
+    formatValue: (v) => v,
+  },
+  {
+    id: 'score',
+    label: 'Skor',
+    title: 'Skor Pemain',
+    description: 'total akumulasi skor performa pemain',
+    unit: 'Poin',
+    color: '#E8B33D',
+    activeBg: 'bg-[#E8B33D]/25',
+    activeBorder: 'border-[#E8B33D]',
+    activeText: 'text-[#F2EDE4]',
+    iconText: '🏆',
+    getValue: (p) => p.score,
+    formatValue: (v) => v,
+  },
+  {
+    id: 'wr',
+    label: 'WR',
+    title: 'Win Rate (%)',
+    description: 'persentase kemenangan (Win Rate)',
+    unit: '%',
+    color: '#10B981',
+    activeBg: 'bg-[#10B981]/25',
+    activeBorder: 'border-[#10B981]',
+    activeText: 'text-[#6EE7B7]',
+    iconText: '📈',
+    getValue: (p) => p.winRate,
+    formatValue: (v) => `${v}%`,
+  },
+];
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   seasons,
   selectedSeasonId,
@@ -85,6 +203,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onExportToAdmin,
 }) => {
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
+  const [selectedKpiMetric, setSelectedKpiMetric] = useState<KpiMetricType>('score');
 
   // Compute player stats according to the selected season AND team filter
   const computedStats = useMemo(() => {
@@ -334,18 +453,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [computedStats, activeSeason, seasonMatches]);
 
-  // KPI Score Chart Data (Players sorted by score descending)
-  const scoreChartData = useMemo(() => {
+  // Active KPI Metric Configuration
+  const currentMetricConfig = useMemo(() => {
+    return KPI_METRICS.find((m) => m.id === selectedKpiMetric) || KPI_METRICS[5];
+  }, [selectedKpiMetric]);
+
+  // KPI Chart Data (Players sorted by selected metric descending)
+  const kpiChartData = useMemo(() => {
     return [...computedStats]
-      .sort((a, b) => b.score - a.score)
-      .map((p) => ({
-        name: p.nickname,
-        shortName: p.nickname.length > 9 ? p.nickname.slice(0, 8) + '…' : p.nickname,
-        score: p.score,
-        avgScore: p.avgScore,
-        matches: p.matches,
-      }));
-  }, [computedStats]);
+      .map((p) => {
+        const rawVal = currentMetricConfig.getValue(p);
+        return {
+          name: p.nickname,
+          shortName: p.nickname.length > 9 ? p.nickname.slice(0, 8) + '…' : p.nickname,
+          value: rawVal,
+          displayValue: currentMetricConfig.formatValue(rawVal),
+          score: p.score,
+          avgScore: p.avgScore,
+          matches: p.matches,
+          mvp: p.mvp,
+          antam: p.antam,
+          silver: p.silver,
+          coklat: p.coklat,
+          winRate: p.winRate,
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+  }, [computedStats, currentMetricConfig]);
+
+  const scoreChartData = kpiChartData;
 
   // KPI Total Medal Pie Chart Data
   const medalPieData = useMemo(() => {
@@ -484,42 +620,91 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* KPI Section: Left (KPI Score Bar Chart) & Right (KPI Total Medal Pie Chart) */}
       <section id="section-kpi-charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: KPI Score (Grafik Score Setiap Player) */}
-        {/* Left: KPI Score (Grafik Score Setiap Player) */}
+        {/* Left: KPI Score / Metric Selector (Grafik Score & Metrik Setiap Player) */}
       <div
         id="card-kpi-score-chart"
         className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl flex flex-col"
       >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E8B33D]/10 text-[#E8B33D]">
-              <BarChart3 size={18} />
+        {/* Header & Metric Selector */}
+        <div className="flex flex-col gap-3.5 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0 transition-colors shadow-sm"
+                style={{
+                  backgroundColor: `${currentMetricConfig.color}20`,
+                  color: currentMetricConfig.color,
+                }}
+              >
+                <BarChart3 size={19} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-base text-[#F2EDE4]">
+                    KPI {currentMetricConfig.title}
+                  </h3>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border flex items-center gap-1"
+                    style={{
+                      backgroundColor: `${currentMetricConfig.color}15`,
+                      borderColor: `${currentMetricConfig.color}45`,
+                      color: currentMetricConfig.color,
+                    }}
+                  >
+                    <span>{currentMetricConfig.iconText}</span>
+                    <span>{currentMetricConfig.label}</span>
+                  </span>
+                </div>
+                <p className="text-xs text-[#9C948A]">
+                  Grafik peringkat {currentMetricConfig.description} ({computedStats.length} pemain)
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-base text-[#F2EDE4]">KPI Score Pemain</h3>
-              <p className="text-xs text-[#9C948A]">
-                Grafik total perolehan skor setiap pemain ({computedStats.length} pemain)
-              </p>
-            </div>
+          </div>
+
+          {/* Metric Selector Buttons (Coklat, Silver, Gold, MVP, Match, Skor, WR) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none">
+            <span className="text-[11px] font-bold text-[#9C948A] shrink-0 mr-1 hidden sm:inline">
+              Pilih Metrik:
+            </span>
+            {KPI_METRICS.map((opt) => {
+              const isActive = selectedKpiMetric === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  id={`kpi-metric-btn-${opt.id}`}
+                  type="button"
+                  onClick={() => setSelectedKpiMetric(opt.id)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-xl border transition-all shrink-0 cursor-pointer flex items-center gap-1.5 min-h-[32px] ${
+                    isActive
+                      ? `${opt.activeBg} ${opt.activeBorder} ${opt.activeText} shadow-md font-black ring-1 ring-white/10`
+                      : 'bg-[#161311] border-[#332C25] text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#221C18] hover:border-[#4D4238]'
+                  }`}
+                >
+                  <span className="text-xs">{opt.iconText}</span>
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Chart area — TANPA overflow, tinggi auto mengikuti jumlah pemain */}
         <div className="flex-1 w-full pt-2 min-h-[320px]">
-          {scoreChartData.length === 0 ? (
+          {kpiChartData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
-              Tidak ada data score untuk filter ini
+              Tidak ada data untuk metrik ini
             </div>
           ) : (
             <div
-              style={{ height: Math.max(320, scoreChartData.length * 32) }}
+              style={{ height: Math.max(320, kpiChartData.length * 32) }}
               className="w-full"
             >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   layout="vertical"
-                  data={scoreChartData}
-                  margin={{ top: 8, right: 40, left: 4, bottom: 8 }}
+                  data={kpiChartData}
+                  margin={{ top: 8, right: 46, left: 4, bottom: 8 }}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
@@ -533,7 +718,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     fontSize={10}
                     tickLine={false}
                     axisLine={{ stroke: '#332C25' }}
-                    domain={[0, 'auto']}
+                    domain={selectedKpiMetric === 'wr' ? [0, 100] : [0, 'auto']}
+                    unit={selectedKpiMetric === 'wr' ? '%' : ''}
                   />
                   <YAxis
                     type="category"
@@ -550,32 +736,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       if (!active || !payload || !payload.length) return null;
                       const data = payload[0].payload;
                       return (
-                        <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
-                          <div className="font-bold text-[#E8B33D]">{data.name}</div>
-                          <div className="mt-1 text-[#F2EDE4]">
-                            Total Score: <span className="font-bold">{data.score}</span>
+                        <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs space-y-1.5">
+                          <div className="flex items-center justify-between gap-3 border-b border-[#332C25]/80 pb-1">
+                            <span className="font-bold text-[#F2EDE4]">{data.name}</span>
+                            <span
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold border"
+                              style={{
+                                color: currentMetricConfig.color,
+                                borderColor: `${currentMetricConfig.color}50`,
+                                backgroundColor: `${currentMetricConfig.color}15`,
+                              }}
+                            >
+                              {currentMetricConfig.label}: {data.displayValue}
+                            </span>
                           </div>
-                          <div className="text-[#9C948A] text-[11px]">
-                            Rata-rata: {data.avgScore} ({data.matches} match)
+                          <div className="text-[#9C948A] text-[11px] grid grid-cols-2 gap-x-3 gap-y-0.5">
+                            <div>Total Skor: <span className="text-[#F2EDE4] font-semibold">{data.score}</span></div>
+                            <div>Win Rate: <span className="text-[#F2EDE4] font-semibold">{data.winRate}%</span></div>
+                            <div>Total Match: <span className="text-[#F2EDE4] font-semibold">{data.matches}</span></div>
+                            <div>Total MVP: <span className="text-[#F59E0B] font-semibold">{data.mvp}</span></div>
+                          </div>
+                          <div className="text-[10px] text-[#9C948A] pt-0.5 border-t border-[#332C25]/50 flex items-center gap-2">
+                            <span>🥇 {data.antam}</span>
+                            <span>🥈 {data.silver}</span>
+                            <span>🍫 {data.coklat}</span>
                           </div>
                         </div>
                       );
                     }}
                   />
                   <Bar
-                    dataKey="score"
+                    dataKey="value"
                     fill={
-                      teamFilter === 'Pohon'
+                      selectedKpiMetric === 'score' && teamFilter === 'Pohon'
                         ? '#4F7942'
-                        : teamFilter === 'Lobby'
+                        : selectedKpiMetric === 'score' && teamFilter === 'Lobby'
                         ? '#C97A3D'
-                        : '#E8B33D'
+                        : currentMetricConfig.color
                     }
                     radius={[0, 4, 4, 0]}
                     barSize={14}
+                    className="cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={(entry) => {
+                      if (entry && entry.name) {
+                        onSelectPlayer?.(entry.name);
+                      }
+                    }}
                   >
                     <LabelList
-                      dataKey="score"
+                      dataKey="displayValue"
                       position="right"
                       fill="#F2EDE4"
                       fontSize={10}
