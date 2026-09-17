@@ -14,7 +14,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   onLoginSuccess,
 }) => {
   const [email, setEmail] = useState('admin@pantos.ml');
-  const [password, setPassword] = useState('pantos123');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -101,12 +101,13 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <input
               type="password"
               required
-              value=""
+              value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-xs text-[#F2EDE4] focus:outline-hidden"
-              placeholder="masukan password"
+              placeholder="Masukan Password"
             />
           </div>
+
 
           <div className="mt-5 flex gap-2 pt-2">
             <button
