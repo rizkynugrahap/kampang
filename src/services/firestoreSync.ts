@@ -372,12 +372,24 @@ export async function deleteMatchesBatchFromFirestore(matchIds: (string | number
   }
 }
 
-// ----------------- BACKGROUND SETTINGS (app-wide, Firestore-synced) -----------------
+// ----------------- BACKGROUND & THEME SETTINGS (app-wide, Firestore-synced) -----------------
 
 export interface BackgroundSettings {
   bgUrl?: string;
   bgOpacity?: number;
+  // Branding & Logo
+  logoType?: 'text' | 'image';
+  logoUrl?: string;
+  logoText?: string;
+  brandName?: string;
+  slogan?: string;
+  // Colors & Palette
+  headerBgColor?: string;
+  activeButtonColor?: string;
+  activeButtonTextColor?: string;
 }
+
+export type ThemeSettings = BackgroundSettings;
 
 const BACKGROUND_DOC_ID = 'background_settings';
 

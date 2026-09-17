@@ -24,7 +24,12 @@ import { PlayerCrudManager } from './components/PlayerCrudManager';
 import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { FirestoreStatusBadge } from './components/FirestoreStatusBadge';
-import { BackgroundSettingsModal, DEFAULT_GIT_BACKGROUND_URL } from './components/BackgroundSettingsModal';
+import {
+  BackgroundSettingsModal,
+  DEFAULT_GIT_BACKGROUND_URL,
+  DEFAULT_THEME_CONFIG,
+  ThemeConfig,
+} from './components/BackgroundSettingsModal';
 import {
   subscribeToPlayers,
   subscribeToMatches,
@@ -212,32 +217,54 @@ export default function App() {
     }, 7000);
   };
 
-  // Background state — cached instantly from localStorage on load (so
-  // there's no flash of the default image), then kept permanently in sync
-  // with Firestore below so it survives refresh AND carries over to every
-  // device/browser, not just the one that set it.
-  const [bgUrl, setBgUrl] = useState<string>(() => {
-    return localStorage.getItem('pantos_custom_bg') || DEFAULT_GIT_BACKGROUND_URL;
-  });
-  const [bgOpacity, setBgOpacity] = useState<number>(() => {
-    const saved = localStorage.getItem('pantos_bg_opacity');
-    return saved ? Number(saved) : 65;
+  // Theme and Branding state (Background, Opacity, Logo, Brand Name, Slogan, Header & Button Colors)
+  // Cached instantly from localStorage and synced live to Firestore across all devices
+  const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
+    const saved = localStorage.getItem('pantos_theme_settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_THEME_CONFIG,
+          ...parsed,
+          bgUrl: localStorage.getItem('pantos_custom_bg') || parsed.bgUrl || DEFAULT_GIT_BACKGROUND_URL,
+          bgOpacity: localStorage.getItem('pantos_bg_opacity')
+            ? Number(localStorage.getItem('pantos_bg_opacity'))
+            : parsed.bgOpacity ?? 65,
+        };
+      } catch (e) {
+        console.warn('Gagal membaca cache tema:', e);
+      }
+    }
+    return {
+      ...DEFAULT_THEME_CONFIG,
+      bgUrl: localStorage.getItem('pantos_custom_bg') || DEFAULT_GIT_BACKGROUND_URL,
+      bgOpacity: localStorage.getItem('pantos_bg_opacity')
+        ? Number(localStorage.getItem('pantos_bg_opacity'))
+        : 65,
+    };
   });
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
 
-  const handleSaveBgUrl = (newUrl: string) => {
-    setBgUrl(newUrl);
-    localStorage.setItem('pantos_custom_bg', newUrl);
-    syncBackgroundSettingsToFirestore({ bgUrl: newUrl }).catch((e) =>
-      console.warn('Gagal menyimpan background ke Firestore:', e)
-    );
-  };
+  const handleSaveTheme = (newConfig: ThemeConfig) => {
+    setThemeConfig(newConfig);
+    localStorage.setItem('pantos_theme_settings', JSON.stringify(newConfig));
+    localStorage.setItem('pantos_custom_bg', newConfig.bgUrl);
+    localStorage.setItem('pantos_bg_opacity', String(newConfig.bgOpacity));
 
-  const handleSaveBgOpacity = (newOpacity: number) => {
-    setBgOpacity(newOpacity);
-    localStorage.setItem('pantos_bg_opacity', String(newOpacity));
-    syncBackgroundSettingsToFirestore({ bgOpacity: newOpacity }).catch((e) =>
-      console.warn('Gagal menyimpan opacity background ke Firestore:', e)
+    syncBackgroundSettingsToFirestore({
+      bgUrl: newConfig.bgUrl,
+      bgOpacity: newConfig.bgOpacity,
+      logoType: newConfig.logoType,
+      logoUrl: newConfig.logoUrl,
+      logoText: newConfig.logoText,
+      brandName: newConfig.brandName,
+      slogan: newConfig.slogan,
+      headerBgColor: newConfig.headerBgColor,
+      activeButtonColor: newConfig.activeButtonColor,
+      activeButtonTextColor: newConfig.activeButtonTextColor,
+    }).catch((e) =>
+      console.warn('Gagal menyimpan pengaturan tema ke Firestore:', e)
     );
   };
 
@@ -429,20 +456,28 @@ export default function App() {
       () => setIsFirestoreConnected(false)
     );
 
-    // Keep background image/opacity permanently in sync across every
-    // device — this used to only live in localStorage, so it "reset" on
-    // any other browser/device and never actually persisted anywhere
-    // shared.
-    const unsubBackground = subscribeToBackgroundSettings((remoteBg) => {
-      if (!remoteBg) return;
-      if (typeof remoteBg.bgUrl === 'string' && remoteBg.bgUrl) {
-        setBgUrl(remoteBg.bgUrl);
-        localStorage.setItem('pantos_custom_bg', remoteBg.bgUrl);
-      }
-      if (typeof remoteBg.bgOpacity === 'number' && !isNaN(remoteBg.bgOpacity)) {
-        setBgOpacity(remoteBg.bgOpacity);
-        localStorage.setItem('pantos_bg_opacity', String(remoteBg.bgOpacity));
-      }
+    // Keep theme, branding, colors & background permanently in sync across every device
+    const unsubBackground = subscribeToBackgroundSettings((remoteTheme) => {
+      if (!remoteTheme) return;
+      setThemeConfig((prev) => {
+        const updated: ThemeConfig = {
+          ...prev,
+          bgUrl: typeof remoteTheme.bgUrl === 'string' && remoteTheme.bgUrl ? remoteTheme.bgUrl : prev.bgUrl,
+          bgOpacity: typeof remoteTheme.bgOpacity === 'number' && !isNaN(remoteTheme.bgOpacity) ? remoteTheme.bgOpacity : prev.bgOpacity,
+          logoType: remoteTheme.logoType || prev.logoType,
+          logoUrl: remoteTheme.logoUrl !== undefined ? remoteTheme.logoUrl : prev.logoUrl,
+          logoText: remoteTheme.logoText !== undefined ? remoteTheme.logoText : prev.logoText,
+          brandName: remoteTheme.brandName !== undefined ? remoteTheme.brandName : prev.brandName,
+          slogan: remoteTheme.slogan !== undefined ? remoteTheme.slogan : prev.slogan,
+          headerBgColor: remoteTheme.headerBgColor || prev.headerBgColor,
+          activeButtonColor: remoteTheme.activeButtonColor || prev.activeButtonColor,
+          activeButtonTextColor: remoteTheme.activeButtonTextColor || prev.activeButtonTextColor,
+        };
+        localStorage.setItem('pantos_theme_settings', JSON.stringify(updated));
+        if (remoteTheme.bgUrl) localStorage.setItem('pantos_custom_bg', remoteTheme.bgUrl);
+        if (remoteTheme.bgOpacity !== undefined) localStorage.setItem('pantos_bg_opacity', String(remoteTheme.bgOpacity));
+        return updated;
+      });
     });
 
     return () => {
@@ -1186,48 +1221,79 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen bg-[#161311] text-[#F2EDE4] flex flex-col font-sans selection:bg-[#E8B33D]/30 selection:text-[#E8B33D]">
-      {/* Background Image Layer (Git raw: rizkynugrahap/kampang/blob/main/src/data/bacground.png) */}
+      {/* Background Image Layer (Git raw / Custom Upload / URL) */}
       <div
         className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-500"
         style={{
-          opacity: bgOpacity / 100,
-          backgroundImage: `linear-gradient(to bottom, rgba(22, 19, 17, 0.30), rgba(22, 19, 17, 0.60)), url('${bgUrl}')`,
+          opacity: themeConfig.bgOpacity / 100,
+          backgroundImage: `linear-gradient(to bottom, rgba(22, 19, 17, 0.30), rgba(22, 19, 17, 0.60)), url('${themeConfig.bgUrl}')`,
         }}
       />
       {/* Top Main Navigation */}
-      <header className="sticky top-0 z-40 border-b border-[#332C25] bg-[#1D1916]/95 backdrop-blur-md">
+      <header
+        className="sticky top-0 z-40 border-b border-[#332C25] backdrop-blur-md transition-colors duration-200"
+        style={{ backgroundColor: `${themeConfig.headerBgColor}F2` }}
+      >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-3 py-2.5 sm:px-6 sm:py-3">
           {/* Brand Logo */}
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#E8B33D] to-[#b8764a] text-[#161311] shadow-md font-black text-base sm:text-lg">
-              LP
-            </div>
-            <div>
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            {themeConfig.logoType === 'image' && themeConfig.logoUrl ? (
+              <img
+                src={themeConfig.logoUrl}
+                alt={themeConfig.brandName}
+                className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl object-cover shadow-md border border-[#332C25]"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div
+                className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl shadow-md font-black text-base sm:text-lg transition-colors"
+                style={{
+                  backgroundColor: themeConfig.activeButtonColor,
+                  color: themeConfig.activeButtonTextColor,
+                }}
+              >
+                {themeConfig.logoText || 'LP'}
+              </div>
+            )}
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-sm sm:text-lg font-black tracking-tight text-[#F2EDE4]">
-                  LAGA AMAL PANTOS
+                <h1 className="text-sm sm:text-lg font-black tracking-tight text-[#F2EDE4] truncate">
+                  {themeConfig.brandName || 'FRATERNITE- LAGA AMAL'}
                 </h1>
-                <span className="rounded bg-[#E8B33D]/20 border border-[#E8B33D]/30 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-[#E8B33D]">
+                <span
+                  className="rounded px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold border shrink-0"
+                  style={{
+                    backgroundColor: `${themeConfig.activeButtonColor}25`,
+                    borderColor: `${themeConfig.activeButtonColor}50`,
+                    color: themeConfig.activeButtonColor,
+                  }}
+                >
                   MLBB
                 </span>
               </div>
-              <p className="text-[10px] sm:text-[11px] text-[#9C948A] hidden sm:block">
-                Sistem Papan Klasemen Season & Tracker Medali Komunitas Pantos
+              <p className="text-[10px] sm:text-[11px] text-[#9C948A] hidden sm:block truncate">
+                {themeConfig.slogan || 'Sistem Papan Klasemen Season & Tracker Medali Komunitas Pantos'}
               </p>
             </div>
           </div>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
-            {/* Admin toggle button */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Background & Tema Settings button */}
             <button
               id="btn-bg-settings"
               onClick={() => setIsBgModalOpen(true)}
               className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-xs font-semibold text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E] transition-colors cursor-pointer min-h-[38px]"
-              title="Atur Background Laga Amal (Git / Unggah)"
+              title="Atur Logo, Slogan, Warna Header, Tombol Aktif & Background"
             >
-              <ImageIcon size={14} className="text-[#E8B33D]" />
-              <span className="hidden md:inline">Background</span>
+              <div
+                className="h-3 w-3 rounded-full border border-white/20 shrink-0"
+                style={{ backgroundColor: themeConfig.activeButtonColor }}
+              />
+              <span className="hidden md:inline">Background & Tema</span>
+              <span className="md:hidden">Tema</span>
             </button>
 
             {isAdmin ? (
@@ -1262,9 +1328,17 @@ export default function App() {
             <button
               id="nav-tab-dashboard"
               onClick={() => setTab('dashboard')}
+              style={
+                tab === 'dashboard'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
               className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'dashboard'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  ? 'shadow-md font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
@@ -1275,17 +1349,30 @@ export default function App() {
             <button
               id="nav-tab-match-history"
               onClick={() => setTab('matchHistory')}
+              style={
+                tab === 'matchHistory'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
               className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'matchHistory'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  ? 'shadow-md font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
               <History size={15} className="shrink-0" />
               <span>Riwayat Pertandingan</span>
-              <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                tab === 'matchHistory' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
-              }`}>
+              <span
+                className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+                style={
+                  tab === 'matchHistory'
+                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
+                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                }
+              >
                 {seasonMatches.length}
               </span>
             </button>
@@ -1293,17 +1380,30 @@ export default function App() {
             <button
               id="nav-tab-laga-amal"
               onClick={() => setTab('lagaAmal')}
+              style={
+                tab === 'lagaAmal'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
               className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'lagaAmal'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  ? 'shadow-md font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
               <Flame size={15} className="shrink-0" />
               <span>Klasemen Laga Amal</span>
-              <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                tab === 'lagaAmal' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
-              }`}>
+              <span
+                className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+                style={
+                  tab === 'lagaAmal'
+                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
+                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                }
+              >
                 {activeSeason.title.split('-')[1]?.trim() || (activeSeason.id ? activeSeason.id.toUpperCase() : 'Season')}
               </span>
             </button>
@@ -1311,9 +1411,17 @@ export default function App() {
             <button
               id="nav-tab-profile"
               onClick={() => setTab('profile')}
+              style={
+                tab === 'profile'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
               className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'profile'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  ? 'shadow-md font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
@@ -1324,17 +1432,30 @@ export default function App() {
             <button
               id="nav-tab-players-crud"
               onClick={() => setTab('players')}
+              style={
+                tab === 'players'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
               className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'players'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  ? 'shadow-md font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
               <Users size={15} className="shrink-0" />
               <span>Database Pemain</span>
-              <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                tab === 'players' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
-              }`}>
+              <span
+                className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+                style={
+                  tab === 'players'
+                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
+                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                }
+              >
                 {players.length}
               </span>
             </button>
@@ -1342,9 +1463,17 @@ export default function App() {
             <button
               id="nav-tab-admin"
               onClick={() => setTab('admin')}
+              style={
+                tab === 'admin'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
               className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
                 tab === 'admin'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  ? 'shadow-md font-black'
                   : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
               }`}
             >
@@ -1559,26 +1688,20 @@ export default function App() {
               setTab('dashboard');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
-              tab === 'dashboard'
-                ? 'text-[#E8B33D]'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
-            }`}
+            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+            style={tab === 'dashboard' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
           >
             <div
-              className={`flex items-center justify-center h-7 w-12 rounded-full transition-all ${
-                tab === 'dashboard' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
-              }`}
+              className="flex items-center justify-center h-7 w-12 rounded-full transition-all"
+              style={tab === 'dashboard' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
             >
               <Trophy
                 size={18}
-                className={tab === 'dashboard' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+                style={tab === 'dashboard' ? { color: themeConfig.activeButtonColor } : undefined}
               />
             </div>
             <span
-              className={`text-[10px] tracking-tight mt-0.5 ${
-                tab === 'dashboard' ? 'font-black text-[#E8B33D]' : 'font-medium'
-              }`}
+              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'dashboard' ? 'font-black' : 'font-medium'}`}
             >
               Dashboard
             </span>
@@ -1592,31 +1715,31 @@ export default function App() {
               setTab('matchHistory');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
-              tab === 'matchHistory'
-                ? 'text-[#E8B33D]'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
-            }`}
+            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+            style={tab === 'matchHistory' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
           >
             <div
-              className={`relative flex items-center justify-center h-7 w-12 rounded-full transition-all ${
-                tab === 'matchHistory' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
-              }`}
+              className="relative flex items-center justify-center h-7 w-12 rounded-full transition-all"
+              style={tab === 'matchHistory' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
             >
               <History
                 size={18}
-                className={tab === 'matchHistory' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+                style={tab === 'matchHistory' ? { color: themeConfig.activeButtonColor } : undefined}
               />
               {seasonMatches.length > 0 && (
-                <span className="absolute -top-0.5 right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[#E8B33D] px-1 text-[9px] font-black text-[#161311]">
+                <span
+                  className="absolute -top-0.5 right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-black"
+                  style={{
+                    backgroundColor: themeConfig.activeButtonColor,
+                    color: themeConfig.activeButtonTextColor,
+                  }}
+                >
                   {seasonMatches.length}
                 </span>
               )}
             </div>
             <span
-              className={`text-[10px] tracking-tight mt-0.5 ${
-                tab === 'matchHistory' ? 'font-black text-[#E8B33D]' : 'font-medium'
-              }`}
+              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'matchHistory' ? 'font-black' : 'font-medium'}`}
             >
               Riwayat
             </span>
@@ -1630,26 +1753,20 @@ export default function App() {
               setTab('lagaAmal');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
-              tab === 'lagaAmal'
-                ? 'text-[#E8B33D]'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
-            }`}
+            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+            style={tab === 'lagaAmal' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
           >
             <div
-              className={`flex items-center justify-center h-7 w-12 rounded-full transition-all ${
-                tab === 'lagaAmal' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
-              }`}
+              className="flex items-center justify-center h-7 w-12 rounded-full transition-all"
+              style={tab === 'lagaAmal' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
             >
               <Flame
                 size={18}
-                className={tab === 'lagaAmal' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+                style={tab === 'lagaAmal' ? { color: themeConfig.activeButtonColor } : undefined}
               />
             </div>
             <span
-              className={`text-[10px] tracking-tight mt-0.5 ${
-                tab === 'lagaAmal' ? 'font-black text-[#E8B33D]' : 'font-medium'
-              }`}
+              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'lagaAmal' ? 'font-black' : 'font-medium'}`}
             >
               Klasemen
             </span>
@@ -1663,26 +1780,20 @@ export default function App() {
               setTab('profile');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
-              tab === 'profile'
-                ? 'text-[#E8B33D]'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
-            }`}
+            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+            style={tab === 'profile' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
           >
             <div
-              className={`flex items-center justify-center h-7 w-12 rounded-full transition-all ${
-                tab === 'profile' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
-              }`}
+              className="flex items-center justify-center h-7 w-12 rounded-full transition-all"
+              style={tab === 'profile' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
             >
               <UserRound
                 size={18}
-                className={tab === 'profile' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+                style={tab === 'profile' ? { color: themeConfig.activeButtonColor } : undefined}
               />
             </div>
             <span
-              className={`text-[10px] tracking-tight mt-0.5 ${
-                tab === 'profile' ? 'font-black text-[#E8B33D]' : 'font-medium'
-              }`}
+              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'profile' ? 'font-black' : 'font-medium'}`}
             >
               Profil
             </span>
@@ -1696,29 +1807,23 @@ export default function App() {
               setTab('admin');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95 ${
-              tab === 'admin'
-                ? 'text-[#E8B33D]'
-                : 'text-[#9C948A] hover:text-[#F2EDE4]'
-            }`}
+            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+            style={tab === 'admin' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
           >
             <div
-              className={`relative flex items-center justify-center h-7 w-12 rounded-full transition-all ${
-                tab === 'admin' ? 'bg-[#E8B33D]/20 shadow-sm' : ''
-              }`}
+              className="relative flex items-center justify-center h-7 w-12 rounded-full transition-all"
+              style={tab === 'admin' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
             >
               <ClipboardList
                 size={18}
-                className={tab === 'admin' ? 'text-[#E8B33D]' : 'text-[#9C948A]'}
+                style={tab === 'admin' ? { color: themeConfig.activeButtonColor } : undefined}
               />
               {isAdmin && (
                 <span className="absolute top-1 right-2.5 h-2 w-2 rounded-full bg-emerald-400 animate-pulse ring-2 ring-[#191513]" />
               )}
             </div>
             <span
-              className={`text-[10px] tracking-tight mt-0.5 ${
-                tab === 'admin' ? 'font-black text-[#E8B33D]' : 'font-medium'
-              }`}
+              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'admin' ? 'font-black' : 'font-medium'}`}
             >
               Input
             </span>
@@ -1767,15 +1872,13 @@ export default function App() {
         />
       )}
 
-      {/* Background Settings Modal */}
+      {/* Background & Theme Settings Modal */}
       {isBgModalOpen && (
         <BackgroundSettingsModal
           isOpen={isBgModalOpen}
-          currentBgUrl={bgUrl}
-          currentOpacity={bgOpacity}
+          themeConfig={themeConfig}
+          onSaveTheme={handleSaveTheme}
           onClose={() => setIsBgModalOpen(false)}
-          onSaveBgUrl={handleSaveBgUrl}
-          onSaveOpacity={handleSaveBgOpacity}
         />
       )}
     </div>
