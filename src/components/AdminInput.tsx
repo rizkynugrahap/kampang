@@ -27,6 +27,10 @@ interface AdminInputProps {
   seasons?: LagaAmalSeasonData[];
   activeSeasonId?: string;
   isAdmin: boolean;
+  prefilledDraft?: {
+    pohon: Array<{ player: string; hero: string }>;
+    lobby: Array<{ player: string; hero: string }>;
+  } | null;
   onOpenLogin: () => void;
   onSaveMatch: (matchData: any) => Promise<boolean>;
   onAddPlayer: (player: { name: string; status: 'Aktif' | 'Cabutan'; tier: string; avatar_url?: string }) => Promise<boolean>;
@@ -39,6 +43,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   seasons = [],
   activeSeasonId = 's41',
   isAdmin,
+  prefilledDraft,
   onOpenLogin,
   onSaveMatch,
   onAddPlayer,
@@ -72,6 +77,30 @@ export const AdminInput: React.FC<AdminInputProps> = ({
     const nextNum = calculateNextMatchNumber(matches, selectedSeason, seasons);
     setMatchNumber(nextNum);
   }, [selectedSeason, matches, seasons]);
+
+  // Apply draft from Gacha Pick if provided
+  React.useEffect(() => {
+    if (prefilledDraft && prefilledDraft.pohon.length > 0 && prefilledDraft.lobby.length > 0) {
+      const pNames = prefilledDraft.pohon.map((p) => p.player);
+      const lNames = prefilledDraft.lobby.map((p) => p.player);
+      setPohonPlayers(pNames);
+      setLobbyPlayers(lNames);
+
+      const newConfig: Record<string, { hero: string; medal: Medal; score: number }> = {};
+      prefilledDraft.pohon.forEach((item) => {
+        newConfig[item.player] = { hero: item.hero || 'Kadita', medal: 'Silver', score: 6.0 };
+      });
+      prefilledDraft.lobby.forEach((item) => {
+        newConfig[item.player] = { hero: item.hero || 'Kadita', medal: 'Silver', score: 6.0 };
+      });
+      setPlayerConfig(newConfig);
+
+      setNotification({
+        type: 'success',
+        message: 'Hasil Gacha Team & Hero berhasil dimuat! Silakan sesuaikan pemenang, medali & skor.',
+      });
+    }
+  }, [prefilledDraft]);
 
   // UI States
   const [isSubmitting, setIsSubmitting] = useState(false);

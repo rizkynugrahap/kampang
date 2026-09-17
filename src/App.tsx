@@ -133,6 +133,18 @@ export default function App() {
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [draftForAdmin, setDraftForAdmin] = useState<{
+    pohon: Array<{ player: string; hero: string }>;
+    lobby: Array<{ player: string; hero: string }>;
+  } | null>(null);
+
+  const handleExportDraftToAdmin = (draft: {
+    pohon: Array<{ player: string; hero: string }>;
+    lobby: Array<{ player: string; hero: string }>;
+  }) => {
+    setDraftForAdmin(draft);
+    setTab('admin');
+  };
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
   const [firestoreNotice, setFirestoreNotice] = useState<{ message: string; isError?: boolean } | null>(null);
@@ -1094,7 +1106,9 @@ export default function App() {
             activeSeason={activeSeason}
             seasonMatches={seasonMatches}
             players={players}
+            heroes={heroes}
             onSelectPlayer={(pName) => handleViewPlayerProfile(pName)}
+            onExportToAdmin={handleExportDraftToAdmin}
           />
         )}
 
@@ -1149,6 +1163,7 @@ export default function App() {
             seasons={seasons}
             activeSeasonId={selectedSeasonId}
             isAdmin={isAdmin}
+            prefilledDraft={draftForAdmin}
             onOpenLogin={() => setIsLoginModalOpen(true)}
             onSaveMatch={handleSaveMatch}
             onAddPlayer={handleAddPlayer}

@@ -27,10 +27,11 @@ import {
   Legend,
   LabelList,
 } from 'recharts';
-import { LagaAmalSeasonData, Match, Player, TeamShort } from '../types';
+import { LagaAmalSeasonData, Match, Player, TeamShort, Hero } from '../types';
 import { ScoreBanner } from './ScoreBanner';
 import { PlayerAvatar } from './PlayerAvatar';
 import { generateHeuristicPlayerJulukan } from '../utils/julukan';
+import { GachaHeroPick } from './GachaHeroPick';
 
 type TeamFilter = 'all' | 'Pohon' | 'Lobby';
 
@@ -41,7 +42,12 @@ interface DashboardViewProps {
   activeSeason: LagaAmalSeasonData;
   seasonMatches: Match[];
   players: Player[];
+  heroes?: Hero[];
   onSelectPlayer?: (playerName: string) => void;
+  onExportToAdmin?: (draft: {
+    pohon: Array<{ player: string; hero: string }>;
+    lobby: Array<{ player: string; hero: string }>;
+  }) => void;
 }
 
 interface PlayerStatsComputed {
@@ -74,7 +80,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   activeSeason,
   seasonMatches,
   players,
+  heroes,
   onSelectPlayer,
+  onExportToAdmin,
 }) => {
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
 
@@ -833,6 +841,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="text-xs text-[#9C948A]">Belum ada data pemain</p>
           )}
         </div>
+      </section>
+
+      {/* SYSTEM GACHA PICK TEAM & HERO */}
+      <section id="section-gacha-hero-pick" className="mt-8">
+        <GachaHeroPick
+          players={players}
+          heroes={heroes}
+          onExportToAdmin={onExportToAdmin}
+        />
       </section>
     </div>
   );
