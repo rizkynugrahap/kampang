@@ -167,7 +167,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
         </div>
       ) : (
         <div className="space-y-5">
-          {filteredMatches.map((match) => {
+          {filteredMatches.map((match, idx) => {
             const isPohon = match.winner === 'Tim Pohon';
             const allPlayers = [...match.pohon, ...match.lobby];
             const mvp = allPlayers.find((p) => p.medal === 'MVP');
@@ -176,7 +176,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
 
             return (
               <article
-                key={match.id}
+                key={`match-card-${match.id}-${idx}`}
                 id={`match-history-card-${match.id}`}
                 className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl transition-all hover:border-[#4A3F33] relative overflow-hidden space-y-4"
               >

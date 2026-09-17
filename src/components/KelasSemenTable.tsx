@@ -63,7 +63,7 @@ export const KelasSemenTable: React.FC<KelasSemenTableProps> = ({
 
             return (
               <button
-                key={player.id}
+                key={`player-row-${player.id ?? player.name}-${idx}`}
                 id={`player-row-${player.id}`}
                 onClick={() => onSelectPlayer(player)}
                 className="group grid w-full grid-cols-12 items-center px-3 py-3 text-left transition-colors hover:bg-[#241F1B] sm:px-4"

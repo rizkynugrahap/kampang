@@ -100,7 +100,17 @@ export const ALL_INITIAL_SEASONS: LagaAmalSeasonData[] = [
  * This guarantees 100% data synchronicity across Dashboard, Profile, and Standings.
  */
 export function buildPlayersFromSeason(season: LagaAmalSeasonData): Player[] {
-  return season.players.map((p, idx) => {
+  const uniquePlayers: LagaAmalPlayerStat[] = [];
+  const seenNames = new Set<string>();
+
+  for (const p of season.players || []) {
+    const key = (p.nickname || '').trim().toLowerCase();
+    if (!key || seenNames.has(key)) continue;
+    seenNames.add(key);
+    uniquePlayers.push(p);
+  }
+
+  return uniquePlayers.map((p, idx) => {
     let tier = 'Legend';
     if (p.mvp >= 20 || p.winRate >= 65) tier = 'Mythic Glory';
     else if (p.mvp >= 10 || p.winRate >= 50) tier = 'Mythic';
@@ -109,8 +119,10 @@ export function buildPlayersFromSeason(season: LagaAmalSeasonData): Player[] {
     return {
       id: idx + 1,
       name: p.nickname,
-      status: p.matches >= 20 ? 'Aktif' : 'Cabutan',
-      tier,
+      status: p.status || (p.matches >= 20 ? 'Aktif' : 'Cabutan'),
+      tier: p.tier || tier,
+      julukan: p.julukan,
+      julukan_updated_at: p.julukan_updated_at,
       total_match: p.matches,
       medals: {
         MVP: p.mvp,

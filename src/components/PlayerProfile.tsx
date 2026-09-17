@@ -237,11 +237,11 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
 
       {/* Player selector chips */}
       <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto pr-1 pb-1">
-        {players.map((p) => {
+        {players.map((p, idx) => {
           const isCurrent = String(p.id) === String(player.id) || p.name === player.name;
           return (
             <button
-              key={p.id}
+              key={`profile-player-btn-${p.id ?? p.name}-${idx}`}
               id={`profile-selector-${p.id}`}
               onClick={() => handleSelect(p.id)}
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1 font-medium text-xs transition-all cursor-pointer ${

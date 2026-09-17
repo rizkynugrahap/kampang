@@ -470,11 +470,11 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                 Pilih atau klik pemain di kolam bawah untuk memasukkannya ke Tim Pohon
               </div>
             ) : (
-              pohonPlayers.map((name) => {
+              pohonPlayers.map((name, idx) => {
                 const conf = playerConfig[name] || { hero: 'Kadita', medal: 'Silver', score: 6.0 };
                 return (
                   <div
-                    key={name}
+                    key={`pohon-player-${name}-${idx}`}
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-[#332C25] bg-[#241F1B] p-3 shadow-xs"
                   >
                     <div className="flex items-center gap-2.5">
@@ -491,8 +491,8 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                         onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
                         className="rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1 text-xs text-[#F2EDE4] focus:outline-none cursor-pointer"
                       >
-                        {heroes.map((h) => (
-                          <option key={h.id} value={h.name}>
+                        {heroes.map((h, hIdx) => (
+                          <option key={`pohon-hero-${h.id ?? h.name}-${hIdx}`} value={h.name}>
                             {h.name}
                           </option>
                         ))}
@@ -572,11 +572,11 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                 Pilih atau klik pemain di kolam bawah untuk memasukkannya ke Tim Lobby
               </div>
             ) : (
-              lobbyPlayers.map((name) => {
+              lobbyPlayers.map((name, idx) => {
                 const conf = playerConfig[name] || { hero: 'Chou', medal: 'Silver', score: 6.0 };
                 return (
                   <div
-                    key={name}
+                    key={`lobby-player-${name}-${idx}`}
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-[#332C25] bg-[#241F1B] p-3 shadow-xs"
                   >
                     <div className="flex items-center gap-2.5">
@@ -593,8 +593,8 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                         onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
                         className="rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1 text-xs text-[#F2EDE4] focus:outline-none cursor-pointer"
                       >
-                        {heroes.map((h) => (
-                          <option key={h.id} value={h.name}>
+                        {heroes.map((h, hIdx) => (
+                          <option key={`lobby-hero-${h.id ?? h.name}-${hIdx}`} value={h.name}>
                             {h.name}
                           </option>
                         ))}
@@ -666,9 +666,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         </div>
 
         <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
-          {pool.map((p) => (
+          {pool.map((p, idx) => (
             <div
-              key={p.id}
+              key={`admin-pool-player-${p.id || p.name}-${idx}`}
               className="inline-flex items-center gap-1.5 rounded-xl border border-[#332C25] bg-[#241F1B] px-2.5 py-1 text-xs text-[#F2EDE4] hover:border-[#E8B33D]/50 transition-all"
             >
               <PlayerAvatar name={p.name} size="xs" />

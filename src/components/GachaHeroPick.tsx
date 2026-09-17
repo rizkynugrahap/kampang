@@ -512,11 +512,11 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 
           {/* Player selection chips */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
-            {players.map((p) => {
+            {players.map((p, idx) => {
               const isSelected = selectedPlayerNames.includes(p.name);
               return (
                 <button
-                  key={p.id || p.name}
+                  key={`gacha-player-${p.id || p.name}-${idx}`}
                   type="button"
                   onClick={() => togglePlayerSelection(p.name)}
                   className={`flex items-center gap-2.5 rounded-xl p-2.5 text-left border transition-all cursor-pointer ${
@@ -610,15 +610,15 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                 className="w-full appearance-none rounded-xl border border-[#332C25] bg-[#171412] px-4 py-3 pr-10 text-sm font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
               >
                 <optgroup label="🛋️ TIM LOBBY">
-                  {lobbyTeam.map((slot) => (
-                    <option key={`opt-lobby-${slot.playerName}`} value={slot.playerName}>
+                  {lobbyTeam.map((slot, index) => (
+                    <option key={`opt-lobby-${slot.playerName}-${index}`} value={slot.playerName}>
                       {slot.playerName} {slot.hero ? `(✅ ${slot.role} - ${slot.hero})` : '(🎲 Belum Roll)'}
                     </option>
                   ))}
                 </optgroup>
                 <optgroup label="🌳 TIM POHON">
-                  {pohonTeam.map((slot) => (
-                    <option key={`opt-pohon-${slot.playerName}`} value={slot.playerName}>
+                  {pohonTeam.map((slot, index) => (
+                    <option key={`opt-pohon-${slot.playerName}-${index}`} value={slot.playerName}>
                       {slot.playerName} {slot.hero ? `(✅ ${slot.role} - ${slot.hero})` : '(🎲 Belum Roll)'}
                     </option>
                   ))}
@@ -825,7 +825,7 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 
                   return (
                     <div
-                      key={`lobby-slot-${slot.playerName}`}
+                      key={`lobby-slot-${slot.playerName}-${index}`}
                       className={`flex items-center justify-between gap-2.5 rounded-xl border p-2.5 sm:px-3 transition-all ${
                         isCurrent
                           ? 'border-[#E8B33D] bg-[#221B16] shadow-sm'
@@ -925,7 +925,7 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 
                   return (
                     <div
-                      key={`pohon-slot-${slot.playerName}`}
+                      key={`pohon-slot-${slot.playerName}-${index}`}
                       className={`flex items-center justify-between gap-2.5 rounded-xl border p-2.5 sm:px-3 transition-all ${
                         isCurrent
                           ? 'border-[#E8B33D] bg-[#221B16] shadow-sm'

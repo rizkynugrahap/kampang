@@ -1,4 +1,4 @@
-import { Player } from '../types';
+import { Player, Medal } from '../types';
 
 interface SeasonPlayerStatLike {
   mvp?: number;
@@ -8,14 +8,22 @@ interface SeasonPlayerStatLike {
   winRate?: number;
 }
 
+export interface MatchPerformanceLike {
+  medal?: Medal;
+  hero?: string;
+  won?: boolean;
+  score?: number;
+}
+
 /**
  * Produces a super nyeleneh, ngeselin, and memorable Pantos-flavored nickname
- * from a player's stats when Gemini AI is offline, rate-limited, or as instant fallback.
+ * from a player's stats and recent match performance.
  */
 export function generateHeuristicPlayerJulukan(
   player: Player,
   seasonStat?: SeasonPlayerStatLike,
-  topHeroes: string[] = []
+  topHeroes: string[] = [],
+  matchPerformance?: MatchPerformanceLike
 ): string {
   const mvp = seasonStat?.mvp ?? player.medals?.MVP ?? 0;
   const coklat = seasonStat?.coklat ?? player.medals?.Coklat ?? 0;
@@ -26,6 +34,66 @@ export function generateHeuristicPlayerJulukan(
   // Seed choice based on player name length, id, and current timestamp to ensure variety
   const seed = (String(player.name || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) + Date.now()) % 100;
   const pick = (list: string[]) => list[seed % list.length];
+
+  // If specific match performance is provided from newly inputted match:
+  if (matchPerformance) {
+    const perfHero = (matchPerformance.hero || topHeroes[0] || '').toLowerCase();
+    
+    // Fresh MVP of the match
+    if (matchPerformance.medal === 'MVP') {
+      return pick([
+        'MVP Gendong Rombongan',
+        'Punggung Baja Anti Patah',
+        'Dewa Perang Laga Terakhir',
+        'Sapu Bersih Bintang Musuh',
+        'Bintang 1 Lawan 9',
+        'Gendong 4 Karung Beras',
+        'Carry Keras Kepala Pantos',
+      ]);
+    }
+
+    // Fresh Coklat of the match (Semen / Beban)
+    if (matchPerformance.medal === 'Coklat') {
+      return pick([
+        'Coklat Hangat Baru Matang',
+        'Beban Nomor Satu Laga Ini',
+        'Pondasi Semen Cor Instan',
+        'Donatur Bintang Free Ongkir',
+        'ATM Berjalan Babak Terakhir',
+        'Spesialis Mati Menit Pertama',
+        'Pabrik Semen Tiga Roda',
+      ]);
+    }
+
+    // Hero-specific match flavor
+    if (perfHero.includes('johnson')) {
+      return pick(['Supir Truk Nabrak Tembok', 'Tukang Ojek Nabrak Turret', 'Johnson SIM Nembak']);
+    }
+    if (perfHero.includes('angela')) {
+      return pick(['Nempel Doang Gak Mau Turun', 'Parasit Tubuh Sahabat', 'Angela Hobi Tinggal Kabur']);
+    }
+    if (perfHero.includes('tigreal') || perfHero.includes('atlas')) {
+      return pick(['Montage Gagal Kena Mental', 'Tukang Dorong Angin', 'Inisiasi Tanpa Backup']);
+    }
+    if (perfHero.includes('saber') || perfHero.includes('yin')) {
+      return pick(['Penculik Anak Orang', 'Penculik Salah Target', 'Spesialis Bawa Musuh ke Ring']);
+    }
+    if (perfHero.includes('lesley') || perfHero.includes('miya') || perfHero.includes('layla')) {
+      return pick(['Bintang Paling Cepat Diculik', 'Marksman Empuk Santapan Musuh', 'Petani Hutan Pantang War']);
+    }
+    if (perfHero.includes('franco')) {
+      return pick(['Franco Mancing Emosi Sendiri', 'Hook Kosong Bikin Sakit Hati', 'Mancing Keributan Satu Tim']);
+    }
+    if (perfHero.includes('chou')) {
+      return pick(['Chou Freestyle Berakhir Kuburan', 'Spesialis Recall Depan Musuh', 'Freestyle Gagal Kena Mental']);
+    }
+    if (perfHero.includes('nana')) {
+      return pick(['Tukang Lempar Molina Kabur', 'Nana Jahil Bikin Darting', 'Kucing Pembawa Bencana Tim']);
+    }
+    if (perfHero.includes('fanny') || perfHero.includes('ling')) {
+      return pick(['Gesek Tembok Kehabisan Energi', 'Assasin Mabuk Kabel', 'Burung Pipit Kehabisan Mana']);
+    }
+  }
 
   // Specific hero banter if topHero matches known MLBB memes
   const favHero = topHeroes[0]?.toLowerCase() || '';

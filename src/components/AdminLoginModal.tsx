@@ -101,18 +101,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <input
               type="password"
               required
-              value={password}
+              value=""
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 text-xs text-[#F2EDE4] focus:outline-hidden"
-              placeholder="pantos123"
+              placeholder="masukan password"
             />
-          </div>
-
-          {/* Helper hint */}
-          <div className="rounded-lg border border-[#332C25] bg-[#161311] p-2.5 text-[11px] text-[#9C948A]">
-            <span className="font-bold text-[#E8B33D]">Petunjuk Pengujian:</span>
-            <br />
-            Password default: <code className="text-[#F2EDE4]">pantos123</code>
           </div>
 
           <div className="mt-5 flex gap-2 pt-2">

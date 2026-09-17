@@ -94,6 +94,8 @@ export function subscribeToPlayers(
         });
         playersList.sort((a, b) => Number(a.id) - Number(b.id));
         onUpdate(playersList);
+      } else {
+        onUpdate([]);
       }
     },
     (err) => {
@@ -222,6 +224,54 @@ export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[])
     await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'laga_amal_seasons');
+  }
+}
+
+/**
+ * Deletes a player from Firestore players collection.
+ */
+export async function deletePlayerFromFirestore(playerId: string | number, playerName?: string): Promise<void> {
+  const rawSlug = (playerName || String(playerId))
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const path = `players/${rawSlug}`;
+  try {
+    const docRef = doc(db, 'players', rawSlug);
+    await deleteDoc(docRef);
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('permission')) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+    console.warn('Direct player doc delete error:', error);
+  }
+
+  // Also query by numeric or string id or nickname in case doc ID differs
+  try {
+    const snap = await getDocs(collection(db, 'players'));
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.forEach((d) => {
+        const data = d.data() as Partial<Player>;
+        if (
+          String(d.id) === String(rawSlug) ||
+          String(d.id) === String(playerId) ||
+          String(data.id) === String(playerId) ||
+          (playerName && data.name && data.name.toLowerCase() === playerName.toLowerCase())
+        ) {
+          batch.delete(d.ref);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+      }
+    }
+  } catch (err) {
+    console.warn('Query fallback deletePlayerFromFirestore:', err);
   }
 }
 
@@ -434,6 +484,18 @@ export async function verifyAdminLogin(
 /**
  * Force sync all current data to Firestore
  */
+export async function seedPlayersIfEmpty(defaultPlayers: Player[]): Promise<void> {
+  try {
+    const snap = await getDocs(collection(db, 'players'));
+    if (snap.empty && defaultPlayers && defaultPlayers.length > 0) {
+      console.log('Firestore: Seeding initial players database...');
+      await syncPlayersBatchToFirestore(defaultPlayers);
+    }
+  } catch (err) {
+    console.warn('Firestore players seeding error:', err);
+  }
+}
+
 export async function forceSyncAllToFirestore(data: {
   players: Player[];
   matches: Match[];

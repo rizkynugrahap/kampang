@@ -101,6 +101,10 @@ export interface LagaAmalPlayerStat {
   winRate: number; // e.g. 78.95
   avgScore: number; // e.g. 8.65
   avatar_url?: string;
+  status?: PlayerStatus;
+  tier?: string;
+  julukan?: string;
+  julukan_updated_at?: string;
 }
 
 export interface LagaAmalHeroPick {

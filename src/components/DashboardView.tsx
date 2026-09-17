@@ -680,7 +680,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </section>
-
+  
       {/* Best Play & Bad Play Section */}
       <section id="section-best-bad-play" className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* Left: BEST PLAY OF THE SEASON */}
@@ -842,6 +842,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </section>
+
 
       {/* SYSTEM GACHA PICK TEAM & HERO */}
       <section id="section-gacha-hero-pick" className="mt-8">

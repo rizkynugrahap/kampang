@@ -645,7 +645,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
                 return (
                   <div
-                    key={player.nickname}
+                    key={`laga-player-card-${player.nickname}-${idx}`}
                     onClick={() => setDetailPlayer(player)}
                     className={`rounded-2xl border p-4 transition-all duration-200 cursor-pointer shadow-lg relative overflow-hidden active:scale-[0.99] ${
                       isTopRank
@@ -827,7 +827,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
                     return (
                       <tr
-                        key={player.nickname}
+                        key={`laga-table-row-${player.nickname}-${idx}`}
                         onClick={() => setDetailPlayer(player)}
                         className="group transition-colors hover:bg-[#241F1B] cursor-pointer"
                       >
@@ -921,8 +921,8 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                 className="rounded-xl border border-[#332C25] bg-[#1D1916] px-3 py-1.5 text-xs font-semibold text-[#F2EDE4] focus:outline-none"
               >
                 <option value="all">Semua Pemain ({currentSeason.heroPicks?.length || 0})</option>
-                {currentSeason.heroPicks?.map((hp) => (
-                  <option key={hp.user} value={hp.user}>
+                {currentSeason.heroPicks?.map((hp, idx) => (
+                  <option key={`hp-opt-${hp.user}-${idx}`} value={hp.user}>
                     {hp.user}
                   </option>
                 ))}
@@ -931,9 +931,9 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredHeroPicks.map((hp) => (
+            {filteredHeroPicks.map((hp, idx) => (
               <div
-                key={hp.user}
+                key={`hp-user-card-${hp.user}-${idx}`}
                 className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 space-y-3 shadow-md"
               >
                 <div className="flex items-center justify-between border-b border-[#332C25] pb-2.5">
@@ -950,7 +950,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
                 <div className="space-y-2">
                   {hp.heroes.map((h, i) => (
-                    <div key={h.heroName} className="flex items-center justify-between text-xs">
+                    <div key={`hero-pct-${h.heroName}-${i}`} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
                         <HeroAvatar heroName={h.heroName} size="xs" shape="rounded" />
                         <span className="font-medium text-[#F2EDE4]">{h.heroName}</span>
@@ -979,9 +979,9 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
       {activeSubTab === 'heroPool' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {(currentSeason.heroPool || []).map((item) => (
+            {(currentSeason.heroPool || []).map((item, idx) => (
               <div
-                key={item.heroName}
+                key={`pool-${item.heroName}-${idx}`}
                 className="rounded-xl border border-[#332C25] bg-[#1D1916] p-3 text-center space-y-2 hover:border-[#E8B33D]/50 transition-all"
               >
                 <HeroAvatar heroName={item.heroName} size="md" shape="rounded" className="mx-auto" />

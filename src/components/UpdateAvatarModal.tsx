@@ -325,11 +325,11 @@ export const UpdateAvatarModal: React.FC<UpdateAvatarModalProps> = ({
                 Pilih Avatar Role & Karakter MLBB Pantos:
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-h-52 overflow-y-auto pr-1">
-                {AVATAR_PRESETS.map((p) => {
+                {AVATAR_PRESETS.map((p, idx) => {
                   const isSelected = previewUrl === p.url;
                   return (
                     <button
-                      key={p.name}
+                      key={`preset-${p.name}-${idx}`}
                       onClick={() => {
                         setPreviewUrl(p.url);
                         setInputUrl(p.url);

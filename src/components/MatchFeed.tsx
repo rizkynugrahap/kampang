@@ -47,7 +47,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
         </div>
       ) : (
         <div className="space-y-2.5">
-          {matches.map((match) => {
+          {matches.map((match, idx) => {
             const isPohon = match.winner === 'Tim Pohon';
             const borderColor = isPohon ? '#4F7942' : '#C97A3D';
             const allPlayers = [...match.pohon, ...match.lobby];
@@ -56,7 +56,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
 
             return (
               <button
-                key={match.id}
+                key={`match-feed-item-${match.id}-${idx}`}
                 id={`match-feed-item-${match.id}`}
                 onClick={() => onSelectMatch(match)}
                 className="group block w-full rounded-xl border border-[#332C25] bg-[#1D1916] p-4 text-left transition-all hover:border-[#443b32] hover:bg-[#241F1B]"

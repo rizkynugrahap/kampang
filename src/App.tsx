@@ -73,8 +73,45 @@ export default function App() {
     return seasons.find((s) => s.id === selectedSeasonId) || seasons[0] || ALL_INITIAL_SEASONS[0];
   }, [seasons, selectedSeasonId]);
 
+  // Deduplicate and sanitize player roster ensuring unique IDs and unique names
+  const deduplicatePlayers = (playerList: Player[]): Player[] => {
+    if (!Array.isArray(playerList)) return [];
+    const seenNames = new Set<string>();
+    const seenIds = new Set<string | number>();
+    const result: Player[] = [];
+    let maxId = 0;
+
+    for (const p of playerList) {
+      if (!p) continue;
+      const nameKey = (p.name || '').trim().toLowerCase();
+      if (!nameKey || seenNames.has(nameKey)) continue;
+      seenNames.add(nameKey);
+
+      const numId = typeof p.id === 'number' && !isNaN(p.id) ? p.id : parseInt(String(p.id), 10);
+      if (!isNaN(numId) && numId > maxId) {
+        maxId = numId;
+      }
+      result.push(p);
+    }
+
+    return result.map((p) => {
+      let assignedId = p.id;
+      if (assignedId === undefined || assignedId === null || seenIds.has(assignedId)) {
+        maxId += 1;
+        assignedId = maxId;
+      }
+      seenIds.add(assignedId);
+      return {
+        ...p,
+        id: assignedId,
+      };
+    });
+  };
+
   // Player roster always strictly follows the active Laga Amal season
-  const [players, setPlayers] = useState<Player[]>(() => buildPlayersFromSeason(activeSeason));
+  const [players, setPlayers] = useState<Player[]>(() =>
+    deduplicatePlayers(buildPlayersFromSeason(activeSeason))
+  );
 
   // Tier ("Ubah Badge & Tier"), status ("badge" Aktif/Cabutan), julukan, and
   // custom avatar are admin-set fields that live only in Firestore's
@@ -84,18 +121,33 @@ export default function App() {
   // auto-computed defaults, which is why badge/tier edits used to "revert"
   // on refresh or after any new match was added.
   const mergePlayerOverrides = (basePlayers: Player[], overridesSource: Player[]): Player[] => {
-    return basePlayers.map((base) => {
-      const override = overridesSource.find((o) => o.name.toLowerCase() === base.name.toLowerCase());
+    const cleanBase = deduplicatePlayers(basePlayers);
+    const cleanOverrides = deduplicatePlayers(overridesSource);
+
+    const merged = cleanBase.map((base) => {
+      const override = cleanOverrides.find(
+        (o) => o.name.toLowerCase() === base.name.toLowerCase()
+      );
       if (!override) return base;
       return {
         ...base,
         tier: override.tier ?? base.tier,
         status: override.status ?? base.status,
-        julukan: override.julukan,
-        julukan_updated_at: override.julukan_updated_at,
+        julukan: override.julukan ?? base.julukan,
+        julukan_updated_at: override.julukan_updated_at ?? base.julukan_updated_at,
         avatar_url: override.avatar_url ?? base.avatar_url,
       };
     });
+
+    for (const extra of cleanOverrides) {
+      if (!extra || !extra.name) continue;
+      const alreadyIn = merged.some((m) => m.name.toLowerCase() === extra.name.toLowerCase());
+      if (!alreadyIn) {
+        merged.push(extra);
+      }
+    }
+
+    return deduplicatePlayers(merged);
   };
 
   // Primary source of truth for matches (persisted in cache and synced with backend & Firestore)
@@ -514,7 +566,22 @@ export default function App() {
         await handleUpdateSeason(currentSeason);
       }
 
-      setPlayers((prev) => [...prev, addedPlayer]);
+      setPlayers((prev) => {
+        const cleanPrev = deduplicatePlayers(prev);
+        const exists = cleanPrev.some(
+          (p) =>
+            p.name.toLowerCase() === addedPlayer.name.toLowerCase() ||
+            String(p.id) === String(addedPlayer.id)
+        );
+        if (exists) {
+          return cleanPrev.map((p) =>
+            p.name.toLowerCase() === addedPlayer.name.toLowerCase()
+              ? { ...p, ...addedPlayer }
+              : p
+          );
+        }
+        return deduplicatePlayers([...cleanPrev, addedPlayer]);
+      });
       await syncPlayerToFirestore(addedPlayer);
       return true;
     } catch (err: any) {

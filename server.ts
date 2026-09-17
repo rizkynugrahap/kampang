@@ -381,7 +381,7 @@ app.put('/api/players/:id', (req, res) => {
 
   store.players[playerIndex] = updatedPlayer;
 
-  // Also sync avatar_url across all seasons for this player
+  // Also sync avatar_url, status, tier, and julukan across all seasons for this player
   if (store.lagaAmalSeasons && store.lagaAmalSeasons.length > 0) {
     store.lagaAmalSeasons.forEach((season) => {
       const sp = season.players.find(
@@ -389,12 +389,43 @@ app.put('/api/players/:id', (req, res) => {
       );
       if (sp) {
         if (avatar_url !== undefined) sp.avatar_url = avatar_url;
+        if (status !== undefined) sp.status = status;
+        if (tier !== undefined) sp.tier = tier;
+        if (julukan !== undefined) sp.julukan = julukan;
+        if (julukan_updated_at !== undefined) sp.julukan_updated_at = julukan_updated_at;
       }
     });
   }
 
   saveStore(store);
   res.json(updatedPlayer);
+});
+
+// DELETE /api/players/:id (Delete player)
+app.delete('/api/players/:id', (req, res) => {
+  const rawId = req.params.id;
+  const decodedId = decodeURIComponent(rawId).trim().toLowerCase();
+
+  const beforeLen = store.players.length;
+  store.players = store.players.filter(
+    (p) => String(p.id) !== rawId && p.name.toLowerCase() !== decodedId
+  );
+
+  // Also remove from all seasons
+  if (store.lagaAmalSeasons && store.lagaAmalSeasons.length > 0) {
+    store.lagaAmalSeasons.forEach((season) => {
+      season.players = season.players.filter(
+        (p) => p.nickname.toLowerCase() !== decodedId
+      );
+      season.activePlayersCount = season.players.length;
+    });
+  }
+
+  if (store.players.length !== beforeLen) {
+    saveStore(store);
+  }
+
+  res.json({ success: true, message: `Pemain '${rawId}' berhasil dihapus` });
 });
 
 // POST /api/players/:id/generate-title (Generate or refresh creative Pantos title using Gemini)
