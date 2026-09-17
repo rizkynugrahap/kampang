@@ -383,6 +383,9 @@ export interface BackgroundSettings {
   logoText?: string;
   brandName?: string;
   slogan?: string;
+  logoSize?: number;
+  logoFit?: 'contain' | 'cover';
+  logoShape?: 'rounded' | 'circle' | 'square' | 'none';
   // Colors & Palette
   headerBgColor?: string;
   activeButtonColor?: string;

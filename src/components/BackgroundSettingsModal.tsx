@@ -24,6 +24,9 @@ export interface ThemeConfig {
   logoText: string;
   brandName: string;
   slogan: string;
+  logoSize?: number;
+  logoFit?: 'contain' | 'cover';
+  logoShape?: 'rounded' | 'circle' | 'none';
   headerBgColor: string;
   activeButtonColor: string;
   activeButtonTextColor: string;
@@ -37,10 +40,72 @@ export const DEFAULT_THEME_CONFIG: ThemeConfig = {
   logoText: 'LP',
   brandName: 'FRATERNITE- LAGA AMAL',
   slogan: 'Sistem Papan Klasemen Season & Tracker Medali Komunitas Pantos',
+  logoSize: 52,
+  logoFit: 'contain',
+  logoShape: 'rounded',
   headerBgColor: '#1D1916',
   activeButtonColor: '#E8B33D',
   activeButtonTextColor: '#161311',
 };
+
+/**
+ * Optimasi gambar logo agar tidak pecah/blur saat ditampilkan di layar retina,
+ * sekaligus menjaga ukuran file tetap efisien untuk disimpan di Cloud Firestore.
+ */
+export function optimizeLogoImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (file.type === 'image/svg+xml') {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Resolusi tinggi hingga 512px untuk memastikan emblem dan teks logo tetap tajam
+        const maxDim = 512;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        // Kualitas rendering bi-cubic agar garis lambang & teks tidak blur/pecah
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Pertahankan transparansi PNG asli
+        const dataUrl = canvas.toDataURL('image/png');
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(event.target?.result as string);
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 export const HEADER_COLOR_PRESETS = [
   { name: 'Obsidian Charcoal', hex: '#1D1916', desc: 'Klasik Gelap' },
@@ -128,8 +193,8 @@ export const BackgroundSettingsModal: React.FC<BackgroundSettingsModalProps> = (
 
   if (!isOpen) return null;
 
-  // Handle Logo file upload
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Logo file upload with automatic high-res optimization
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -138,24 +203,18 @@ export const BackgroundSettingsModal: React.FC<BackgroundSettingsModalProps> = (
       return;
     }
 
-    if (file.size > 800_000) {
-      setErrorStatus('Ukuran file logo terlalu besar (maks. 800KB).');
-      return;
+    try {
+      setErrorStatus('');
+      const optimizedDataUrl = await optimizeLogoImage(file);
+      setFormConfig((prev) => ({
+        ...prev,
+        logoType: 'image',
+        logoUrl: optimizedDataUrl,
+      }));
+    } catch (err) {
+      console.warn('Gagal memproses gambar logo:', err);
+      setErrorStatus('Gagal memproses gambar logo. Coba gunakan gambar lain.');
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setFormConfig((prev) => ({
-          ...prev,
-          logoType: 'image',
-          logoUrl: dataUrl,
-        }));
-        setErrorStatus('');
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   // Handle Background file upload
@@ -284,18 +343,40 @@ export const BackgroundSettingsModal: React.FC<BackgroundSettingsModalProps> = (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 {formConfig.logoType === 'image' && formConfig.logoUrl ? (
-                  <img
-                    src={formConfig.logoUrl}
-                    alt="Logo Preview"
-                    className="h-9 w-9 rounded-xl object-cover shrink-0 shadow border border-[#332C25]"
-                    onError={() => {
-                      setErrorStatus('Gambar logo tidak dapat dimuat. Pastikan URL valid.');
+                  <div
+                    className={`flex items-center justify-center shrink-0 transition-all ${
+                      formConfig.logoShape === 'circle'
+                        ? 'rounded-full overflow-hidden border border-[#332C25] bg-[#161311]/60'
+                        : formConfig.logoShape === 'none'
+                        ? 'bg-transparent'
+                        : 'rounded-xl overflow-hidden border border-[#332C25] bg-[#161311]/60'
+                    }`}
+                    style={{
+                      height: `${Math.min(formConfig.logoSize || 52, 60)}px`,
+                      minWidth: formConfig.logoShape === 'none' ? 'auto' : `${Math.min(formConfig.logoSize || 52, 60)}px`,
+                      maxWidth: '160px',
                     }}
-                  />
+                  >
+                    <img
+                      src={formConfig.logoUrl}
+                      alt="Logo Preview"
+                      className="h-full w-auto max-w-full transition-all"
+                      style={{
+                        maxHeight: `${Math.min(formConfig.logoSize || 52, 60)}px`,
+                        objectFit: formConfig.logoFit || 'contain',
+                        imageRendering: 'auto',
+                      }}
+                      onError={() => {
+                        setErrorStatus('Gambar logo tidak dapat dimuat. Pastikan file valid.');
+                      }}
+                    />
+                  </div>
                 ) : (
                   <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow font-black text-sm transition-colors"
+                    className="flex shrink-0 items-center justify-center rounded-xl shadow font-black text-sm transition-colors"
                     style={{
+                      height: `${Math.min(formConfig.logoSize || 48, 54)}px`,
+                      width: `${Math.min(formConfig.logoSize || 48, 54)}px`,
                       backgroundColor: formConfig.activeButtonColor,
                       color: formConfig.activeButtonTextColor,
                     }}
@@ -488,6 +569,154 @@ export const BackgroundSettingsModal: React.FC<BackgroundSettingsModalProps> = (
                         placeholder="https://.../logo.png"
                         className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2 text-xs text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
                       />
+                    </div>
+
+                    {/* Ukuran Logo (Logo Size) */}
+                    <div className="space-y-2 rounded-xl border border-[#332C25] bg-[#161311] p-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-[#F2EDE4] flex items-center gap-1.5">
+                          <Sliders size={13} className="text-[#E8B33D]" />
+                          <span>Ukuran Logo Header</span>
+                        </label>
+                        <span className="rounded-md bg-[#241F1B] px-2 py-0.5 text-xs font-black text-[#E8B33D] border border-[#332C25]">
+                          {formConfig.logoSize || 52}px
+                        </span>
+                      </div>
+
+                      {/* Presets */}
+                      <div className="grid grid-cols-5 gap-1.5 pt-1">
+                        {[
+                          { label: 'Kecil', size: 40 },
+                          { label: 'Standar', size: 48 },
+                          { label: 'Sedang', size: 54 },
+                          { label: 'Besar', size: 62 },
+                          { label: 'Ekstra', size: 72 },
+                        ].map((preset) => {
+                          const isSelected = (formConfig.logoSize || 52) === preset.size;
+                          return (
+                            <button
+                              key={preset.size}
+                              type="button"
+                              onClick={() => setFormConfig((prev) => ({ ...prev, logoSize: preset.size }))}
+                              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-lg border text-center transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'border-[#E8B33D] bg-[#E8B33D]/20 text-[#E8B33D] font-black'
+                                  : 'border-[#332C25] bg-[#201C18] text-[#9C948A] hover:text-[#F2EDE4] hover:border-[#4D4238]'
+                              }`}
+                            >
+                              <span className="text-[10px] font-bold leading-tight">{preset.label}</span>
+                              <span className="text-[9px] text-[#9C948A]">{preset.size}px</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Slider for smooth custom size */}
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-[10px] text-[#9C948A]">32px</span>
+                        <input
+                          type="range"
+                          min={32}
+                          max={80}
+                          step={2}
+                          value={formConfig.logoSize || 52}
+                          onChange={(e) =>
+                            setFormConfig((prev) => ({ ...prev, logoSize: Number(e.target.value) }))
+                          }
+                          className="flex-1 accent-[#E8B33D] cursor-pointer h-1.5 bg-[#2A241E] rounded-lg"
+                        />
+                        <span className="text-[10px] text-[#9C948A]">80px</span>
+                      </div>
+                      <p className="text-[10px] text-[#9C948A]">
+                        Sesuaikan tinggi logo agar teks lambang/crest tampak tajam, jelas, dan tidak pecah.
+                      </p>
+                    </div>
+
+                    {/* Proporsi & Ketajaman Logo (Object Fit) */}
+                    <div className="space-y-1.5 rounded-xl border border-[#332C25] bg-[#161311] p-3">
+                      <label className="text-xs font-bold text-[#F2EDE4]">
+                        Kesesuaian Rasio & Ketajaman (Fit):
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setFormConfig((prev) => ({ ...prev, logoFit: 'contain' }))}
+                          className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                            (formConfig.logoFit || 'contain') === 'contain'
+                              ? 'border-[#E8B33D] bg-[#E8B33D]/15 text-[#F2EDE4]'
+                              : 'border-[#332C25] bg-[#201C18] text-[#9C948A] hover:text-[#F2EDE4]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold">Proporsional (Contain)</span>
+                            {(formConfig.logoFit || 'contain') === 'contain' && (
+                              <Check size={13} className="text-[#E8B33D]" />
+                            )}
+                          </div>
+                          <p className="text-[10px] text-[#9C948A] mt-0.5 leading-snug">
+                            Rasio asli tetap utuh, detail lambang & teks tajam, tidak gepeng.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setFormConfig((prev) => ({ ...prev, logoFit: 'cover' }))}
+                          className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                            formConfig.logoFit === 'cover'
+                              ? 'border-[#E8B33D] bg-[#E8B33D]/15 text-[#F2EDE4]'
+                              : 'border-[#332C25] bg-[#201C18] text-[#9C948A] hover:text-[#F2EDE4]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold">Mengisi Kotak (Cover)</span>
+                            {formConfig.logoFit === 'cover' && (
+                              <Check size={13} className="text-[#E8B33D]" />
+                            )}
+                          </div>
+                          <p className="text-[10px] text-[#9C948A] mt-0.5 leading-snug">
+                            Mengisi penuh bingkai (dapat terpotong jika bukan rasio 1:1).
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bentuk Bingkai Logo (Frame Shape) */}
+                    <div className="space-y-1.5 rounded-xl border border-[#332C25] bg-[#161311] p-3">
+                      <label className="text-xs font-bold text-[#F2EDE4]">
+                        Bentuk Bingkai Logo:
+                      </label>
+                      <div className="grid grid-cols-3 gap-2 pt-1">
+                        {[
+                          { id: 'rounded', label: 'Kotak Rounded', desc: 'Sudut melengkung halus' },
+                          { id: 'circle', label: 'Lingkaran', desc: 'Bingkai bulat' },
+                          { id: 'none', label: 'Transparan', desc: 'Tanpa box / menyatu alami' },
+                        ].map((shape) => {
+                          const isSelected = (formConfig.logoShape || 'rounded') === shape.id;
+                          return (
+                            <button
+                              key={shape.id}
+                              type="button"
+                              onClick={() =>
+                                setFormConfig((prev) => ({
+                                  ...prev,
+                                  logoShape: shape.id as 'rounded' | 'circle' | 'none',
+                                }))
+                              }
+                              className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'border-[#E8B33D] bg-[#E8B33D]/15 text-[#F2EDE4]'
+                                  : 'border-[#332C25] bg-[#201C18] text-[#9C948A] hover:text-[#F2EDE4]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold">{shape.label}</span>
+                                {isSelected && <Check size={13} className="text-[#E8B33D]" />}
+                              </div>
+                              <p className="text-[9px] text-[#9C948A] mt-0.5">{shape.desc}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}

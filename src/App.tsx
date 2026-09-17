@@ -260,6 +260,9 @@ export default function App() {
       logoText: newConfig.logoText,
       brandName: newConfig.brandName,
       slogan: newConfig.slogan,
+      logoSize: newConfig.logoSize,
+      logoFit: newConfig.logoFit,
+      logoShape: newConfig.logoShape,
       headerBgColor: newConfig.headerBgColor,
       activeButtonColor: newConfig.activeButtonColor,
       activeButtonTextColor: newConfig.activeButtonTextColor,
@@ -469,6 +472,9 @@ export default function App() {
           logoText: remoteTheme.logoText !== undefined ? remoteTheme.logoText : prev.logoText,
           brandName: remoteTheme.brandName !== undefined ? remoteTheme.brandName : prev.brandName,
           slogan: remoteTheme.slogan !== undefined ? remoteTheme.slogan : prev.slogan,
+          logoSize: typeof remoteTheme.logoSize === 'number' ? remoteTheme.logoSize : prev.logoSize,
+          logoFit: remoteTheme.logoFit || prev.logoFit,
+          logoShape: remoteTheme.logoShape || prev.logoShape,
           headerBgColor: remoteTheme.headerBgColor || prev.headerBgColor,
           activeButtonColor: remoteTheme.activeButtonColor || prev.activeButtonColor,
           activeButtonTextColor: remoteTheme.activeButtonTextColor || prev.activeButtonTextColor,
@@ -1236,20 +1242,42 @@ export default function App() {
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-3 py-2.5 sm:px-6 sm:py-3">
           {/* Brand Logo */}
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
             {themeConfig.logoType === 'image' && themeConfig.logoUrl ? (
-              <img
-                src={themeConfig.logoUrl}
-                alt={themeConfig.brandName}
-                className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl object-cover shadow-md border border-[#332C25]"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
+              <div
+                className={`flex items-center justify-center shrink-0 transition-all ${
+                  themeConfig.logoShape === 'circle'
+                    ? 'rounded-full overflow-hidden border border-[#332C25] bg-[#161311]/60 shadow-md'
+                    : themeConfig.logoShape === 'none'
+                    ? 'bg-transparent'
+                    : 'rounded-xl overflow-hidden border border-[#332C25] bg-[#161311]/60 shadow-md'
+                }`}
+                style={{
+                  height: `${themeConfig.logoSize || 52}px`,
+                  minWidth: themeConfig.logoShape === 'none' ? 'auto' : `${themeConfig.logoSize || 52}px`,
+                  maxWidth: '220px',
                 }}
-              />
+              >
+                <img
+                  src={themeConfig.logoUrl}
+                  alt={themeConfig.brandName}
+                  className="h-full w-auto max-w-full transition-all"
+                  style={{
+                    maxHeight: `${themeConfig.logoSize || 52}px`,
+                    objectFit: themeConfig.logoFit || 'contain',
+                    imageRendering: 'auto',
+                  }}
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </div>
             ) : (
               <div
-                className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl shadow-md font-black text-base sm:text-lg transition-colors"
+                className="flex shrink-0 items-center justify-center rounded-xl shadow-md font-black text-base sm:text-lg transition-colors"
                 style={{
+                  height: `${themeConfig.logoSize || 48}px`,
+                  width: `${themeConfig.logoSize || 48}px`,
                   backgroundColor: themeConfig.activeButtonColor,
                   color: themeConfig.activeButtonTextColor,
                 }}
