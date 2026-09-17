@@ -3,8 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_PLAYERS } from './src/data/seed.ts';
-import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/data/seasonsSeed.ts';
+import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/utils/seasonCalculations.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
 import { generateHeuristicMatchAnalysis } from './src/utils/matchAnalysis.ts';
@@ -35,32 +34,20 @@ function loadStore(): StoreData {
       const raw = fs.readFileSync(STORE_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
 
-      // Verify and guarantee seasons exist
-      if (!parsed.lagaAmalSeasons || !Array.isArray(parsed.lagaAmalSeasons) || parsed.lagaAmalSeasons.length === 0) {
-        parsed.lagaAmalSeasons = JSON.parse(JSON.stringify(ALL_INITIAL_SEASONS));
-      }
-
-      // Guarantee players follow active season
-      const activeSeason = parsed.lagaAmalSeasons[0] || ALL_INITIAL_SEASONS[0];
-      if (!parsed.players || !Array.isArray(parsed.players) || parsed.players.length === 0 || !parsed.players[0].name.includes('MANDOOR')) {
-        parsed.players = buildPlayersFromSeason(activeSeason);
-      }
-
-      if (!parsed.matches || !Array.isArray(parsed.matches)) {
-        parsed.matches = [];
-      }
-
-      return parsed;
+      return {
+        players: Array.isArray(parsed.players) ? parsed.players : [],
+        matches: Array.isArray(parsed.matches) ? parsed.matches : [],
+        lagaAmalSeasons: Array.isArray(parsed.lagaAmalSeasons) ? parsed.lagaAmalSeasons : [],
+      };
     }
   } catch (err) {
-    console.error('Error loading store, falling back to seed:', err);
+    console.error('Error loading store:', err);
   }
 
-  const initialSeasons = JSON.parse(JSON.stringify(ALL_INITIAL_SEASONS));
   const initialData: StoreData = {
-    players: buildPlayersFromSeason(initialSeasons[0]),
+    players: [],
     matches: [],
-    lagaAmalSeasons: initialSeasons,
+    lagaAmalSeasons: [],
   };
   saveStore(initialData);
   return initialData;
@@ -266,7 +253,7 @@ app.get('/api/players', (req, res) => {
 
 // POST /api/players (Add new player)
 app.post('/api/players', (req, res) => {
-  const { name, status, tier, avatar_url } = req.body;
+  const { name, status, tier, avatar_url, julukan } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'Nama pemain wajib diisi' });
@@ -294,6 +281,8 @@ app.post('/api/players', (req, res) => {
     avgScore: 0,
     winRate: 0,
     avatar_url: avatar_url || undefined,
+    julukan: julukan ? String(julukan).trim() : undefined,
+    julukan_updated_at: julukan ? new Date().toISOString() : undefined,
   };
 
   store.players.push(newPlayer);
@@ -314,6 +303,10 @@ app.post('/api/players', (req, res) => {
         winRate: 0,
         avgScore: 0,
         avatar_url: avatar_url || undefined,
+        status: status || 'Aktif',
+        tier: tier || 'Legend',
+        julukan: julukan ? String(julukan).trim() : undefined,
+        julukan_updated_at: julukan ? new Date().toISOString() : undefined,
       });
       activeSeason.activePlayersCount = activeSeason.players.length;
     }
@@ -682,7 +675,7 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
 // ----------------- LAGA AMAL SEASONS ROUTES -----------------
 // GET /api/laga-amal (Get all seasons with history)
 app.get('/api/laga-amal', (req, res) => {
-  res.json(store.lagaAmalSeasons || ALL_INITIAL_SEASONS);
+  res.json(store.lagaAmalSeasons || []);
 });
 
 // GET /api/laga-amal/:id (Get specific season by id)
@@ -702,7 +695,7 @@ app.post('/api/laga-amal', (req, res) => {
   }
 
   if (!store.lagaAmalSeasons) {
-    store.lagaAmalSeasons = JSON.parse(JSON.stringify(ALL_INITIAL_SEASONS));
+    store.lagaAmalSeasons = [];
   }
 
   const existingIdx = store.lagaAmalSeasons.findIndex((s) => s.id === incomingSeason.id);
@@ -712,8 +705,10 @@ app.post('/api/laga-amal', (req, res) => {
     store.lagaAmalSeasons.unshift(recalculateSeasonStats(incomingSeason));
   }
 
-  // Update store.players to align with active season
-  store.players = buildPlayersFromSeason(store.lagaAmalSeasons[0]);
+  // Update store.players to align with active season if players present in season
+  if (store.lagaAmalSeasons[0]) {
+    store.players = buildPlayersFromSeason(store.lagaAmalSeasons[0]);
+  }
 
   saveStore(store);
   res.json({ success: true, season: store.lagaAmalSeasons[existingIdx >= 0 ? existingIdx : 0], players: store.players });

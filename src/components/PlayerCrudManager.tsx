@@ -9,15 +9,22 @@ import {
   Trash2,
   Edit3,
   Sparkles,
-  ShieldCheck,
   AlertTriangle,
   RefreshCw,
   CheckCircle2,
   X,
   ChevronDown,
-  Trophy,
-  Award,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  ShieldAlert,
+  Flame,
+  Crown,
 } from 'lucide-react';
+
+export type PlayerSortField = 'name' | 'total_match' | 'winRate' | 'mvp' | 'coklat' | 'score' | 'status';
+export type PlayerSortDirection = 'asc' | 'desc';
 
 interface PlayerCrudManagerProps {
   players: Player[];
@@ -31,7 +38,7 @@ interface PlayerCrudManagerProps {
     julukan?: string;
   }) => Promise<boolean>;
   onUpdatePlayer: (playerId: number | string, updates: Partial<Player>) => Promise<boolean>;
-  onDeletePlayer: (playerId: number | string) => Promise<boolean>;
+  onDeletePlayer: (playerId: number | string, playerName?: string) => Promise<boolean>;
   onGenerateJulukan?: (playerId: number | string) => Promise<string | null>;
   onOpenLogin: () => void;
   onSelectPlayer?: (playerId: number | string) => void;
@@ -48,10 +55,12 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
   onOpenLogin,
   onSelectPlayer,
 }) => {
-  // Search and Filter States
+  // Search, Filter, and Sort States
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Aktif' | 'Cabutan'>('ALL');
   const [tierFilter, setTierFilter] = useState<string>('ALL');
+  const [sortField, setSortField] = useState<PlayerSortField>('total_match');
+  const [sortDirection, setSortDirection] = useState<PlayerSortDirection>('desc');
 
   // Modals State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -76,6 +85,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
 
   // Loading/Feedback States
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [updatingPlayerId, setUpdatingPlayerId] = useState<number | string | null>(null);
   const [generatingId, setGeneratingId] = useState<number | string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{
     type: 'success' | 'error';
@@ -93,22 +103,63 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
   const cabutanCount = players.filter((p) => p.status === 'Cabutan').length;
   const mythicCount = players.filter((p) => (p.tier || '').toLowerCase().includes('myth')).length;
 
-  // Filtered players list
+  // Toggle sorting helper
+  const handleSortToggle = (field: PlayerSortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection(field === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  // Filtered & Sorted players list
   const filteredPlayers = useMemo(() => {
-    return players.filter((p) => {
+    const list = players.filter((p) => {
       const matchSearch =
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.julukan || '').toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchStatus =
-        statusFilter === 'ALL' || p.status === statusFilter;
+      const matchStatus = statusFilter === 'ALL' || p.status === statusFilter;
 
       const matchTier =
         tierFilter === 'ALL' || (p.tier || '').toLowerCase() === tierFilter.toLowerCase();
 
       return matchSearch && matchStatus && matchTier;
     });
-  }, [players, searchTerm, statusFilter, tierFilter]);
+
+    list.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+          break;
+        case 'total_match':
+          comparison = (a.total_match ?? 0) - (b.total_match ?? 0);
+          break;
+        case 'winRate':
+          comparison = (a.winRate ?? 0) - (b.winRate ?? 0);
+          break;
+        case 'mvp':
+          comparison = (a.medals?.MVP ?? 0) - (b.medals?.MVP ?? 0);
+          break;
+        case 'coklat':
+          comparison = (a.medals?.Coklat ?? 0) - (b.medals?.Coklat ?? 0);
+          break;
+        case 'score':
+          comparison = (a.score ?? 0) - (b.score ?? 0);
+          break;
+        case 'status':
+          comparison = a.status === b.status ? 0 : a.status === 'Aktif' ? 1 : -1;
+          break;
+        default:
+          comparison = 0;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return list;
+  }, [players, searchTerm, statusFilter, tierFilter, sortField, sortDirection]);
 
   // Handle Quick Toggle Status
   const handleToggleStatus = async (player: Player) => {
@@ -117,6 +168,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       return;
     }
     const newStatus = player.status === 'Cabutan' ? 'Aktif' : 'Cabutan';
+    setUpdatingPlayerId(player.id);
     try {
       const ok = await onUpdatePlayer(player.id, { status: newStatus });
       if (ok) {
@@ -126,6 +178,8 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       }
     } catch {
       showToast('Terjadi kesalahan saat update status', 'error');
+    } finally {
+      setUpdatingPlayerId(null);
     }
   };
 
@@ -135,13 +189,18 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       onOpenLogin();
       return;
     }
+    setUpdatingPlayerId(player.id);
     try {
       const ok = await onUpdatePlayer(player.id, { tier: newTier });
       if (ok) {
         showToast(`Tier ${player.name} diubah ke ${newTier}`);
+      } else {
+        showToast('Gagal update tier', 'error');
       }
     } catch {
       showToast('Gagal update tier', 'error');
+    } finally {
+      setUpdatingPlayerId(null);
     }
   };
 
@@ -181,15 +240,25 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
   // Submit Add Player Form
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addName.trim()) {
+    const cleanName = addName.trim();
+    if (!cleanName) {
       showToast('Nama pemain wajib diisi', 'error');
+      return;
+    }
+
+    // Duplicate check
+    const isDuplicate = players.some(
+      (p) => p.name.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+    if (isDuplicate) {
+      showToast(`Pemain dengan nama "${cleanName}" sudah terdaftar di database!`, 'error');
       return;
     }
 
     setIsSubmittingAdd(true);
     try {
       const success = await onAddPlayer({
-        name: addName.trim(),
+        name: cleanName,
         status: addStatus,
         tier: addTier,
         avatar_url: addAvatarUrl.trim() || undefined,
@@ -197,7 +266,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       });
 
       if (success) {
-        showToast(`Pemain "${addName}" berhasil ditambahkan ke database!`);
+        showToast(`Pemain "${cleanName}" berhasil ditambahkan ke database!`);
         setShowAddModal(false);
         setAddName('');
         setAddAvatarUrl('');
@@ -218,15 +287,27 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPlayer) return;
-    if (!editName.trim()) {
+    const cleanName = editName.trim();
+    if (!cleanName) {
       showToast('Nama pemain wajib diisi', 'error');
+      return;
+    }
+
+    // Duplicate name collision check (different player ID)
+    const isConflict = players.some(
+      (p) =>
+        String(p.id) !== String(editingPlayer.id) &&
+        p.name.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+    if (isConflict) {
+      showToast(`Nama "${cleanName}" sudah digunakan pemain lain!`, 'error');
       return;
     }
 
     setIsSubmittingEdit(true);
     try {
       const success = await onUpdatePlayer(editingPlayer.id, {
-        name: editName.trim(),
+        name: cleanName,
         status: editStatus,
         tier: editTier,
         avatar_url: editAvatarUrl.trim() || undefined,
@@ -235,7 +316,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       });
 
       if (success) {
-        showToast(`Data pemain "${editName}" berhasil diperbarui!`);
+        showToast(`Data pemain "${cleanName}" berhasil diperbarui!`);
         setEditingPlayer(null);
       } else {
         showToast('Gagal memperbarui data pemain', 'error');
@@ -252,7 +333,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
     if (!deletingPlayer) return;
     setIsSubmittingDelete(true);
     try {
-      const success = await onDeletePlayer(deletingPlayer.id);
+      const success = await onDeletePlayer(deletingPlayer.id, deletingPlayer.name);
       if (success) {
         showToast(`Pemain "${deletingPlayer.name}" berhasil dihapus dari database.`);
         setDeletingPlayer(null);
@@ -271,16 +352,16 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       {/* Toast Feedback */}
       {actionFeedback && (
         <div
-          className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-xl p-3.5 text-xs font-semibold shadow-2xl backdrop-blur-md border ${
+          className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-xl p-3.5 text-xs font-semibold shadow-2xl backdrop-blur-md border animate-scaleUp ${
             actionFeedback.type === 'success'
-              ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/60 shadow-emerald-950/50'
-              : 'bg-rose-950/90 text-rose-200 border-rose-500/60 shadow-rose-950/50'
+              ? 'bg-emerald-950/95 text-emerald-200 border-emerald-500/60 shadow-emerald-950/50'
+              : 'bg-rose-950/95 text-rose-200 border-rose-500/60 shadow-rose-950/50'
           }`}
         >
           {actionFeedback.type === 'success' ? (
-            <CheckCircle2 size={16} className="text-emerald-400" />
+            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
           ) : (
-            <AlertTriangle size={16} className="text-rose-400" />
+            <AlertTriangle size={16} className="text-rose-400 shrink-0" />
           )}
           <span>{actionFeedback.message}</span>
         </div>
@@ -291,65 +372,76 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="rounded-xl bg-[#E8B33D]/20 p-2 text-[#E8B33D]">
+              <div className="rounded-xl bg-[#E8B33D]/20 p-2 text-[#E8B33D] border border-[#E8B33D]/30">
                 <Users size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-black text-[#F2EDE4] tracking-tight">
+                <h2 className="text-lg font-black text-[#F2EDE4] tracking-tight flex items-center gap-2">
                   Database Pemain Laga Amal (CRUD)
+                  {isAdmin ? (
+                    <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                      Mode Admin Aktif
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-amber-950 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                      Read Only
+                    </span>
+                  )}
                 </h2>
-                <p className="text-xs text-[#9C948A]">
-                  Sinkronisasi permanen ke Cloud Firestore: Tambah, Lihat, Edit status & julukan, serta Hapus pemain.
+                <p className="text-xs text-[#9C948A] mt-0.5">
+                  Kelola identitas, tier rank MLBB, status badge (Aktif / Cabutan), avatar, dan julukan dinamis pemain
                 </p>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {!isAdmin ? (
+            {isAdmin ? (
               <button
-                onClick={onOpenLogin}
-                className="flex items-center gap-2 rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-4 py-2.5 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-all cursor-pointer"
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-all shadow-md shadow-[#E8B33D]/10 cursor-pointer active:scale-95"
               >
-                <ShieldCheck size={14} />
-                <span>Login Admin untuk Edit</span>
+                <UserPlus size={16} />
+                <span>Tambah Pemain Baru</span>
               </button>
             ) : (
               <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-4 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-all shadow-md cursor-pointer"
+                type="button"
+                onClick={onOpenLogin}
+                className="flex items-center gap-1.5 rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-4 py-2.5 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 transition-colors cursor-pointer"
               >
-                <UserPlus size={15} />
-                <span>+ Tambah Pemain Baru</span>
+                <ShieldAlert size={15} />
+                <span>Login Admin untuk Edit/Hapus</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Counter Pills */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+        {/* Quick KPI Count Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#332C25]">
           <div className="rounded-xl border border-[#332C25] bg-[#161311] p-3 text-center">
             <span className="text-[10px] uppercase font-bold text-[#9C948A] tracking-wider block">
-              Total Roster
+              Total Pemain
             </span>
             <span className="text-xl font-black text-[#F2EDE4] mt-0.5 block">{totalCount}</span>
-            <span className="text-[10px] text-[#9C948A]">Pemain Terdaftar</span>
+            <span className="text-[10px] text-[#9C948A]">Terdaftar di Database</span>
           </div>
 
-          <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3 text-center">
+          <div className="rounded-xl border border-emerald-900/30 bg-emerald-950/20 p-3 text-center">
             <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">
-              Warga Tetap (Aktif)
+              Warga Aktif
             </span>
             <span className="text-xl font-black text-emerald-300 mt-0.5 block">{aktifCount}</span>
-            <span className="text-[10px] text-emerald-400/80">Member Inti Pantos</span>
+            <span className="text-[10px] text-emerald-400/80">Badge Aktif</span>
           </div>
 
-          <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-3 text-center">
+          <div className="rounded-xl border border-amber-900/30 bg-amber-950/20 p-3 text-center">
             <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider block">
-              Cabutan (Tamu)
+              Cabutan
             </span>
             <span className="text-xl font-black text-amber-300 mt-0.5 block">{cabutanCount}</span>
-            <span className="text-[10px] text-amber-400/80">Pemain Cadangan/Tamu</span>
+            <span className="text-[10px] text-amber-400/80">Pemain Cadangan / Tamu</span>
           </div>
 
           <div className="rounded-xl border border-[#E8B33D]/30 bg-[#251E17] p-3 text-center">
@@ -362,22 +454,23 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      {/* Filter, Search & Sorting Bar */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         {/* Search Input */}
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
           <input
             type="text"
-            placeholder="Cari pemain atau julukan..."
+            placeholder="Cari nama pemain atau julukan pantos..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-xl border border-[#332C25] bg-[#1D1916] pl-9 pr-4 py-2.5 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none transition-colors"
+            className="w-full rounded-xl border border-[#332C25] bg-[#1D1916] pl-9 pr-9 py-2.5 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none transition-colors"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9C948A] hover:text-[#F2EDE4]"
+              title="Hapus pencarian"
             >
               <X size={13} />
             </button>
@@ -385,10 +478,10 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
         </div>
 
         {/* Status Filters */}
-        <div className="flex items-center gap-1.5 rounded-xl border border-[#332C25] bg-[#1D1916] p-1">
+        <div className="flex items-center gap-1.5 rounded-xl border border-[#332C25] bg-[#1D1916] p-1 overflow-x-auto">
           <button
             onClick={() => setStatusFilter('ALL')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               statusFilter === 'ALL'
                 ? 'bg-[#E8B33D] text-[#161311] shadow'
                 : 'text-[#9C948A] hover:text-[#F2EDE4]'
@@ -398,7 +491,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
           </button>
           <button
             onClick={() => setStatusFilter('Aktif')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               statusFilter === 'Aktif'
                 ? 'bg-emerald-600 text-white shadow'
                 : 'text-[#9C948A] hover:text-emerald-400'
@@ -408,7 +501,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
           </button>
           <button
             onClick={() => setStatusFilter('Cabutan')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               statusFilter === 'Cabutan'
                 ? 'bg-amber-600 text-white shadow'
                 : 'text-[#9C948A] hover:text-amber-400'
@@ -419,11 +512,11 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
         </div>
 
         {/* Tier Select Filter */}
-        <div className="relative">
+        <div className="relative shrink-0">
           <select
             value={tierFilter}
             onChange={(e) => setTierFilter(e.target.value)}
-            className="appearance-none rounded-xl border border-[#332C25] bg-[#1D1916] px-3.5 py-2.5 pr-8 text-xs font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
+            className="w-full appearance-none rounded-xl border border-[#332C25] bg-[#1D1916] px-3.5 py-2.5 pr-8 text-xs font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
           >
             <option value="ALL">Semua Tier</option>
             {MLBB_TIER_OPTIONS.map((t) => (
@@ -437,21 +530,124 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
             className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9C948A]"
           />
         </div>
+
+        {/* Sorting Dropdown */}
+        <div className="relative shrink-0">
+          <select
+            value={`${sortField}_${sortDirection}`}
+            onChange={(e) => {
+              const [f, d] = e.target.value.split('_') as [PlayerSortField, PlayerSortDirection];
+              setSortField(f);
+              setSortDirection(d);
+            }}
+            className="w-full appearance-none rounded-xl border border-[#332C25] bg-[#1D1916] px-3.5 py-2.5 pr-8 text-xs font-bold text-[#E8B33D] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
+          >
+            <option value="total_match_desc">Urut: Main Terbanyak</option>
+            <option value="winRate_desc">Urut: Win Rate Tertinggi</option>
+            <option value="mvp_desc">Urut: MVP Terbanyak</option>
+            <option value="score_desc">Urut: Skor Klasemen Tertinggi</option>
+            <option value="name_asc">Urut: Nama (A-Z)</option>
+            <option value="name_desc">Urut: Nama (Z-A)</option>
+            <option value="status_desc">Urut: Status (Aktif Duluan)</option>
+          </select>
+          <ArrowUpDown
+            size={13}
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#E8B33D]"
+          />
+        </div>
       </div>
 
-      {/* Players List Table / Cards */}
+      {/* Showing count indicator */}
+      <div className="flex items-center justify-between text-xs text-[#9C948A] px-1">
+        <span>
+          Menampilkan <strong className="text-[#F2EDE4]">{filteredPlayers.length}</strong> dari {totalCount} pemain
+        </span>
+        {(searchTerm || statusFilter !== 'ALL' || tierFilter !== 'ALL') && (
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              setStatusFilter('ALL');
+              setTierFilter('ALL');
+            }}
+            className="inline-flex items-center gap-1 text-[#E8B33D] hover:underline cursor-pointer"
+          >
+            <RotateCcw size={11} />
+            <span>Reset Semua Filter</span>
+          </button>
+        )}
+      </div>
+
+      {/* Players List Table */}
       <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-[#F2EDE4]">
-            <thead className="border-b border-[#332C25] bg-[#161311] text-[11px] font-bold text-[#9C948A] uppercase tracking-wider">
+            <thead className="border-b border-[#332C25] bg-[#161311] text-[11px] font-bold text-[#9C948A] uppercase tracking-wider select-none">
               <tr>
-                <th className="px-4 py-3">Pemain</th>
-                <th className="px-4 py-3">Status Badge</th>
-                <th className="px-4 py-3">Tier</th>
+                <th
+                  onClick={() => handleSortToggle('name')}
+                  className="px-4 py-3 cursor-pointer hover:text-[#F2EDE4] transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Pemain</span>
+                    {sortField === 'name' ? (
+                      sortDirection === 'asc' ? <ArrowUp size={12} className="text-[#E8B33D]" /> : <ArrowDown size={12} className="text-[#E8B33D]" />
+                    ) : (
+                      <ArrowUpDown size={11} className="opacity-40" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSortToggle('status')}
+                  className="px-4 py-3 cursor-pointer hover:text-[#F2EDE4] transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Status Badge</span>
+                    {sortField === 'status' && (
+                      sortDirection === 'asc' ? <ArrowUp size={12} className="text-[#E8B33D]" /> : <ArrowDown size={12} className="text-[#E8B33D]" />
+                    )}
+                  </div>
+                </th>
+                <th className="px-4 py-3">Tier MLBB</th>
                 <th className="px-4 py-3">Julukan Pantos Terkini</th>
-                <th className="px-4 py-3 text-center">Main</th>
-                <th className="px-4 py-3 text-center">Win Rate</th>
-                <th className="px-4 py-3 text-center">Medali</th>
+                <th
+                  onClick={() => handleSortToggle('total_match')}
+                  className="px-4 py-3 text-center cursor-pointer hover:text-[#F2EDE4] transition-colors"
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Main</span>
+                    {sortField === 'total_match' ? (
+                      sortDirection === 'asc' ? <ArrowUp size={12} className="text-[#E8B33D]" /> : <ArrowDown size={12} className="text-[#E8B33D]" />
+                    ) : (
+                      <ArrowUpDown size={11} className="opacity-40" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSortToggle('winRate')}
+                  className="px-4 py-3 text-center cursor-pointer hover:text-[#F2EDE4] transition-colors"
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Win Rate</span>
+                    {sortField === 'winRate' ? (
+                      sortDirection === 'asc' ? <ArrowUp size={12} className="text-[#E8B33D]" /> : <ArrowDown size={12} className="text-[#E8B33D]" />
+                    ) : (
+                      <ArrowUpDown size={11} className="opacity-40" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSortToggle('mvp')}
+                  className="px-4 py-3 text-center cursor-pointer hover:text-[#F2EDE4] transition-colors"
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Medali</span>
+                    {sortField === 'mvp' ? (
+                      sortDirection === 'asc' ? <ArrowUp size={12} className="text-[#E8B33D]" /> : <ArrowDown size={12} className="text-[#E8B33D]" />
+                    ) : (
+                      <ArrowUpDown size={11} className="opacity-40" />
+                    )}
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-right">Aksi CRUD</th>
               </tr>
             </thead>
@@ -464,12 +660,25 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                     <p className="text-xs text-[#9C948A] mt-1">
                       Coba ganti kata kunci pencarian atau reset filter.
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setStatusFilter('ALL');
+                        setTierFilter('ALL');
+                      }}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-[#E8B33D]/50 bg-[#E8B33D]/10 px-3.5 py-1.5 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 cursor-pointer"
+                    >
+                      <RotateCcw size={13} />
+                      <span>Reset Filter & Pencarian</span>
+                    </button>
                   </td>
                 </tr>
               ) : (
                 filteredPlayers.map((player, idx) => {
                   const isAktif = player.status === 'Aktif';
                   const isGenerating = generatingId === player.id;
+                  const isUpdatingThis = updatingPlayerId === player.id;
 
                   return (
                     <tr
@@ -490,7 +699,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                             className="ring-1 ring-[#332C25] group-hover:ring-[#E8B33D]/60 transition-all"
                           />
                           <div>
-                            <span className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">
+                            <span className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors block">
                               {player.name}
                             </span>
                             <span className="block text-[10px] text-[#9C948A]">
@@ -505,7 +714,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleStatus(player)}
-                          disabled={!isAdmin}
+                          disabled={!isAdmin || isUpdatingThis}
                           title={
                             isAdmin
                               ? `Klik untuk toggle ke ${isAktif ? 'Cabutan' : 'Aktif'}`
@@ -515,13 +724,17 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                             isAktif
                               ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/70 hover:bg-emerald-900/60'
                               : 'bg-amber-950/60 text-amber-300 border-amber-500/70 hover:bg-amber-900/60'
-                          } ${isAdmin ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
+                          } ${isAdmin ? 'cursor-pointer active:scale-95' : 'cursor-default opacity-90'}`}
                         >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              isAktif ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                            }`}
-                          />
+                          {isUpdatingThis ? (
+                            <RefreshCw size={10} className="animate-spin text-[#E8B33D]" />
+                          ) : (
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isAktif ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                              }`}
+                            />
+                          )}
                           <span>{player.status}</span>
                           {isAdmin && <span className="text-[10px] opacity-60 ml-0.5">⇄</span>}
                         </button>
@@ -533,8 +746,9 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                           <div className="relative inline-block">
                             <select
                               value={player.tier || 'Legend'}
+                              disabled={isUpdatingThis}
                               onChange={(e) => handleQuickTierChange(player, e.target.value)}
-                              className="appearance-none rounded-lg border border-[#332C25] bg-[#161311] px-2.5 py-1 pr-7 text-xs font-bold text-[#E8B33D] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
+                              className="appearance-none rounded-lg border border-[#332C25] bg-[#161311] px-2.5 py-1 pr-7 text-xs font-bold text-[#E8B33D] focus:border-[#E8B33D] focus:outline-none cursor-pointer disabled:opacity-50"
                             >
                               {MLBB_TIER_OPTIONS.map((t) => (
                                 <option key={t} value={t} className="bg-[#1D1916] text-[#F2EDE4]">
@@ -558,20 +772,16 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                       <td className="px-4 py-3 max-w-[260px]">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 truncate">
-                            <span
-                              className="font-medium text-xs text-[#F3C256] italic"
-                              title={player.julukan || 'Belum ada julukan'}
-                            >
-                              "{player.julukan || 'Pemain Pantos'}"
-                            </span>
-                            {player.julukan_updated_at && (
-                              <span className="block text-[9px] text-[#9C948A]/70">
-                                Diupdate: {new Date(player.julukan_updated_at).toLocaleDateString('id-ID')}
+                            {player.julukan ? (
+                              <span className="font-medium text-xs text-[#F2EDE4]" title={player.julukan}>
+                                "{player.julukan}"
                               </span>
+                            ) : (
+                              <span className="text-xs italic text-[#9C948A]">Belum ada julukan</span>
                             )}
                           </div>
 
-                          {isAdmin && (
+                          {isAdmin && onGenerateJulukan && (
                             <button
                               type="button"
                               onClick={() => handleGenerateJulukanClick(player)}
@@ -630,7 +840,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                                 type="button"
                                 onClick={() => openEditModal(player)}
                                 className="rounded-lg border border-[#332C25] bg-[#1D1916] p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] hover:border-[#E8B33D]/50 transition-colors cursor-pointer"
-                                title="Edit data pemain lengkap"
+                                title="Edit data pemain lengkap (Create / Update)"
                               >
                                 <Edit3 size={13} />
                               </button>
@@ -638,7 +848,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                                 type="button"
                                 onClick={() => setDeletingPlayer(player)}
                                 className="rounded-lg border border-rose-900/30 bg-rose-950/20 p-1.5 text-rose-400 hover:bg-rose-900/40 hover:text-rose-200 transition-colors cursor-pointer"
-                                title="Hapus pemain dari database"
+                                title="Hapus pemain dari database (Delete)"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -691,7 +901,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Farhan, Bang Jago"
+                  placeholder="e.g. Farhan, Bang Jago, Mas Bro"
                   value={addName}
                   onChange={(e) => setAddName(e.target.value)}
                   className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2.5 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
@@ -707,7 +917,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                     className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2.5 text-[#F2EDE4] focus:outline-none cursor-pointer"
                   >
                     <option value="Aktif">Aktif (Warga Tetap)</option>
-                    <option value="Cabutan">Cabutan (Tamu)</option>
+                    <option value="Cabutan">Cabutan (Tamu / Cadangan)</option>
                   </select>
                 </div>
 
@@ -748,27 +958,45 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                         'Tulang Punggung Bungkuk 90°',
                         'Spesialis Retri Indomaret',
                         'Joker Titipan Pengacau Winrate',
+                        'Duta Asik Solo Lane',
+                        'Lord Pembawa Kemenangan',
                       ];
                       setAddJulukan(suggestions[Math.floor(Math.random() * suggestions.length)]);
                     }}
-                    className="rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-2 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 cursor-pointer"
+                    className="rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-2 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 cursor-pointer shrink-0"
                   >
                     Saran
                   </button>
                 </div>
               </div>
 
+              {/* Avatar Input with Live Preview */}
               <div>
                 <label className="block text-[#9C948A] font-semibold mb-1">
                   URL Avatar Kustom (Opsional):
                 </label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/... atau link foto"
-                  value={addAvatarUrl}
-                  onChange={(e) => setAddAvatarUrl(e.target.value)}
-                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2.5 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
-                />
+                <div className="flex items-center gap-3">
+                  <div className="shrink-0">
+                    <PlayerAvatar
+                      nickname={addName.trim() || 'Pemain'}
+                      avatarUrl={addAvatarUrl.trim() || undefined}
+                      size="lg"
+                      className="ring-2 ring-[#E8B33D]/40 shadow"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      type="url"
+                      placeholder="https://... URL gambar avatar"
+                      value={addAvatarUrl}
+                      onChange={(e) => setAddAvatarUrl(e.target.value)}
+                      className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2.5 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+                    />
+                    <span className="text-[10px] text-[#9C948A] mt-1 block">
+                      Pratinjau foto langsung diperbarui di sebelah kiri.
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#332C25]">
@@ -782,7 +1010,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmittingAdd}
-                  className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-5 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-all cursor-pointer"
+                  className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-5 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-all cursor-pointer shadow-md"
                 >
                   {isSubmittingAdd ? <RefreshCw size={13} className="animate-spin" /> : <UserPlus size={13} />}
                   <span>{isSubmittingAdd ? 'Menyimpan...' : 'Simpan ke Database'}</span>
@@ -840,7 +1068,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                     className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2.5 text-[#F2EDE4] focus:outline-none cursor-pointer"
                   >
                     <option value="Aktif">Aktif (Warga Tetap)</option>
-                    <option value="Cabutan">Cabutan (Tamu)</option>
+                    <option value="Cabutan">Cabutan (Tamu / Cadangan)</option>
                   </select>
                 </div>
 
@@ -878,12 +1106,15 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                       onClick={async () => {
                         try {
                           const res = await onGenerateJulukan(editingPlayer.id);
-                          if (res) setEditJulukan(res);
+                          if (res) {
+                            setEditJulukan(res);
+                            showToast(`Julukan dihasilkan: "${res}"`);
+                          }
                         } catch (e: any) {
                           showToast('Gagal generate', 'error');
                         }
                       }}
-                      className="rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-2 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 cursor-pointer flex items-center gap-1.5"
+                      className="rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-3 py-2 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D]/20 cursor-pointer flex items-center gap-1.5 shrink-0"
                     >
                       <Sparkles size={12} />
                       <span>AI Generate</span>
@@ -892,17 +1123,33 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                 </div>
               </div>
 
+              {/* Avatar input with Live Preview */}
               <div>
                 <label className="block text-[#9C948A] font-semibold mb-1">
                   URL Avatar Kustom:
                 </label>
-                <input
-                  type="url"
-                  placeholder="https://... URL gambar avatar"
-                  value={editAvatarUrl}
-                  onChange={(e) => setEditAvatarUrl(e.target.value)}
-                  className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2.5 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
-                />
+                <div className="flex items-center gap-3">
+                  <div className="shrink-0">
+                    <PlayerAvatar
+                      nickname={editName.trim() || editingPlayer.name}
+                      avatarUrl={editAvatarUrl.trim() || undefined}
+                      size="lg"
+                      className="ring-2 ring-[#E8B33D]/40 shadow"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      type="url"
+                      placeholder="https://... URL gambar avatar"
+                      value={editAvatarUrl}
+                      onChange={(e) => setEditAvatarUrl(e.target.value)}
+                      className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3.5 py-2.5 text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+                    />
+                    <span className="text-[10px] text-[#9C948A] mt-1 block">
+                      Pratinjau foto langsung diperbarui di sebelah kiri.
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#332C25]">
@@ -916,7 +1163,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmittingEdit}
-                  className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-5 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-all cursor-pointer"
+                  className="flex items-center gap-2 rounded-xl bg-[#E8B33D] px-5 py-2.5 text-xs font-bold text-[#161311] hover:bg-[#F3C256] disabled:opacity-50 transition-all cursor-pointer shadow-md"
                 >
                   {isSubmittingEdit ? <RefreshCw size={13} className="animate-spin" /> : <Edit3 size={13} />}
                   <span>{isSubmittingEdit ? 'Menyimpan...' : 'Perbarui Data'}</span>
@@ -946,7 +1193,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
             <p className="text-xs text-[#9C948A] leading-relaxed">
               Apakah Anda yakin ingin menghapus pemain{' '}
               <strong className="text-[#F2EDE4]">"{deletingPlayer.name}"</strong>? Data dokumen pemain
-              akan dihapus dari <span className="text-[#E8B33D]">Cloud Firestore</span> dan daftar roster aktif.
+              akan dihapus dari <span className="text-[#E8B33D]">Cloud Firestore</span>, database backend, dan daftar roster Laga Amal.
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#332C25]">

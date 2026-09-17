@@ -33,8 +33,7 @@ import {
 } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
-import { INITIAL_LAGA_AMAL_S41 } from '../data/lagaAmalS41Data';
-import { ALL_INITIAL_SEASONS, recalculateSeasonStats } from '../data/seasonsSeed';
+import { recalculateSeasonStats, EMPTY_SEASON } from '../utils/seasonCalculations';
 import { syncLagaAmalToFirestore } from '../services/firestoreSync';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
@@ -74,8 +73,8 @@ interface LagaAmalViewProps {
 }
 
 export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
-  seasons = ALL_INITIAL_SEASONS,
-  activeSeasonId = 's41',
+  seasons = [],
+  activeSeasonId = 's1',
   onSeasonChange,
   onUpdateSeason,
   onDeleteSeason,
@@ -84,7 +83,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 }) => {
   // Current season data resolved from props or fallback
   const currentSeason = useMemo(() => {
-    return seasons.find((s) => s.id === activeSeasonId) || seasons[0] || INITIAL_LAGA_AMAL_S41;
+    return seasons.find((s) => s.id === activeSeasonId) || seasons[0] || EMPTY_SEASON;
   }, [seasons, activeSeasonId]);
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('standings');

@@ -10,6 +10,7 @@ import {
   Flame,
   Image as ImageIcon,
   History,
+  Users,
 } from 'lucide-react';
 import { Player, Match, Hero, LagaAmalSeasonData } from './types';
 import { ScoreBanner } from './components/ScoreBanner';
@@ -19,6 +20,7 @@ import { MatchDetailModal } from './components/MatchDetailModal';
 import { PlayerModal } from './components/PlayerModal';
 import { AdminInput } from './components/AdminInput';
 import { PlayerProfile } from './components/PlayerProfile';
+import { PlayerCrudManager } from './components/PlayerCrudManager';
 import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { FirestoreStatusBadge } from './components/FirestoreStatusBadge';
@@ -37,22 +39,23 @@ import {
   deleteLagaAmalFromFirestore,
   deleteMatchFromFirestore,
   deleteMatchesBatchFromFirestore,
+  deletePlayerFromFirestore,
 } from './services/firestoreSync';
 import { MLBB_HEROES } from './data/heroes';
-import { INITIAL_PLAYERS } from './data/seed';
-import { ALL_INITIAL_SEASONS, buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason } from './data/seasonsSeed';
+import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason, EMPTY_SEASON } from './utils/seasonCalculations';
 import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
 import { sanitizeMatches } from './utils/matchSequence';
 
-type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'admin' | 'profile';
+type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'admin' | 'profile' | 'players';
 
 export default function App() {
   const [tab, setTab] = useState<ActiveTab>('dashboard');
+  const [adminSubTab, setAdminSubTab] = useState<'match' | 'players'>('match');
 
-  // Multi-season state (primary source of truth)
+  // Multi-season state (primary source of truth from database)
   const [seasons, setSeasons] = useState<LagaAmalSeasonData[]>(() => {
     const saved = localStorage.getItem('pantos_seasons_cache');
     if (saved) {
@@ -63,14 +66,15 @@ export default function App() {
         console.warn('Failed to parse seasons cache:', e);
       }
     }
-    return ALL_INITIAL_SEASONS;
+    return [];
   });
 
-  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('s41');
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
 
   // Active season resolved
   const activeSeason = useMemo(() => {
-    return seasons.find((s) => s.id === selectedSeasonId) || seasons[0] || ALL_INITIAL_SEASONS[0];
+    if (seasons.length === 0) return EMPTY_SEASON;
+    return seasons.find((s) => s.id === selectedSeasonId) || seasons[0];
   }, [seasons, selectedSeasonId]);
 
   // Deduplicate and sanitize player roster ensuring unique IDs and unique names
@@ -237,10 +241,23 @@ export default function App() {
     );
   };
 
-  // Keep players in sync when activeSeason changes
+  // Keep players in sync when activeSeason changes, preserving admin overrides (badge, tier, julukan, avatar)
   useEffect(() => {
     const derived = buildPlayersFromSeason(activeSeason);
-    setPlayers((prev) => mergePlayerOverrides(derived, prev));
+    const cachedPlayersStr = localStorage.getItem('pantos_players_cache');
+    let cachedOverrides: Player[] = [];
+    if (cachedPlayersStr) {
+      try {
+        const parsed = JSON.parse(cachedPlayersStr);
+        if (Array.isArray(parsed)) cachedOverrides = parsed;
+      } catch (e) {
+        console.warn('Failed to parse cached players:', e);
+      }
+    }
+    setPlayers((prev) => {
+      const mergedWithPrev = mergePlayerOverrides(derived, prev);
+      return cachedOverrides.length > 0 ? mergePlayerOverrides(mergedWithPrev, cachedOverrides) : mergedWithPrev;
+    });
   }, [activeSeason]);
 
   // Initial load from backend API
@@ -357,15 +374,54 @@ export default function App() {
     );
 
     // Live-sync admin-set player fields (badge/status, tier, julukan,
-    // custom avatar) across every device. This was imported but never
-    // actually wired up before, so those edits only ever lived in
-    // whichever browser made them (and got wiped out on top of that by the
-    // season-sync effect above) — never truly saved anywhere permanent.
+    // custom avatar) across every device.
     const unsubPlayers = subscribeToPlayers(
       (remotePlayers) => {
         if (Array.isArray(remotePlayers) && remotePlayers.length > 0) {
           setPlayers((prev) => mergePlayerOverrides(prev, remotePlayers));
           localStorage.setItem('pantos_players_cache', JSON.stringify(remotePlayers));
+
+          // Cross-device sync: Update seasons state so when season re-renders or any formula runs,
+          // the badge status ('Aktif' / 'Cabutan') and tier remain authoritative across all devices.
+          setSeasons((prevSeasons) => {
+            let changed = false;
+            const updated = prevSeasons.map((s) => {
+              const updatedPlayers = s.players.map((sp) => {
+                const override = remotePlayers.find(
+                  (rp) => rp.name.toLowerCase() === sp.nickname.toLowerCase()
+                );
+                if (override) {
+                  const newStatus = override.status ?? sp.status;
+                  const newTier = override.tier ?? sp.tier;
+                  const newJulukan = override.julukan ?? sp.julukan;
+                  const newAvatar = override.avatar_url ?? sp.avatar_url;
+                  if (
+                    sp.status !== newStatus ||
+                    sp.tier !== newTier ||
+                    sp.julukan !== newJulukan ||
+                    sp.avatar_url !== newAvatar
+                  ) {
+                    changed = true;
+                    return {
+                      ...sp,
+                      status: newStatus,
+                      tier: newTier,
+                      julukan: newJulukan,
+                      avatar_url: newAvatar,
+                    };
+                  }
+                }
+                return sp;
+              });
+              return { ...s, players: updatedPlayers };
+            });
+            if (changed) {
+              localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+              return updated;
+            }
+            return prevSeasons;
+          });
+
           setLastSyncedAt(new Date());
           setIsFirestoreConnected(true);
         }
@@ -492,7 +548,7 @@ export default function App() {
     // which path above ran.
     const updatedSeason = applyMatchToSeason(activeSeason, savedMatch);
     await handleUpdateSeason(updatedSeason);
-    const updatedPlayers = buildPlayersFromSeason(updatedSeason);
+    const updatedPlayers = mergePlayerOverrides(buildPlayersFromSeason(updatedSeason), players);
     setPlayers(updatedPlayers);
 
     // Sync match and players to Firestore — kept in its OWN try/catch so a
@@ -515,12 +571,13 @@ export default function App() {
     return true;
   };
 
-  // Add new player
+  // Add new player (Create in CRUD)
   const handleAddPlayer = async (newPlayer: {
     name: string;
     status: 'Aktif' | 'Cabutan';
     tier: string;
     avatar_url?: string;
+    julukan?: string;
   }): Promise<boolean> => {
     try {
       const res = await fetch('/api/players', {
@@ -544,6 +601,8 @@ export default function App() {
           avgScore: 0,
           winRate: 0,
           avatar_url: newPlayer.avatar_url,
+          julukan: newPlayer.julukan,
+          julukan_updated_at: newPlayer.julukan ? new Date().toISOString() : undefined,
         };
       }
 
@@ -561,6 +620,10 @@ export default function App() {
           winRate: 0,
           avgScore: 0,
           avatar_url: addedPlayer.avatar_url,
+          status: addedPlayer.status,
+          tier: addedPlayer.tier,
+          julukan: addedPlayer.julukan,
+          julukan_updated_at: addedPlayer.julukan_updated_at,
         });
         currentSeason.activePlayersCount = currentSeason.players.length;
         await handleUpdateSeason(currentSeason);
@@ -854,7 +917,7 @@ export default function App() {
     }
   };
 
-  // Update player status, tier, or other profile details (Admin)
+  // Update player status, tier, avatar, julukan or other profile details (Update in CRUD)
   const handleUpdatePlayerDetails = async (
     playerId: number | string,
     updates: Partial<Player>
@@ -876,7 +939,46 @@ export default function App() {
         )
       );
 
-      // 2. Persist to server API
+      // 2. Update seasons and localStorage cache so cross-device sync and page reloads never revert badge/tier!
+      setSeasons((prev) => {
+        const updated = prev.map((s) => ({
+          ...s,
+          players: s.players.map((p) =>
+            p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
+              ? {
+                  ...p,
+                  ...(updates.status !== undefined && { status: updates.status }),
+                  ...(updates.tier !== undefined && { tier: updates.tier }),
+                  ...(updates.avatar_url !== undefined && { avatar_url: updates.avatar_url }),
+                  ...(updates.julukan !== undefined && { julukan: updates.julukan }),
+                  ...(updates.julukan_updated_at !== undefined && { julukan_updated_at: updates.julukan_updated_at }),
+                }
+              : p
+          ),
+        }));
+        localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+        return updated;
+      });
+
+      // Update localStorage players cache
+      const cached = localStorage.getItem('pantos_players_cache');
+      let updatedCacheList: Player[] = [];
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            updatedCacheList = parsed.map((p: Player) =>
+              p.name.toLowerCase() === targetPlayer.name.toLowerCase() ? updatedPlayer : p
+            );
+          }
+        } catch {}
+      }
+      if (!updatedCacheList.some((p) => p.name.toLowerCase() === targetPlayer.name.toLowerCase())) {
+        updatedCacheList.push(updatedPlayer);
+      }
+      localStorage.setItem('pantos_players_cache', JSON.stringify(updatedCacheList));
+
+      // 3. Persist to server API
       try {
         await fetch(`/api/players/${encodeURIComponent(String(playerId))}`, {
           method: 'PUT',
@@ -887,8 +989,25 @@ export default function App() {
         console.warn('Failed to update player details on backend:', err);
       }
 
-      // 3. Persist to Cloud Firestore
+      // 4. Persist to Cloud Firestore (both player document and active season)
       await syncPlayerToFirestore(updatedPlayer);
+
+      const currentSeasonCopy = {
+        ...activeSeason,
+        players: activeSeason.players.map((p) =>
+          p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
+            ? {
+                ...p,
+                ...(updates.status !== undefined && { status: updates.status }),
+                ...(updates.tier !== undefined && { tier: updates.tier }),
+                ...(updates.avatar_url !== undefined && { avatar_url: updates.avatar_url }),
+                ...(updates.julukan !== undefined && { julukan: updates.julukan }),
+                ...(updates.julukan_updated_at !== undefined && { julukan_updated_at: updates.julukan_updated_at }),
+              }
+            : p
+        ),
+      };
+      await syncLagaAmalToFirestore(recalculateSeasonStats(currentSeasonCopy));
 
       return true;
     } catch (err: any) {
@@ -896,6 +1015,90 @@ export default function App() {
       showFirestoreNotice(
         `Perubahan pemain tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
       );
+      return false;
+    }
+  };
+
+  // Delete player from database (Delete in CRUD)
+  const handleDeletePlayer = async (
+    playerId: number | string,
+    playerName?: string
+  ): Promise<boolean> => {
+    try {
+      const targetPlayer = players.find(
+        (p) =>
+          String(p.id) === String(playerId) ||
+          (playerName && p.name.toLowerCase() === playerName.toLowerCase())
+      );
+      const pName = targetPlayer?.name || playerName || String(playerId);
+
+      // 1. Remove from players state immediately
+      setPlayers((prev) =>
+        prev.filter(
+          (p) => String(p.id) !== String(playerId) && p.name.toLowerCase() !== pName.toLowerCase()
+        )
+      );
+
+      // 2. Remove from all seasons & active season
+      setSeasons((prev) => {
+        const updated = prev.map((s) => {
+          const filtered = s.players.filter(
+            (p) => p.nickname.toLowerCase() !== pName.toLowerCase()
+          );
+          return {
+            ...s,
+            players: filtered,
+            activePlayersCount: filtered.length,
+          };
+        });
+        localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+        return updated;
+      });
+
+      // 3. Update localStorage players cache
+      const cached = localStorage.getItem('pantos_players_cache');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            const updatedCache = parsed.filter(
+              (p: any) =>
+                String(p.id) !== String(playerId) &&
+                String(p.name || '').toLowerCase() !== pName.toLowerCase()
+            );
+            localStorage.setItem('pantos_players_cache', JSON.stringify(updatedCache));
+          }
+        } catch {}
+      }
+
+      // 4. Delete on backend API
+      try {
+        await fetch(`/api/players/${encodeURIComponent(String(playerId))}`, {
+          method: 'DELETE',
+        });
+      } catch (err) {
+        console.warn('Backend player delete failed:', err);
+      }
+
+      // 5. Delete on Cloud Firestore
+      await deletePlayerFromFirestore(playerId, pName);
+
+      // 6. Sync updated season to Firestore
+      const updatedSeason = {
+        ...activeSeason,
+        players: activeSeason.players.filter(
+          (p) => p.nickname.toLowerCase() !== pName.toLowerCase()
+        ),
+        activePlayersCount: activeSeason.players.filter(
+          (p) => p.nickname.toLowerCase() !== pName.toLowerCase()
+        ).length,
+      };
+      await syncLagaAmalToFirestore(recalculateSeasonStats(updatedSeason));
+
+      return true;
+    } catch (err: any) {
+      console.error('Error deleting player:', err);
+      showFirestoreNotice(`Gagal menghapus pemain: ${err?.message || 'Terjadi kesalahan'}.`);
       return false;
     }
   };
@@ -1101,7 +1304,7 @@ export default function App() {
               <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
                 tab === 'lagaAmal' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
               }`}>
-                {activeSeason.title.split('-')[1]?.trim() || 'S41'}
+                {activeSeason.title.split('-')[1]?.trim() || (activeSeason.id ? activeSeason.id.toUpperCase() : 'Season')}
               </span>
             </button>
 
@@ -1116,6 +1319,24 @@ export default function App() {
             >
               <UserRound size={15} className="shrink-0" />
               <span>Profil Pemain</span>
+            </button>
+
+            <button
+              id="nav-tab-players-crud"
+              onClick={() => setTab('players')}
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
+                tab === 'players'
+                  ? 'bg-[#E8B33D] text-[#161311] shadow-md shadow-[#E8B33D]/20 font-black'
+                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+              }`}
+            >
+              <Users size={15} className="shrink-0" />
+              <span>Database Pemain</span>
+              <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                tab === 'players' ? 'bg-[#161311]/20 text-[#161311]' : 'bg-[#E8B33D]/20 text-[#E8B33D]'
+              }`}>
+                {players.length}
+              </span>
             </button>
 
             <button
@@ -1221,19 +1442,88 @@ export default function App() {
           />
         )}
 
-        {/* TAB 4: INPUT MATCH (ADMIN) */}
+        {/* TAB 4: INPUT MATCH (ADMIN) & DATABASE PEMAIN SUB-TAB */}
         {tab === 'admin' && (
-          <AdminInput
+          <div className="space-y-4">
+            {/* Admin Sub-navigation Pill Bar */}
+            <div className="flex items-center gap-2 rounded-2xl border border-[#332C25] bg-[#191513] p-1.5 max-w-md">
+              <button
+                type="button"
+                onClick={() => setAdminSubTab('match')}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition-all cursor-pointer ${
+                  adminSubTab === 'match'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+              >
+                <ClipboardList size={15} />
+                <span>Input Pertandingan</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAdminSubTab('players')}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition-all cursor-pointer ${
+                  adminSubTab === 'players'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+              >
+                <Users size={15} />
+                <span>Database Pemain (CRUD)</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                    adminSubTab === 'players'
+                      ? 'bg-[#161311]/20 text-[#161311]'
+                      : 'bg-[#E8B33D]/20 text-[#E8B33D]'
+                  }`}
+                >
+                  {players.length}
+                </span>
+              </button>
+            </div>
+
+            {adminSubTab === 'match' ? (
+              <AdminInput
+                players={players}
+                heroes={heroes}
+                matches={matches}
+                seasons={seasons}
+                activeSeasonId={selectedSeasonId}
+                isAdmin={isAdmin}
+                prefilledDraft={draftForAdmin}
+                onOpenLogin={() => setIsLoginModalOpen(true)}
+                onSaveMatch={handleSaveMatch}
+                onAddPlayer={handleAddPlayer}
+              />
+            ) : (
+              <PlayerCrudManager
+                players={players}
+                activeSeason={activeSeason}
+                isAdmin={isAdmin}
+                onAddPlayer={handleAddPlayer}
+                onUpdatePlayer={handleUpdatePlayerDetails}
+                onDeletePlayer={handleDeletePlayer}
+                onGenerateJulukan={handleGeneratePlayerJulukan}
+                onOpenLogin={() => setIsLoginModalOpen(true)}
+                onSelectPlayer={(playerId) => handleViewPlayerProfile(playerId)}
+              />
+            )}
+          </div>
+        )}
+
+        {/* TAB 5: DEDICATED DATABASE PEMAIN (CRUD) */}
+        {tab === 'players' && (
+          <PlayerCrudManager
             players={players}
-            heroes={heroes}
-            matches={matches}
-            seasons={seasons}
-            activeSeasonId={selectedSeasonId}
+            activeSeason={activeSeason}
             isAdmin={isAdmin}
-            prefilledDraft={draftForAdmin}
-            onOpenLogin={() => setIsLoginModalOpen(true)}
-            onSaveMatch={handleSaveMatch}
             onAddPlayer={handleAddPlayer}
+            onUpdatePlayer={handleUpdatePlayerDetails}
+            onDeletePlayer={handleDeletePlayer}
+            onGenerateJulukan={handleGeneratePlayerJulukan}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
+            onSelectPlayer={(playerId) => handleViewPlayerProfile(playerId)}
           />
         )}
       </main>

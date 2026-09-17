@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ClipboardList,
   Sparkles,
@@ -14,11 +14,16 @@ import {
   Lock,
   Calendar,
   Layers,
+  X,
+  Filter,
 } from 'lucide-react';
 import { Player, Hero, Medal, TeamShort, MatchPlayerDetail, TeamName, Match, LagaAmalSeasonData, MLBB_TIER_OPTIONS } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
+import { SearchableHeroSelect } from './SearchableHeroSelect';
 import { calculateNextMatchNumber } from '../utils/matchSequence';
+
+const MAX_PLAYERS_PER_TEAM = 5;
 
 interface AdminInputProps {
   players: Player[];
@@ -117,10 +122,37 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   const [newPlayerTier, setNewPlayerTier] = useState('Legend');
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
 
+  // Player search & filter state
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
+  const [playerStatusFilter, setPlayerStatusFilter] = useState<'Semua' | 'Aktif' | 'Cabutan'>('Semua');
+  const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
+
   // Player pool currently unassigned
-  const pool = players.filter(
-    (p) => !pohonPlayers.includes(p.name) && !lobbyPlayers.includes(p.name)
-  );
+  const pool = useMemo(() => {
+    return players.filter(
+      (p) => !pohonPlayers.includes(p.name) && !lobbyPlayers.includes(p.name)
+    );
+  }, [players, pohonPlayers, lobbyPlayers]);
+
+  // Filtered players list for the interactive assignment panel
+  const filteredPlayersList = useMemo(() => {
+    const term = playerSearchQuery.toLowerCase().trim();
+    return players.filter((p) => {
+      const isPohon = pohonPlayers.includes(p.name);
+      const isLobby = lobbyPlayers.includes(p.name);
+      const isAssigned = isPohon || isLobby;
+
+      if (filterUnassignedOnly && isAssigned) {
+        return false;
+      }
+
+      const matchName = p.name.toLowerCase().includes(term);
+      const matchStatus =
+        playerStatusFilter === 'Semua' || p.status === playerStatusFilter;
+
+      return matchName && matchStatus;
+    });
+  }, [players, playerSearchQuery, playerStatusFilter, filterUnassignedOnly, pohonPlayers, lobbyPlayers]);
 
   const getDefaultScore = (medal: Medal): number => {
     switch (medal) {
@@ -137,11 +169,27 @@ export const AdminInput: React.FC<AdminInputProps> = ({
 
   const assignPlayerToTeam = (name: string, team: TeamShort) => {
     if (team === 'Pohon') {
+      if (pohonPlayers.includes(name)) return;
+      if (pohonPlayers.length >= MAX_PLAYERS_PER_TEAM) {
+        setNotification({
+          type: 'error',
+          message: `Tim Pohon sudah penuh (maksimal ${MAX_PLAYERS_PER_TEAM} pemain)! Hapus salah satu terlebih dahulu jika ingin mengganti.`,
+        });
+        return;
+      }
       setLobbyPlayers((prev) => prev.filter((n) => n !== name));
-      setPohonPlayers((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      setPohonPlayers((prev) => [...prev, name]);
     } else {
+      if (lobbyPlayers.includes(name)) return;
+      if (lobbyPlayers.length >= MAX_PLAYERS_PER_TEAM) {
+        setNotification({
+          type: 'error',
+          message: `Tim Lobby sudah penuh (maksimal ${MAX_PLAYERS_PER_TEAM} pemain)! Hapus salah satu terlebih dahulu jika ingin mengganti.`,
+        });
+        return;
+      }
       setPohonPlayers((prev) => prev.filter((n) => n !== name));
-      setLobbyPlayers((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      setLobbyPlayers((prev) => [...prev, name]);
     }
 
     // Initialize config if not yet set
@@ -204,6 +252,14 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       setNotification({
         type: 'error',
         message: 'Minimal pilih 1 pemain untuk Tim Pohon dan 1 pemain untuk Tim Lobby!',
+      });
+      return;
+    }
+
+    if (pohonPlayers.length > MAX_PLAYERS_PER_TEAM || lobbyPlayers.length > MAX_PLAYERS_PER_TEAM) {
+      setNotification({
+        type: 'error',
+        message: `Maksimal ${MAX_PLAYERS_PER_TEAM} pemain untuk setiap tim (Format 5v5 MLBB)! Kurangi pemain yang melebihi kuota.`,
       });
       return;
     }
@@ -453,21 +509,41 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
             <div className="flex items-center gap-2">
               <span className="flex h-3 w-3 rounded-full bg-[#4F7942]" />
-              <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider">
-                Tim Pohon ({pohonPlayers.length} Pemain)
+              <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider flex items-center gap-2">
+                <span>Tim Pohon</span>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                    pohonPlayers.length === MAX_PLAYERS_PER_TEAM
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40'
+                      : 'bg-[#241F1B] text-[#9C948A] border border-[#332C25]'
+                  }`}
+                >
+                  {pohonPlayers.length} / {MAX_PLAYERS_PER_TEAM}
+                </span>
               </h3>
             </div>
-            {winner === 'Tim Pohon' && (
-              <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
-                Pemenang Match
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {pohonPlayers.length === MAX_PLAYERS_PER_TEAM ? (
+                <span className="rounded-full bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                  Lengkap (5/5)
+                </span>
+              ) : (
+                <span className="text-[10px] text-[#9C948A]">
+                  Sisa {MAX_PLAYERS_PER_TEAM - pohonPlayers.length} slot
+                </span>
+              )}
+              {winner === 'Tim Pohon' && (
+                <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
+                  Pemenang Match
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3 min-h-[140px]">
             {pohonPlayers.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#332C25] p-6 text-center text-xs text-[#9C948A]">
-                Pilih atau klik pemain di kolam bawah untuk memasukkannya ke Tim Pohon
+                Belum ada pemain di Tim Pohon. Cari dan pilih pemain di panel pencarian bawah (maksimal {MAX_PLAYERS_PER_TEAM} pemain).
               </div>
             ) : (
               pohonPlayers.map((name, idx) => {
@@ -485,18 +561,12 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* Hero selector */}
-                      <select
-                        value={conf.hero}
-                        onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
-                        className="rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1 text-xs text-[#F2EDE4] focus:outline-none cursor-pointer"
-                      >
-                        {heroes.map((h, hIdx) => (
-                          <option key={`pohon-hero-${h.id ?? h.name}-${hIdx}`} value={h.name}>
-                            {h.name}
-                          </option>
-                        ))}
-                      </select>
+                      {/* Searchable Hero selector */}
+                      <SearchableHeroSelect
+                        heroes={heroes}
+                        selectedHero={conf.hero}
+                        onSelectHero={(heroName) => updatePlayerField(name, 'hero', heroName)}
+                      />
 
                       {/* Medal selector */}
                       <select
@@ -555,21 +625,41 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
             <div className="flex items-center gap-2">
               <span className="flex h-3 w-3 rounded-full bg-[#C97A3D]" />
-              <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider">
-                Tim Lobby ({lobbyPlayers.length} Pemain)
+              <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider flex items-center gap-2">
+                <span>Tim Lobby</span>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                    lobbyPlayers.length === MAX_PLAYERS_PER_TEAM
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40'
+                      : 'bg-[#241F1B] text-[#9C948A] border border-[#332C25]'
+                  }`}
+                >
+                  {lobbyPlayers.length} / {MAX_PLAYERS_PER_TEAM}
+                </span>
               </h3>
             </div>
-            {winner === 'Tim Lobby' && (
-              <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
-                Pemenang Match
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {lobbyPlayers.length === MAX_PLAYERS_PER_TEAM ? (
+                <span className="rounded-full bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                  Lengkap (5/5)
+                </span>
+              ) : (
+                <span className="text-[10px] text-[#9C948A]">
+                  Sisa {MAX_PLAYERS_PER_TEAM - lobbyPlayers.length} slot
+                </span>
+              )}
+              {winner === 'Tim Lobby' && (
+                <span className="rounded-full bg-emerald-950 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
+                  Pemenang Match
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3 min-h-[140px]">
             {lobbyPlayers.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#332C25] p-6 text-center text-xs text-[#9C948A]">
-                Pilih atau klik pemain di kolam bawah untuk memasukkannya ke Tim Lobby
+                Belum ada pemain di Tim Lobby. Cari dan pilih pemain di panel pencarian bawah (maksimal {MAX_PLAYERS_PER_TEAM} pemain).
               </div>
             ) : (
               lobbyPlayers.map((name, idx) => {
@@ -587,18 +677,12 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* Hero selector */}
-                      <select
-                        value={conf.hero}
-                        onChange={(e) => updatePlayerField(name, 'hero', e.target.value)}
-                        className="rounded-lg border border-[#332C25] bg-[#161311] px-2 py-1 text-xs text-[#F2EDE4] focus:outline-none cursor-pointer"
-                      >
-                        {heroes.map((h, hIdx) => (
-                          <option key={`lobby-hero-${h.id ?? h.name}-${hIdx}`} value={h.name}>
-                            {h.name}
-                          </option>
-                        ))}
-                      </select>
+                      {/* Searchable Hero selector */}
+                      <SearchableHeroSelect
+                        heroes={heroes}
+                        selectedHero={conf.hero}
+                        onSelectHero={(heroName) => updatePlayerField(name, 'hero', heroName)}
+                      />
 
                       {/* Medal selector */}
                       <select
@@ -653,46 +737,260 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         </div>
       </div>
 
-      {/* UNASSIGNED PLAYERS POOL */}
-      <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-xs text-[#9C948A] uppercase tracking-wider flex items-center gap-1.5">
-            <Users size={14} className="text-[#E8B33D]" />
-            Kolam Pemain Tersedia ({pool.length})
-          </h3>
-          <span className="text-[11px] text-[#9C948A]">
-            Klik nama untuk memasukkan ke Tim Pohon atau Tim Lobby
-          </span>
+      {/* SEARCH & ASSIGN PLAYERS PANEL */}
+      <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#332C25] pb-3">
+          <div>
+            <h3 className="font-bold text-sm text-[#F2EDE4] flex items-center gap-2">
+              <Users size={16} className="text-[#E8B33D]" />
+              Pencarian & Penentuan Pemain Tim
+            </h3>
+            <p className="text-xs text-[#9C948A] mt-0.5">
+              Cari nama pemain untuk memasukkan ke Tim Pohon atau Tim Lobby (Maksimal 5 vs 5)
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Team quotas status */}
+            <div className="flex items-center gap-2 text-xs">
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-bold border ${
+                  pohonPlayers.length === MAX_PLAYERS_PER_TEAM
+                    ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-400'
+                    : 'border-[#332C25] bg-[#241F1B] text-[#72ac60]'
+                }`}
+                title={`Tim Pohon: ${pohonPlayers.length} dari ${MAX_PLAYERS_PER_TEAM} pemain`}
+              >
+                🌳 Pohon: {pohonPlayers.length}/{MAX_PLAYERS_PER_TEAM}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-bold border ${
+                  lobbyPlayers.length === MAX_PLAYERS_PER_TEAM
+                    ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-400'
+                    : 'border-[#332C25] bg-[#241F1B] text-[#e29355]'
+                }`}
+                title={`Tim Lobby: ${lobbyPlayers.length} dari ${MAX_PLAYERS_PER_TEAM} pemain`}
+              >
+                🛋️ Lobby: {lobbyPlayers.length}/{MAX_PLAYERS_PER_TEAM}
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
-          {pool.map((p, idx) => (
-            <div
-              key={`admin-pool-player-${p.id || p.name}-${idx}`}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-[#332C25] bg-[#241F1B] px-2.5 py-1 text-xs text-[#F2EDE4] hover:border-[#E8B33D]/50 transition-all"
+        {/* Search Input and Filters */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+          {/* Search box */}
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9C948A]" />
+            <input
+              type="text"
+              value={playerSearchQuery}
+              onChange={(e) => setPlayerSearchQuery(e.target.value)}
+              placeholder="Cari nama pemain (misal: Bang Jago, Rrq, dll)..."
+              className="w-full rounded-xl border border-[#332C25] bg-[#161311] pl-9 pr-8 py-2 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+            />
+            {playerSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setPlayerSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9C948A] hover:text-[#F2EDE4]"
+                title="Hapus pencarian"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Status filter buttons */}
+          <div className="flex items-center gap-1.5">
+            {(['Semua', 'Aktif', 'Cabutan'] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setPlayerStatusFilter(st)}
+                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                  playerStatusFilter === st
+                    ? 'bg-[#E8B33D] text-[#161311] font-bold'
+                    : 'border border-[#332C25] bg-[#241F1B] text-[#9C948A] hover:text-[#F2EDE4]'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+
+            {/* Toggle unassigned only */}
+            <button
+              type="button"
+              onClick={() => setFilterUnassignedOnly(!filterUnassignedOnly)}
+              className={`flex items-center gap-1 rounded-xl px-3 py-2 text-xs transition-colors cursor-pointer border ${
+                filterUnassignedOnly
+                  ? 'border-[#E8B33D]/60 bg-[#E8B33D]/15 text-[#E8B33D] font-bold'
+                  : 'border-[#332C25] bg-[#241F1B] text-[#9C948A] hover:text-[#F2EDE4]'
+              }`}
+              title="Hanya tampilkan pemain yang belum masuk tim"
             >
-              <PlayerAvatar name={p.name} size="xs" />
-              <span className="font-semibold text-xs">{p.name}</span>
-              <div className="flex items-center gap-1 ml-1">
+              <Filter size={13} />
+              <span className="hidden sm:inline">Belum Masuk Tim</span>
+              <span className="sm:hidden">Belum Tim</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Players List */}
+        <div className="max-h-64 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#332C25]">
+          {filteredPlayersList.length === 0 ? (
+            <div className="py-8 text-center rounded-xl border border-dashed border-[#332C25] text-xs text-[#9C948A] space-y-2">
+              <p>Tidak ada pemain yang sesuai dengan kriteria pencarian.</p>
+              {(playerSearchQuery || playerStatusFilter !== 'Semua' || filterUnassignedOnly) && (
                 <button
                   type="button"
-                  onClick={() => assignPlayerToTeam(p.name, 'Pohon')}
-                  className="rounded bg-[#4F7942]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#72ac60] hover:bg-[#4F7942] hover:text-white transition-colors cursor-pointer"
-                  title="Pilih masuk Tim Pohon"
+                  onClick={() => {
+                    setPlayerSearchQuery('');
+                    setPlayerStatusFilter('Semua');
+                    setFilterUnassignedOnly(false);
+                  }}
+                  className="rounded-lg bg-[#241F1B] border border-[#332C25] px-3 py-1 text-xs text-[#E8B33D] hover:bg-[#2A241E] cursor-pointer"
                 >
-                  + Pohon
+                  Reset Filter & Pencarian
                 </button>
-                <button
-                  type="button"
-                  onClick={() => assignPlayerToTeam(p.name, 'Lobby')}
-                  className="rounded bg-[#C97A3D]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#e29355] hover:bg-[#C97A3D] hover:text-white transition-colors cursor-pointer"
-                  title="Pilih masuk Tim Lobby"
-                >
-                  + Lobby
-                </button>
-              </div>
+              )}
             </div>
-          ))}
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {filteredPlayersList.map((p, idx) => {
+                const isInPohon = pohonPlayers.includes(p.name);
+                const isInLobby = lobbyPlayers.includes(p.name);
+                const isPohonFull = pohonPlayers.length >= MAX_PLAYERS_PER_TEAM;
+                const isLobbyFull = lobbyPlayers.length >= MAX_PLAYERS_PER_TEAM;
+
+                return (
+                  <div
+                    key={`search-player-${p.id || p.name}-${idx}`}
+                    className={`flex items-center justify-between gap-2 rounded-xl border p-2.5 transition-all ${
+                      isInPohon
+                        ? 'border-[#4F7942]/60 bg-[#4F7942]/10'
+                        : isInLobby
+                        ? 'border-[#C97A3D]/60 bg-[#C97A3D]/10'
+                        : 'border-[#332C25] bg-[#241F1B] hover:border-[#E8B33D]/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <PlayerAvatar name={p.name} size="sm" />
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-bold text-xs text-[#F2EDE4] truncate">
+                          {p.name}
+                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+                              p.status === 'Aktif'
+                                ? 'bg-emerald-950 text-emerald-300'
+                                : 'bg-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {p.status}
+                          </span>
+                          {p.tier && (
+                            <span className="text-[9px] text-[#9C948A] truncate">
+                              {p.tier}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Team assignment actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isInPohon ? (
+                        <div className="flex items-center gap-1">
+                          <span className="rounded-lg bg-[#4F7942] text-white px-2 py-1 text-[10px] font-bold">
+                            🌳 Pohon
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => assignPlayerToTeam(p.name, 'Lobby')}
+                            disabled={isLobbyFull}
+                            className={`rounded-lg px-2 py-1 text-[10px] font-semibold border transition-colors ${
+                              isLobbyFull
+                                ? 'border-[#332C25] text-[#554F47] cursor-not-allowed'
+                                : 'border-[#C97A3D]/50 text-[#e29355] hover:bg-[#C97A3D] hover:text-white cursor-pointer'
+                            }`}
+                            title={isLobbyFull ? 'Tim Lobby penuh (5/5)' : 'Pindah ke Tim Lobby'}
+                          >
+                            ⇄ Lobby
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removePlayerFromTeam(p.name)}
+                            className="rounded-lg p-1 text-rose-400 hover:bg-rose-950/40 cursor-pointer"
+                            title="Keluarkan dari tim"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : isInLobby ? (
+                        <div className="flex items-center gap-1">
+                          <span className="rounded-lg bg-[#C97A3D] text-white px-2 py-1 text-[10px] font-bold">
+                            🛋️ Lobby
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => assignPlayerToTeam(p.name, 'Pohon')}
+                            disabled={isPohonFull}
+                            className={`rounded-lg px-2 py-1 text-[10px] font-semibold border transition-colors ${
+                              isPohonFull
+                                ? 'border-[#332C25] text-[#554F47] cursor-not-allowed'
+                                : 'border-[#4F7942]/50 text-[#72ac60] hover:bg-[#4F7942] hover:text-white cursor-pointer'
+                            }`}
+                            title={isPohonFull ? 'Tim Pohon penuh (5/5)' : 'Pindah ke Tim Pohon'}
+                          >
+                            ⇄ Pohon
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removePlayerFromTeam(p.name)}
+                            className="rounded-lg p-1 text-rose-400 hover:bg-rose-950/40 cursor-pointer"
+                            title="Keluarkan dari tim"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => assignPlayerToTeam(p.name, 'Pohon')}
+                            disabled={isPohonFull}
+                            className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all ${
+                              isPohonFull
+                                ? 'bg-[#241F1B] text-[#554F47] border border-[#332C25] cursor-not-allowed'
+                                : 'bg-[#4F7942]/20 text-[#72ac60] hover:bg-[#4F7942] hover:text-white cursor-pointer'
+                            }`}
+                            title={isPohonFull ? 'Tim Pohon sudah penuh (maksimal 5 pemain)' : 'Masukkan ke Tim Pohon'}
+                          >
+                            {isPohonFull ? 'Penuh' : '+ Pohon'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => assignPlayerToTeam(p.name, 'Lobby')}
+                            disabled={isLobbyFull}
+                            className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all ${
+                              isLobbyFull
+                                ? 'bg-[#241F1B] text-[#554F47] border border-[#332C25] cursor-not-allowed'
+                                : 'bg-[#C97A3D]/20 text-[#e29355] hover:bg-[#C97A3D] hover:text-white cursor-pointer'
+                            }`}
+                            title={isLobbyFull ? 'Tim Lobby sudah penuh (maksimal 5 pemain)' : 'Masukkan ke Tim Lobby'}
+                          >
+                            {isLobbyFull ? 'Penuh' : '+ Lobby'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
