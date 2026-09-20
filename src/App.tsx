@@ -237,6 +237,16 @@ export default function App() {
     setDraftForAdmin(draft);
     setTab('admin');
   };
+
+  // "Database Pemain" and "Input Pertandingan" are admin-only pages — if
+  // the admin session ends (logout, expired token) while one of these is
+  // open, bounce back to the public Dashboard instead of leaving a
+  // now-unauthorized page on screen.
+  useEffect(() => {
+    if (!isAdmin && (tab === 'admin' || tab === 'players')) {
+      setTab('dashboard');
+    }
+  }, [isAdmin, tab]);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
   const [syncNotice, setSyncNotice] = useState<{ message: string; isError?: boolean } | null>(null);
@@ -1539,60 +1549,64 @@ export default function App() {
               <span>Profil Pemain</span>
             </button>
 
-            <button
-              id="nav-tab-players-crud"
-              onClick={() => setTab('players')}
-              style={
-                tab === 'players'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'players'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <Users size={15} className="shrink-0" />
-              <span>Database Pemain</span>
-              <span
-                className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+            {/* Database Pemain & Input Pertandingan are admin-only — hidden
+                from the nav entirely for anyone not logged in as admin. */}
+            {isAdmin && (
+              <button
+                id="nav-tab-players-crud"
+                onClick={() => setTab('players')}
                 style={
                   tab === 'players'
-                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
-                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                    ? {
+                        backgroundColor: themeConfig.activeButtonColor,
+                        color: themeConfig.activeButtonTextColor,
+                      }
+                    : undefined
                 }
+                className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
+                  tab === 'players'
+                    ? 'shadow-md font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
               >
-                {players.length}
-              </span>
-            </button>
+                <Users size={15} className="shrink-0" />
+                <span>Database Pemain</span>
+                <span
+                  className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+                  style={
+                    tab === 'players'
+                      ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
+                      : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                  }
+                >
+                  {players.length}
+                </span>
+              </button>
+            )}
 
-            <button
-              id="nav-tab-admin"
-              onClick={() => setTab('admin')}
-              style={
-                tab === 'admin'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'admin'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <ClipboardList size={15} className="shrink-0" />
-              <span>Input Pertandingan</span>
-              {isAdmin && (
+            {isAdmin && (
+              <button
+                id="nav-tab-admin"
+                onClick={() => setTab('admin')}
+                style={
+                  tab === 'admin'
+                    ? {
+                        backgroundColor: themeConfig.activeButtonColor,
+                        color: themeConfig.activeButtonTextColor,
+                      }
+                    : undefined
+                }
+                className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
+                  tab === 'admin'
+                    ? 'shadow-md font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+              >
+                <ClipboardList size={15} className="shrink-0" />
+                <span>Input Pertandingan</span>
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              )}
-            </button>
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -1687,8 +1701,26 @@ export default function App() {
           />
         )}
 
-        {/* TAB 4: INPUT MATCH (ADMIN) & DATABASE PEMAIN SUB-TAB */}
-        {tab === 'admin' && (
+        {/* TAB 4: INPUT MATCH (ADMIN) & DATABASE PEMAIN SUB-TAB — admin-only,
+            never rendered for a non-admin session even if tab state ends up
+            here (e.g. a logout race, or a deep link). */}
+        {tab === 'admin' && !isAdmin && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#332C25] bg-[#1D1916] p-10 text-center">
+            <Lock size={28} className="text-[#E8B33D]" />
+            <h2 className="text-sm font-bold text-[#F2EDE4]">Halaman Khusus Admin</h2>
+            <p className="max-w-xs text-xs text-[#9C948A]">
+              Input pertandingan dan database pemain hanya bisa dilihat oleh admin. Masuk sebagai admin untuk mengaksesnya.
+            </p>
+            <button
+              onClick={() => setIsLoginModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-[#E8B33D] px-4 py-2 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-colors cursor-pointer shadow-sm"
+            >
+              <Lock size={13} />
+              <span>Masuk Admin</span>
+            </button>
+          </div>
+        )}
+        {tab === 'admin' && isAdmin && (
           <div className="space-y-4">
             {/* Admin Sub-navigation Pill Bar */}
             <div className="flex items-center gap-2 rounded-2xl border border-[#332C25] bg-[#191513] p-1.5 max-w-md">
@@ -1757,8 +1789,24 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: DEDICATED DATABASE PEMAIN (CRUD) */}
-        {tab === 'players' && (
+        {/* TAB 5: DEDICATED DATABASE PEMAIN (CRUD) — admin-only */}
+        {tab === 'players' && !isAdmin && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#332C25] bg-[#1D1916] p-10 text-center">
+            <Lock size={28} className="text-[#E8B33D]" />
+            <h2 className="text-sm font-bold text-[#F2EDE4]">Halaman Khusus Admin</h2>
+            <p className="max-w-xs text-xs text-[#9C948A]">
+              Input pertandingan dan database pemain hanya bisa dilihat oleh admin. Masuk sebagai admin untuk mengaksesnya.
+            </p>
+            <button
+              onClick={() => setIsLoginModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-[#E8B33D] px-4 py-2 text-xs font-bold text-[#161311] hover:bg-[#F3C256] transition-colors cursor-pointer shadow-sm"
+            >
+              <Lock size={13} />
+              <span>Masuk Admin</span>
+            </button>
+          </div>
+        )}
+        {tab === 'players' && isAdmin && (
           <PlayerCrudManager
             players={players}
             activeSeason={activeSeason}
@@ -1798,7 +1846,7 @@ export default function App() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#332C25] bg-[#191513]/95 backdrop-blur-xl px-2 pt-1.5 shadow-[0_-10px_25px_rgba(0,0,0,0.6)]"
         style={{ paddingBottom: 'max(0.4rem, env(safe-area-inset-bottom))' }}
       >
-        <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
+        <div className={`grid ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'} gap-1 max-w-md mx-auto`}>
           {/* 1. Dashboard */}
           <button
             id="mobile-btn-dashboard"
@@ -1918,35 +1966,35 @@ export default function App() {
             </span>
           </button>
 
-          {/* 5. Input */}
-          <button
-            id="mobile-btn-admin"
-            type="button"
-            onClick={() => {
-              setTab('admin');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
-            style={tab === 'admin' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
-          >
-            <div
-              className="relative flex items-center justify-center h-7 w-12 rounded-full transition-all"
-              style={tab === 'admin' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
+          {/* 5. Input — admin-only, hidden entirely for non-admins */}
+          {isAdmin && (
+            <button
+              id="mobile-btn-admin"
+              type="button"
+              onClick={() => {
+                setTab('admin');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+              style={tab === 'admin' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
             >
-              <ClipboardList
-                size={18}
-                style={tab === 'admin' ? { color: themeConfig.activeButtonColor } : undefined}
-              />
-              {isAdmin && (
+              <div
+                className="relative flex items-center justify-center h-7 w-12 rounded-full transition-all"
+                style={tab === 'admin' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
+              >
+                <ClipboardList
+                  size={18}
+                  style={tab === 'admin' ? { color: themeConfig.activeButtonColor } : undefined}
+                />
                 <span className="absolute top-1 right-2.5 h-2 w-2 rounded-full bg-emerald-400 animate-pulse ring-2 ring-[#191513]" />
-              )}
-            </div>
-            <span
-              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'admin' ? 'font-black' : 'font-medium'}`}
-            >
-              Input
-            </span>
-          </button>
+              </div>
+              <span
+                className={`text-[10px] tracking-tight mt-0.5 ${tab === 'admin' ? 'font-black' : 'font-medium'}`}
+              >
+                Input
+              </span>
+            </button>
+          )}
         </div>
       </nav>
 
