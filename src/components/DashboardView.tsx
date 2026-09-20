@@ -40,6 +40,8 @@ interface DashboardViewProps {
   selectedSeasonId: string;
   onSeasonChange: (seasonId: string) => void;
   activeSeason: LagaAmalSeasonData;
+  activeSeasonId?: string;
+  onSetActiveSeason?: (seasonId: string) => void;
   seasonMatches: Match[];
   players: Player[];
   heroes?: Hero[];
@@ -196,6 +198,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   selectedSeasonId,
   onSeasonChange,
   activeSeason,
+  activeSeasonId,
+  onSetActiveSeason,
   seasonMatches,
   players,
   heroes,
@@ -533,13 +537,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onChange={(e) => onSeasonChange(e.target.value)}
                 className="bg-transparent font-black text-[#F2EDE4] focus:outline-none cursor-pointer pr-1 text-xs sm:text-sm max-w-[130px] sm:max-w-none truncate"
               >
-                {seasons.map((s, idx) => (
-                  <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">
-                    {s.title} {idx === 0 ? '(Aktif)' : ''}
-                  </option>
-                ))}
+                {seasons.map((s) => {
+                  const isItemActive = s.id === activeSeasonId || (!activeSeasonId && s.isActive);
+                  return (
+                    <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">
+                      {s.title} {isItemActive ? '★ (Active Season)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
+
+            {/* Active Season Button / Badge */}
+            {activeSeason.id === activeSeasonId || (!activeSeasonId && seasons[0]?.id === activeSeason.id) ? (
+              <div
+                id="dashboard-badge-active-season"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/50 bg-emerald-950/60 px-2.5 py-1.5 text-[11px] sm:text-xs font-bold text-emerald-300 shadow-sm"
+                title="Season ini saat ini berstatus Active Season (Season Utama)"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>Active Season</span>
+              </div>
+            ) : (
+              <button
+                id="dashboard-btn-set-active-season"
+                type="button"
+                onClick={() => onSetActiveSeason && onSetActiveSeason(activeSeason.id)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/60 bg-amber-500/20 hover:bg-amber-500/30 px-3 py-1.5 text-[11px] sm:text-xs font-bold text-amber-300 hover:text-amber-100 transition-all cursor-pointer shadow-sm active:scale-95"
+                title={`Klik untuk mengaktifkan ${activeSeason.title} sebagai Active Season`}
+              >
+                <Sparkles size={13} className="text-amber-400" />
+                <span>Aktifkan Season</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-[#9C948A] font-medium shrink-0">
               <Calendar size={13} className="text-[#E8B33D]" />

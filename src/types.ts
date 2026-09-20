@@ -169,6 +169,7 @@ export interface LagaAmalSeasonData {
   title: string;
   dateStr: string;
   activePlayersCount: number;
+  isActive?: boolean;
   topCoklat: { player: string; count: number };
   topSilver: { player: string; count: number };
   topAntam: { player: string; count: number };

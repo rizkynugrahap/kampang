@@ -45,6 +45,7 @@
         "seasonNumber": { "type": "number" },
         "period": { "type": "string" },
         "status": { "type": "string" },
+        "isActive": { "type": "boolean" },
         "players": { "type": "array" }
       },
       "required": ["id", "name", "players"]
@@ -67,6 +68,7 @@
       "properties": {
         "bgUrl": { "type": "string" },
         "bgOpacity": { "type": "number" },
+        "activeSeasonId": { "type": "string" },
         "updatedAt": { "type": "string" }
       }
     }

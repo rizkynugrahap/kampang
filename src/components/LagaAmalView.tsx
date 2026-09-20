@@ -65,7 +65,9 @@ function formatSeasonDateRange(startStr: string, endStr: string): string {
 interface LagaAmalViewProps {
   seasons?: LagaAmalSeasonData[];
   activeSeasonId?: string;
+  selectedSeasonId?: string;
   onSeasonChange?: (seasonId: string) => void;
+  onSetActiveSeason?: (seasonId: string) => void;
   onUpdateSeason?: (season: LagaAmalSeasonData) => void;
   onDeleteSeason?: (seasonId: string) => void;
   onViewPlayerProfile?: (nickname: string) => void;
@@ -74,17 +76,30 @@ interface LagaAmalViewProps {
 
 export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
   seasons = [],
-  activeSeasonId = 's1',
+  activeSeasonId,
+  selectedSeasonId,
   onSeasonChange,
+  onSetActiveSeason,
   onUpdateSeason,
   onDeleteSeason,
   onViewPlayerProfile,
   isAdmin = false,
 }) => {
-  // Current season data resolved from props or fallback
+  // Current season data resolved: prioritize selectedSeasonId, then activeSeasonId, then fallback
+  const viewSeasonId = selectedSeasonId || activeSeasonId;
   const currentSeason = useMemo(() => {
-    return seasons.find((s) => s.id === activeSeasonId) || seasons[0] || EMPTY_SEASON;
-  }, [seasons, activeSeasonId]);
+    return (
+      seasons.find((s) => s.id === viewSeasonId) ||
+      seasons.find((s) => s.id === activeSeasonId) ||
+      seasons[0] ||
+      EMPTY_SEASON
+    );
+  }, [seasons, viewSeasonId, activeSeasonId]);
+
+  const isCurrentlyActiveSeason = Boolean(
+    currentSeason.id &&
+      (currentSeason.id === activeSeasonId || (!activeSeasonId && currentSeason.isActive))
+  );
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('standings');
   const [searchQuery, setSearchQuery] = useState('');
@@ -342,13 +357,42 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                   onChange={(e) => onSeasonChange && onSeasonChange(e.target.value)}
                   className="bg-transparent font-bold text-[#F2EDE4] focus:outline-none cursor-pointer pr-1"
                 >
-                  {seasons.map((s, idx) => (
-                    <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">
-                      {s.title} {idx === 0 ? '(Terbaru / Aktif)' : ''}
-                    </option>
-                  ))}
+                  {seasons.map((s) => {
+                    const isItemActive = s.id === activeSeasonId || (!activeSeasonId && s.isActive);
+                    return (
+                      <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">
+                        {s.title} {isItemActive ? '★ (Active Season)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
+
+              {/* Active Season Button / Indicator */}
+              {isCurrentlyActiveSeason ? (
+                <div
+                  id="badge-active-season"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/50 bg-emerald-950/60 px-2.5 py-1 text-xs font-bold text-emerald-300 shadow-sm"
+                  title="Season ini saat ini berstatus Active Season (Season Utama)"
+                >
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span>Active Season</span>
+                </div>
+              ) : (
+                <button
+                  id="btn-set-active-season"
+                  type="button"
+                  onClick={() => onSetActiveSeason && onSetActiveSeason(currentSeason.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/20 hover:bg-amber-500/30 px-3 py-1 text-xs font-bold text-amber-300 hover:text-amber-100 transition-all cursor-pointer shadow-sm active:scale-95"
+                  title={`Klik untuk menentukan dan mengaktifkan ${currentSeason.title} sebagai Active Season`}
+                >
+                  <Sparkles size={13} className="text-amber-400" />
+                  <span>Aktifkan Season Ini</span>
+                </button>
+              )}
 
               <span className="flex items-center gap-1 text-xs text-[#9C948A]">
                 <Calendar size={13} className="text-[#E8B33D]" />

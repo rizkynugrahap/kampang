@@ -37,6 +37,8 @@ import {
   seedAdminIfEmpty,
   subscribeToBackgroundSettings,
   syncBackgroundSettingsToFirestore,
+  subscribeToActiveSeason,
+  syncActiveSeasonToFirestore,
   syncPlayerToFirestore,
   syncMatchToFirestore,
   syncLagaAmalToFirestore,
@@ -74,13 +76,40 @@ export default function App() {
     return [];
   });
 
-  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
+  const [activeSeasonId, setActiveSeasonId] = useState<string>(() => {
+    return localStorage.getItem('pantos_active_season_id') || '';
+  });
 
-  // Active season resolved
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>(() => {
+    return localStorage.getItem('pantos_active_season_id') || '';
+  });
+
+  // Active season resolved: prioritize selected view, then activeSeasonId, then isActive tag, then first season
   const activeSeason = useMemo(() => {
     if (seasons.length === 0) return EMPTY_SEASON;
-    return seasons.find((s) => s.id === selectedSeasonId) || seasons[0];
-  }, [seasons, selectedSeasonId]);
+    return (
+      seasons.find((s) => s.id === selectedSeasonId) ||
+      seasons.find((s) => s.id === activeSeasonId) ||
+      seasons.find((s) => s.isActive) ||
+      seasons[0]
+    );
+  }, [seasons, selectedSeasonId, activeSeasonId]);
+
+  // Keep activeSeasonId and selectedSeasonId in sync when seasons list loads
+  useEffect(() => {
+    if (seasons.length > 0) {
+      if (!activeSeasonId) {
+        const foundActive = seasons.find((s) => s.isActive)?.id || seasons[0].id;
+        setActiveSeasonId(foundActive);
+        localStorage.setItem('pantos_active_season_id', foundActive);
+        if (!selectedSeasonId) {
+          setSelectedSeasonId(foundActive);
+        }
+      } else if (!selectedSeasonId) {
+        setSelectedSeasonId(activeSeasonId);
+      }
+    }
+  }, [seasons, activeSeasonId, selectedSeasonId]);
 
   // Deduplicate and sanitize player roster ensuring unique IDs and unique names
   const deduplicatePlayers = (playerList: Player[]): Player[] => {
@@ -486,13 +515,53 @@ export default function App() {
       });
     });
 
+    // Live-sync active season across every device
+    const unsubActiveSeason = subscribeToActiveSeason((remoteActiveId) => {
+      if (remoteActiveId) {
+        setActiveSeasonId(remoteActiveId);
+        localStorage.setItem('pantos_active_season_id', remoteActiveId);
+        setSelectedSeasonId((prev) => (!prev ? remoteActiveId : prev));
+      }
+    });
+
     return () => {
       unsubLagaAmal();
       unsubMatches();
       unsubPlayers();
       unsubBackground();
+      unsubActiveSeason();
     };
   }, []);
+
+  // Set a season as the official Active Season across the app and Firestore
+  const handleSetActiveSeason = async (seasonId: string) => {
+    const targetSeason = seasons.find((s) => s.id === seasonId);
+    if (!targetSeason) return;
+
+    setActiveSeasonId(seasonId);
+    setSelectedSeasonId(seasonId);
+    localStorage.setItem('pantos_active_season_id', seasonId);
+
+    // Update seasons list so only the activated season has isActive: true
+    const updatedSeasons = seasons.map((s) => ({
+      ...s,
+      isActive: s.id === seasonId,
+    }));
+    setSeasons(updatedSeasons);
+    localStorage.setItem('pantos_seasons_cache', JSON.stringify(updatedSeasons));
+
+    try {
+      await syncActiveSeasonToFirestore(seasonId);
+      await syncLagaAmalToFirestore({ ...targetSeason, isActive: true });
+      showFirestoreNotice(`Season "${targetSeason.title}" berhasil diaktifkan sebagai Active Season!`, false);
+    } catch (e: any) {
+      console.warn('Gagal sinkronisasi active season ke Firestore:', e);
+      showFirestoreNotice(
+        `Season "${targetSeason.title}" diaktifkan secara lokal. Firestore sync: ${e?.message || 'Tertunda'}`,
+        false
+      );
+    }
+  };
 
   // Update a season (both local, cache, backend & Firestore)
   const handleUpdateSeason = async (updatedSeason: LagaAmalSeasonData) => {
@@ -1549,6 +1618,8 @@ export default function App() {
             selectedSeasonId={selectedSeasonId}
             onSeasonChange={(id) => setSelectedSeasonId(id)}
             activeSeason={activeSeason}
+            activeSeasonId={activeSeasonId}
+            onSetActiveSeason={handleSetActiveSeason}
             seasonMatches={seasonMatches}
             players={players}
             heroes={heroes}
@@ -1564,6 +1635,8 @@ export default function App() {
             selectedSeasonId={selectedSeasonId}
             onSeasonChange={(id) => setSelectedSeasonId(id)}
             activeSeason={activeSeason}
+            activeSeasonId={activeSeasonId}
+            onSetActiveSeason={handleSetActiveSeason}
             matches={seasonMatches}
             onSelectMatch={(m) => setSelectedMatch(m)}
             onDeleteMatch={handleDeleteMatch}
@@ -1571,12 +1644,14 @@ export default function App() {
           />
         )}
 
-        {/* TAB 2: KLASEMEN LAGA AMAL (Multi-Season History) */}
+        {/* TAB 3: KLASEMEN LAGA AMAL (Multi-Season History) */}
         {tab === 'lagaAmal' && (
           <LagaAmalView
             seasons={seasons}
-            activeSeasonId={selectedSeasonId}
+            activeSeasonId={activeSeasonId}
+            selectedSeasonId={selectedSeasonId}
             onSeasonChange={(id) => setSelectedSeasonId(id)}
+            onSetActiveSeason={handleSetActiveSeason}
             onUpdateSeason={handleUpdateSeason}
             onDeleteSeason={handleDeleteSeason}
             onViewPlayerProfile={handleViewPlayerProfile}
@@ -1646,7 +1721,7 @@ export default function App() {
                 heroes={heroes}
                 matches={matches}
                 seasons={seasons}
-                activeSeasonId={selectedSeasonId}
+                activeSeasonId={activeSeasonId || selectedSeasonId}
                 isAdmin={isAdmin}
                 prefilledDraft={draftForAdmin}
                 onOpenLogin={() => setIsLoginModalOpen(true)}

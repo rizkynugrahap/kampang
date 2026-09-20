@@ -428,6 +428,61 @@ export async function syncBackgroundSettingsToFirestore(settings: BackgroundSett
   await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+// ----------------- ACTIVE SEASON SETTINGS (app-wide, Firestore-synced) -----------------
+
+const ACTIVE_SEASON_DOC_ID = 'active_season';
+
+export interface ActiveSeasonSettings {
+  seasonId: string;
+  updatedAt?: string;
+}
+
+/**
+ * Live-subscribes to the app-wide active season document in Firestore,
+ * keeping which season is currently activated synchronized across all devices in real-time.
+ */
+export function subscribeToActiveSeason(
+  callback: (seasonId: string | null) => void
+): Unsubscribe {
+  const docRef = doc(db, 'app_meta', ACTIVE_SEASON_DOC_ID);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as ActiveSeasonSettings;
+        callback(data?.seasonId || null);
+      } else {
+        callback(null);
+      }
+    },
+    (err) => {
+      console.warn('Firestore active season subscription error:', err);
+      callback(null);
+    }
+  );
+}
+
+/**
+ * Persists the active season setting to Firestore so all clients and devices
+ * immediately switch to and recognize the newly designated active season.
+ */
+export async function syncActiveSeasonToFirestore(seasonId: string): Promise<void> {
+  const path = `app_meta/${ACTIVE_SEASON_DOC_ID}`;
+  try {
+    const docRef = doc(db, 'app_meta', ACTIVE_SEASON_DOC_ID);
+    await setDoc(
+      docRef,
+      {
+        seasonId,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 // ----------------- ADMIN LOGIN (Firestore-only) -----------------
 
 export interface AdminAccount {
