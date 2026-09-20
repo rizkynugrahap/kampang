@@ -16,6 +16,7 @@ import { PlayerAvatar } from './PlayerAvatar';
 import { ScoreBanner } from './ScoreBanner';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
+import { sortSeasonsDescending } from '../utils/seasonCalculations';
 
 interface MatchHistoryViewProps {
   seasons: LagaAmalSeasonData[];
@@ -44,6 +45,9 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
 }) => {
   const [winnerFilter, setWinnerFilter] = useState<'all' | 'Tim Pohon' | 'Tim Lobby'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Seasons sorted descending (highest season first)
+  const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
   // Filter matches belonging to the active season
   const filteredMatches = useMemo(() => {
@@ -87,7 +91,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                 onChange={(e) => onSeasonChange(e.target.value)}
                 className="bg-transparent font-black text-[#F2EDE4] focus:outline-none cursor-pointer pr-1 text-xs sm:text-sm max-w-[130px] sm:max-w-none truncate"
               >
-                {seasons.map((s) => {
+                {sortedSeasons.map((s) => {
                   const isItemActive = s.id === activeSeasonId || (!activeSeasonId && s.isActive);
                   return (
                     <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">

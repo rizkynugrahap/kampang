@@ -32,6 +32,7 @@ import { ScoreBanner } from './ScoreBanner';
 import { PlayerAvatar } from './PlayerAvatar';
 import { generateHeuristicPlayerJulukan } from '../utils/julukan';
 import { GachaHeroPick } from './GachaHeroPick';
+import { sortSeasonsDescending } from '../utils/seasonCalculations';
 
 type TeamFilter = 'all' | 'Pohon' | 'Lobby';
 
@@ -208,6 +209,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
   const [selectedKpiMetric, setSelectedKpiMetric] = useState<KpiMetricType>('score');
+
+  // Seasons sorted in descending order (highest season first)
+  const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
   // Compute player stats according to the selected season AND team filter
   const computedStats = useMemo(() => {
@@ -537,7 +541,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onChange={(e) => onSeasonChange(e.target.value)}
                 className="bg-transparent font-black text-[#F2EDE4] focus:outline-none cursor-pointer pr-1 text-xs sm:text-sm max-w-[130px] sm:max-w-none truncate"
               >
-                {seasons.map((s) => {
+                {sortedSeasons.map((s) => {
                   const isItemActive = s.id === activeSeasonId || (!activeSeasonId && s.isActive);
                   return (
                     <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">

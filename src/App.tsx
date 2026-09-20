@@ -23,7 +23,7 @@ import { PlayerProfile } from './components/PlayerProfile';
 import { PlayerCrudManager } from './components/PlayerCrudManager';
 import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
-import { FirestoreStatusBadge } from './components/FirestoreStatusBadge';
+import { SupabaseStatusBadge } from './components/SupabaseStatusBadge';
 import {
   BackgroundSettingsModal,
   DEFAULT_GIT_BACKGROUND_URL,
@@ -36,20 +36,20 @@ import {
   subscribeToLagaAmal,
   seedAdminIfEmpty,
   subscribeToBackgroundSettings,
-  syncBackgroundSettingsToFirestore,
+  syncBackgroundSettingsToSupabase,
   subscribeToActiveSeason,
-  syncActiveSeasonToFirestore,
-  syncPlayerToFirestore,
-  syncMatchToFirestore,
-  syncLagaAmalToFirestore,
-  syncPlayersBatchToFirestore,
-  deleteLagaAmalFromFirestore,
-  deleteMatchFromFirestore,
-  deleteMatchesBatchFromFirestore,
-  deletePlayerFromFirestore,
-} from './services/firestoreSync';
+  syncActiveSeasonToSupabase,
+  syncPlayerToSupabase,
+  syncMatchToSupabase,
+  syncLagaAmalToSupabase,
+  syncPlayersBatchToSupabase,
+  deleteLagaAmalFromSupabase,
+  deleteMatchFromSupabase,
+  deleteMatchesBatchFromSupabase,
+  deletePlayerFromSupabase,
+} from './services/supabaseSync';
 import { MLBB_HEROES } from './data/heroes';
-import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason, EMPTY_SEASON } from './utils/seasonCalculations';
+import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason, EMPTY_SEASON, sortSeasonsDescending } from './utils/seasonCalculations';
 import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
@@ -62,13 +62,13 @@ export default function App() {
   const [tab, setTab] = useState<ActiveTab>('dashboard');
   const [adminSubTab, setAdminSubTab] = useState<'match' | 'players'>('match');
 
-  // Multi-season state (primary source of truth from database)
+  // Multi-season state (primary source of truth from database, kept sorted descending)
   const [seasons, setSeasons] = useState<LagaAmalSeasonData[]>(() => {
     const saved = localStorage.getItem('pantos_seasons_cache');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sortSeasonsDescending(parsed);
       } catch (e) {
         console.warn('Failed to parse seasons cache:', e);
       }
@@ -235,19 +235,19 @@ export default function App() {
     setDraftForAdmin(draft);
     setTab('admin');
   };
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState(true);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
-  const [firestoreNotice, setFirestoreNotice] = useState<{ message: string; isError?: boolean } | null>(null);
+  const [syncNotice, setSyncNotice] = useState<{ message: string; isError?: boolean } | null>(null);
 
-  const showFirestoreNotice = (msg: string, isError = true) => {
-    setFirestoreNotice({ message: msg, isError });
+  const showSyncNotice = (msg: string, isError = true) => {
+    setSyncNotice({ message: msg, isError });
     setTimeout(() => {
-      setFirestoreNotice((prev) => (prev?.message === msg ? null : prev));
+      setSyncNotice((prev) => (prev?.message === msg ? null : prev));
     }, 7000);
   };
 
   // Theme and Branding state (Background, Opacity, Logo, Brand Name, Slogan, Header & Button Colors)
-  // Cached instantly from localStorage and synced live to Firestore across all devices
+  // Cached instantly from localStorage and synced live to Supabase across all devices
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
     const saved = localStorage.getItem('pantos_theme_settings');
     if (saved) {
@@ -281,7 +281,7 @@ export default function App() {
     localStorage.setItem('pantos_custom_bg', newConfig.bgUrl);
     localStorage.setItem('pantos_bg_opacity', String(newConfig.bgOpacity));
 
-    syncBackgroundSettingsToFirestore({
+    syncBackgroundSettingsToSupabase({
       bgUrl: newConfig.bgUrl,
       bgOpacity: newConfig.bgOpacity,
       logoType: newConfig.logoType,
@@ -296,7 +296,7 @@ export default function App() {
       activeButtonColor: newConfig.activeButtonColor,
       activeButtonTextColor: newConfig.activeButtonTextColor,
     }).catch((e) =>
-      console.warn('Gagal menyimpan pengaturan tema ke Firestore:', e)
+      console.warn('Gagal menyimpan pengaturan tema ke Supabase:', e)
     );
   };
 
@@ -349,8 +349,8 @@ export default function App() {
               const corrected = sanitized.find((m) => m.id === newId);
               if (corrected) {
                 try {
-                  await syncMatchToFirestore(corrected);
-                  await deleteMatchFromFirestore(oldId);
+                  await syncMatchToSupabase(corrected);
+                  await deleteMatchFromSupabase(oldId);
                 } catch (e) {
                   console.warn('Match ID remapping sync error:', e);
                 }
@@ -378,32 +378,24 @@ export default function App() {
     }
   };
 
-  // Real-time Cloud Firestore Subscriptions
+  // Real-time Supabase Subscriptions
   useEffect(() => {
     loadData();
 
-    // NOTE: this used to also auto-reseed players/matches/seasons back to
-    // the hardcoded baseline (ALL_INITIAL_SEASONS/INITIAL_PLAYERS/
-    // INITIAL_MATCHES) any time Firestore looked empty. That's been
-    // removed — it fought with real admin actions like deleting a season
-    // or a match (any collection left empty would silently get refilled
-    // with old seed data on the next reload).
-
-    // Auto-seed the default admin login account if Firestore has none yet
-    // (this one is safe to keep — it only ever creates a login account,
-    // never touches real season/player/match data).
-    seedAdminIfEmpty().catch((e) => console.warn('Firestore admin seeding check:', e));
+    // Auto-seed the default admin login account in Supabase if none exists yet
+    seedAdminIfEmpty().catch((e) => console.warn('Supabase admin seeding check:', e));
 
     const unsubLagaAmal = subscribeToLagaAmal(
       (remoteSeasons) => {
         if (remoteSeasons && remoteSeasons.length > 0) {
-          setSeasons(remoteSeasons);
-          localStorage.setItem('pantos_seasons_cache', JSON.stringify(remoteSeasons));
+          const sorted = sortSeasonsDescending(remoteSeasons);
+          setSeasons(sorted);
+          localStorage.setItem('pantos_seasons_cache', JSON.stringify(sorted));
           setLastSyncedAt(new Date());
-          setIsFirestoreConnected(true);
+          setIsSupabaseConnected(true);
         }
       },
-      () => setIsFirestoreConnected(false)
+      () => setIsSupabaseConnected(false)
     );
 
     const unsubMatches = subscribeToMatches(
@@ -413,14 +405,14 @@ export default function App() {
           setMatches(sanitized);
           localStorage.setItem('pantos_matches_cache', JSON.stringify(sanitized));
           setLastSyncedAt(new Date());
-          setIsFirestoreConnected(true);
+          setIsSupabaseConnected(true);
           if (remapped.length > 0) {
             remapped.forEach(async ({ oldId, newId }) => {
               const corrected = sanitized.find((m) => m.id === newId);
               if (corrected) {
                 try {
-                  await syncMatchToFirestore(corrected);
-                  await deleteMatchFromFirestore(oldId);
+                  await syncMatchToSupabase(corrected);
+                  await deleteMatchFromSupabase(oldId);
                 } catch (e) {
                   console.warn('Match ID remapping sync error:', e);
                 }
@@ -429,7 +421,7 @@ export default function App() {
           }
         }
       },
-      () => setIsFirestoreConnected(false)
+      () => setIsSupabaseConnected(false)
     );
 
     // Live-sync admin-set player fields (badge/status, tier, julukan,
@@ -482,10 +474,10 @@ export default function App() {
           });
 
           setLastSyncedAt(new Date());
-          setIsFirestoreConnected(true);
+          setIsSupabaseConnected(true);
         }
       },
-      () => setIsFirestoreConnected(false)
+      () => setIsSupabaseConnected(false)
     );
 
     // Keep theme, branding, colors & background permanently in sync across every device
@@ -551,19 +543,19 @@ export default function App() {
     localStorage.setItem('pantos_seasons_cache', JSON.stringify(updatedSeasons));
 
     try {
-      await syncActiveSeasonToFirestore(seasonId);
-      await syncLagaAmalToFirestore({ ...targetSeason, isActive: true });
-      showFirestoreNotice(`Season "${targetSeason.title}" berhasil diaktifkan sebagai Active Season!`, false);
+      await syncActiveSeasonToSupabase(seasonId);
+      await syncLagaAmalToSupabase({ ...targetSeason, isActive: true });
+      showSyncNotice(`Season "${targetSeason.title}" berhasil diaktifkan sebagai Active Season!`, false);
     } catch (e: any) {
-      console.warn('Gagal sinkronisasi active season ke Firestore:', e);
-      showFirestoreNotice(
-        `Season "${targetSeason.title}" diaktifkan secara lokal. Firestore sync: ${e?.message || 'Tertunda'}`,
+      console.warn('Gagal sinkronisasi active season ke Supabase:', e);
+      showSyncNotice(
+        `Season "${targetSeason.title}" diaktifkan secara lokal. Supabase sync: ${e?.message || 'Tertunda'}`,
         false
       );
     }
   };
 
-  // Update a season (both local, cache, backend & Firestore)
+  // Update a season (both local, cache, backend & Supabase)
   const handleUpdateSeason = async (updatedSeason: LagaAmalSeasonData) => {
     const recalc = recalculateSeasonStats(updatedSeason);
     setSeasons((prev) => {
@@ -578,18 +570,18 @@ export default function App() {
       return next;
     });
 
-    // Sync to Firestore & API
+    // Sync to Supabase & API
     try {
-      await syncLagaAmalToFirestore(recalc);
+      await syncLagaAmalToSupabase(recalc);
       fetch('/api/laga-amal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(recalc),
       }).catch((e) => console.warn('API sync season:', e));
     } catch (err: any) {
-      console.error('Sync season to Firestore failed:', err);
-      showFirestoreNotice(
-        `Perubahan klasemen tersimpan lokal, namun gagal disinkronkan ke Firestore: ${err?.message || 'Missing or insufficient permissions'}. Cek tab Rules di Firebase Console.`
+      console.error('Sync season to Supabase failed:', err);
+      showSyncNotice(
+        `Perubahan klasemen tersimpan lokal, namun gagal disinkronkan ke Supabase: ${err?.message || 'Koneksi terputus'}.`
       );
     }
   };
@@ -661,20 +653,16 @@ export default function App() {
     const updatedPlayers = mergePlayerOverrides(buildPlayersFromSeason(updatedSeason), players);
     setPlayers(updatedPlayers);
 
-    // Sync match and players to Firestore — kept in its OWN try/catch so a
-    // Firestore failure (e.g. security rules not deployed on the current
-    // project) doesn't get mistaken for "backend unreachable" and silently
-    // produce a duplicate local-only match. This is also the one place
-    // that decides whether the match survives a page refresh at all, so
-    // its failure needs to be loud, not swallowed.
+    // Sync match and players to Supabase — kept in its OWN try/catch so a
+    // network failure doesn't get mistaken for "backend unreachable".
     try {
-      await syncMatchToFirestore(savedMatch);
-      await syncPlayersBatchToFirestore(updatedPlayers);
+      await syncMatchToSupabase(savedMatch);
+      await syncPlayersBatchToSupabase(updatedPlayers);
       setLastSyncedAt(new Date());
     } catch (syncErr: any) {
-      console.error('Error syncing match to Firestore:', syncErr);
-      showFirestoreNotice(
-        `Pertandingan tersimpan lokal, namun gagal disinkronkan ke Firestore: ${syncErr?.message || 'Missing or insufficient permissions'}. Cek tab Rules di Firebase Console.`
+      console.error('Error syncing match to Supabase:', syncErr);
+      showSyncNotice(
+        `Pertandingan tersimpan lokal, namun gagal disinkronkan ke Supabase: ${syncErr?.message || 'Koneksi terputus'}.`
       );
     }
 
@@ -755,12 +743,12 @@ export default function App() {
         }
         return deduplicatePlayers([...cleanPrev, addedPlayer]);
       });
-      await syncPlayerToFirestore(addedPlayer);
+      await syncPlayerToSupabase(addedPlayer);
       return true;
     } catch (err: any) {
       console.error('Error adding player:', err);
-      showFirestoreNotice(
-        `Pemain baru tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Missing or insufficient permissions'}. Cek tab Rules.`
+      showSyncNotice(
+        `Pemain baru tersimpan lokal, namun gagal ke Supabase: ${err?.message || 'Koneksi terputus'}.`
       );
       return false;
     }
@@ -776,8 +764,8 @@ export default function App() {
     try {
       setIsLoading(true);
 
-      // 1. Delete from Firestore so it doesn't reappear on snapshot/refresh
-      await deleteMatchFromFirestore(matchId);
+      // 1. Delete from Supabase so it doesn't reappear on snapshot/refresh
+      await deleteMatchFromSupabase(matchId);
 
       // 2. Delete from backend server
       fetch(`/api/matches/${matchId}`, { method: 'DELETE' }).catch((e) =>
@@ -811,11 +799,11 @@ export default function App() {
 
             if (isTargetSeason) {
               const reverted = revertMatchFromSeason(s, deletedMatch);
-              // sync reverted season to firestore & API
-              syncLagaAmalToFirestore(reverted).catch((err) => {
+              // sync reverted season to Supabase & API
+              syncLagaAmalToSupabase(reverted).catch((err) => {
                 console.error('Sync reverted season:', err);
-                showFirestoreNotice(
-                  `Statistik klasemen tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Izin ditolak'}.`
+                showSyncNotice(
+                  `Statistik klasemen tersimpan lokal, namun gagal ke Supabase: ${err?.message || 'Koneksi terputus'}.`
                 );
               });
               return reverted;
@@ -828,8 +816,8 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Error deleting match:', err);
-      showFirestoreNotice(
-        `Pertandingan dihapus dari tampilan, namun gagal di Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
+      showSyncNotice(
+        `Pertandingan dihapus dari tampilan, namun gagal di Supabase: ${err?.message || 'Koneksi terputus'}.`
       );
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
@@ -869,9 +857,9 @@ export default function App() {
         if (selectedMatch && selectedMatch.id === matchId) {
           setSelectedMatch((prev) => (prev ? { ...prev, ai_analysis: data.ai_analysis, is_generating_analysis: false } : null));
         }
-        // Persist the regenerated analysis to Firestore too
+        // Persist the regenerated analysis to Supabase too
         if (updatedMatch) {
-          await syncMatchToFirestore(updatedMatch);
+          await syncMatchToSupabase(updatedMatch);
         }
         return;
       }
@@ -886,15 +874,15 @@ export default function App() {
         setSelectedMatch(updatedMatch);
       }
       try {
-        await syncMatchToFirestore(updatedMatch);
+        await syncMatchToSupabase(updatedMatch);
       } catch (syncErr) {
-        console.warn('Error syncing fallback analysis to Firestore:', syncErr);
+        console.warn('Error syncing fallback analysis to Supabase:', syncErr);
       }
     }
   };
 
   // Delete an entire season/klasemen — admin only. This removes it from
-  // Firestore (the real-time source of truth), the local backend store,
+  // Supabase (the real-time source of truth), the local backend store,
   // and local state, along with all associated matches. At least one season must always remain.
   const handleDeleteSeason = async (seasonId: string) => {
     if (!isAdmin) {
@@ -924,12 +912,12 @@ export default function App() {
     try {
       setIsLoading(true);
 
-      // 1. Delete season doc from Firestore
-      await deleteLagaAmalFromFirestore(seasonId);
+      // 1. Delete season doc from Supabase
+      await deleteLagaAmalFromSupabase(seasonId);
 
-      // 2. Cascade delete all matching matches from Firestore
+      // 2. Cascade delete all matching matches from Supabase
       if (matchesToDelete.length > 0) {
-        await deleteMatchesBatchFromFirestore(matchesToDelete.map((m) => m.id));
+        await deleteMatchesBatchFromSupabase(matchesToDelete.map((m) => m.id));
       }
 
       // 3. Delete from backend server
@@ -957,8 +945,8 @@ export default function App() {
       });
     } catch (err: any) {
       console.error('Error deleting season:', err);
-      showFirestoreNotice(
-        `Klasemen dihapus dari tampilan, namun gagal di Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
+      showSyncNotice(
+        `Klasemen dihapus dari tampilan, namun gagal di Supabase: ${err?.message || 'Koneksi terputus'}.`
       );
     } finally {
       setIsLoading(false);
@@ -1012,9 +1000,9 @@ export default function App() {
         console.warn('Could not reach backend player update, local cache preserved:', err);
       }
 
-      // 6. Persist to Cloud Firestore
+      // 6. Persist to Supabase
       if (targetPlayer) {
-        await syncPlayerToFirestore({
+        await syncPlayerToSupabase({
           ...targetPlayer,
           avatar_url: cleanUrl,
         });
@@ -1099,8 +1087,8 @@ export default function App() {
         console.warn('Failed to update player details on backend:', err);
       }
 
-      // 4. Persist to Cloud Firestore (both player document and active season)
-      await syncPlayerToFirestore(updatedPlayer);
+      // 4. Persist to Supabase (both player document and active season)
+      await syncPlayerToSupabase(updatedPlayer);
 
       const currentSeasonCopy = {
         ...activeSeason,
@@ -1117,13 +1105,13 @@ export default function App() {
             : p
         ),
       };
-      await syncLagaAmalToFirestore(recalculateSeasonStats(currentSeasonCopy));
+      await syncLagaAmalToSupabase(recalculateSeasonStats(currentSeasonCopy));
 
       return true;
     } catch (err: any) {
       console.error('Error updating player details:', err);
-      showFirestoreNotice(
-        `Perubahan pemain tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Missing or insufficient permissions'}.`
+      showSyncNotice(
+        `Perubahan pemain tersimpan lokal, namun gagal ke Supabase: ${err?.message || 'Koneksi terputus'}.`
       );
       return false;
     }
@@ -1190,10 +1178,10 @@ export default function App() {
         console.warn('Backend player delete failed:', err);
       }
 
-      // 5. Delete on Cloud Firestore
-      await deletePlayerFromFirestore(playerId, pName);
+      // 5. Delete on Supabase
+      await deletePlayerFromSupabase(playerId, pName);
 
-      // 6. Sync updated season to Firestore
+      // 6. Sync updated season to Supabase
       const updatedSeason = {
         ...activeSeason,
         players: activeSeason.players.filter(
@@ -1203,12 +1191,12 @@ export default function App() {
           (p) => p.nickname.toLowerCase() !== pName.toLowerCase()
         ).length,
       };
-      await syncLagaAmalToFirestore(recalculateSeasonStats(updatedSeason));
+      await syncLagaAmalToSupabase(recalculateSeasonStats(updatedSeason));
 
       return true;
     } catch (err: any) {
       console.error('Error deleting player:', err);
-      showFirestoreNotice(`Gagal menghapus pemain: ${err?.message || 'Terjadi kesalahan'}.`);
+      showSyncNotice(`Gagal menghapus pemain: ${err?.message || 'Terjadi kesalahan'}.`);
       return false;
     }
   };
@@ -1221,9 +1209,7 @@ export default function App() {
     if (!targetPlayer) return null;
 
     try {
-      // Send the player we already have (from Firestore) as a fallback —
-      // this backend's own local store can be stale/out of sync with real
-      // player data, which used to 404 silently here.
+      // Send the player we already have (from Supabase) as a fallback
       const topHeroNames = getPlayerTopHeroes(targetPlayer.name, seasonMatches, activeSeason).map((h) => h.hero);
       const res = await fetch(`/api/players/${encodeURIComponent(String(playerId))}/generate-title`, {
         method: 'POST',
@@ -1250,8 +1236,8 @@ export default function App() {
             )
           );
 
-          // Sync to Cloud Firestore
-          await syncPlayerToFirestore(updatedPlayer);
+          // Sync to Supabase
+          await syncPlayerToSupabase(updatedPlayer);
 
           return data.julukan;
         }
@@ -1259,9 +1245,7 @@ export default function App() {
       throw new Error('Backend generate-title endpoint returned ' + res.status);
     } catch (err) {
       console.warn('Error generating player title via backend, using local fallback:', err);
-      // Backend unreachable — generate a heuristic julukan locally instead
-      // of silently returning nothing (which is what made this feature
-      // look broken).
+      // Backend unreachable — generate a heuristic julukan locally
       const seasonStat = activeSeason.players.find(
         (p) => p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
       );
@@ -1278,9 +1262,9 @@ export default function App() {
       );
 
       try {
-        await syncPlayerToFirestore(updatedPlayer);
+        await syncPlayerToSupabase(updatedPlayer);
       } catch (syncErr) {
-        console.warn('Error syncing fallback julukan to Firestore:', syncErr);
+        console.warn('Error syncing fallback julukan to Supabase:', syncErr);
       }
 
       return fallbackJulukan;
@@ -1378,6 +1362,15 @@ export default function App() {
 
           {/* Right Action Bar */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Supabase Status Live Badge */}
+            <SupabaseStatusBadge
+              players={players}
+              matches={matches}
+              seasons={seasons}
+              isConnected={isSupabaseConnected}
+              lastSyncedAt={lastSyncedAt}
+            />
+
             {/* Background & Tema Settings button */}
             <button
               id="btn-bg-settings"
@@ -1584,24 +1577,24 @@ export default function App() {
         </div>
       </header>
 
-      {/* Non-blocking Firestore Banner / Notification */}
-      {firestoreNotice && (
+      {/* Non-blocking Supabase Banner / Notification */}
+      {syncNotice && (
         <div className="sticky top-[61px] z-30 px-4 py-2 bg-gradient-to-r from-amber-950/95 to-[#2A1D13] border-b border-amber-500/40 text-xs text-[#F2EDE4] flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
             <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0 animate-pulse" />
-            <span className="font-medium text-amber-200">{firestoreNotice.message}</span>
+            <span className="font-medium text-amber-200">{syncNotice.message}</span>
             <button
               onClick={() => {
-                const btn = document.getElementById('btn-firestore-status');
+                const btn = document.getElementById('btn-supabase-status');
                 if (btn) btn.click();
               }}
               className="ml-2 text-xs text-amber-300 underline hover:text-amber-200 font-semibold cursor-pointer shrink-0"
             >
-              Panduan Rules
+              Status Supabase
             </button>
           </div>
           <button
-            onClick={() => setFirestoreNotice(null)}
+            onClick={() => setSyncNotice(null)}
             className="text-[#9C948A] hover:text-[#F2EDE4] px-2 py-1 rounded text-sm cursor-pointer ml-2"
           >
             ✕
@@ -1769,7 +1762,10 @@ export default function App() {
             <span>Komunitas Mobile Legends Pantos</span>
           </div>
           <div className="flex items-center gap-3 text-[11px]">
-            <span>Cloud Firestore Connected</span>
+            <span className="text-emerald-400 font-medium flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block" />
+              Supabase Database Live
+            </span>
             <span>·</span>
             <span className="text-[#E8B33D]">Season {activeSeason.id.toUpperCase()}</span>
           </div>

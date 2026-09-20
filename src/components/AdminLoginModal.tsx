@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, KeyRound, ShieldAlert, Check } from 'lucide-react';
-import { verifyAdminLogin } from '../services/firestoreSync';
+import { verifyAdminLogin } from '../services/supabaseSync';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -35,7 +35,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         setError(result.error || 'Password atau email admin salah');
       }
     } catch (err: any) {
-      setError('Gagal menghubungkan ke Firestore.');
+      setError('Gagal menghubungkan ke database Supabase.');
     } finally {
       setLoading(false);
     }

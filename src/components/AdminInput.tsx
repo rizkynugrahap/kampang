@@ -22,6 +22,7 @@ import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { SearchableHeroSelect } from './SearchableHeroSelect';
 import { calculateNextMatchNumber } from '../utils/matchSequence';
+import { sortSeasonsDescending } from '../utils/seasonCalculations';
 
 const MAX_PLAYERS_PER_TEAM = 5;
 
@@ -66,6 +67,10 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   // Match meta
   const [winner, setWinner] = useState<TeamName>('Tim Pohon');
   const [selectedSeason, setSelectedSeason] = useState<string>(activeSeasonId);
+
+  // Seasons sorted in descending order (highest season first)
+  const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons || []), [seasons]);
+
   const [matchNumber, setMatchNumber] = useState<number>(() =>
     calculateNextMatchNumber(matches, activeSeasonId, seasons)
   );
@@ -462,7 +467,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
               onChange={(e) => setSelectedSeason(e.target.value)}
               className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-xs font-medium text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
             >
-              {seasons.map((s) => (
+              {sortedSeasons.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}
                 </option>

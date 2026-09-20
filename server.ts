@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { createClient } from '@supabase/supabase-js';
 import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/utils/seasonCalculations.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
@@ -15,9 +15,13 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Persistent store setup
-const DATA_DIR = path.join(process.cwd(), 'data');
-const STORE_FILE = path.join(DATA_DIR, 'store.json');
+// Supabase client setup for server-side store cache
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://pdcqiwptshqeirjqvbvp.supabase.co';
+const SUPABASE_ANON_KEY =
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkY3Fpd3B0c2hxZWlyanF2YnZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2MzE1NzYsImV4cCI6MjEwNTIwNzU3Nn0.R1A4C63LVPy1ONVU1NkUcRCWYtgqODffoMJksKbyb4Y';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 interface StoreData {
   players: Player[];
@@ -25,46 +29,41 @@ interface StoreData {
   lagaAmalSeasons: LagaAmalSeasonData[];
 }
 
-function loadStore(): StoreData {
+let store: StoreData = {
+  players: [],
+  matches: [],
+  lagaAmalSeasons: [],
+};
+
+async function initStoreFromSupabase() {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(STORE_FILE)) {
-      const raw = fs.readFileSync(STORE_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
+    const [playersRes, matchesRes, seasonsRes] = await Promise.all([
+      supabase.from('players').select('data'),
+      supabase.from('matches').select('data'),
+      supabase.from('laga_amal_seasons').select('data'),
+    ]);
 
-      return {
-        players: Array.isArray(parsed.players) ? parsed.players : [],
-        matches: Array.isArray(parsed.matches) ? parsed.matches : [],
-        lagaAmalSeasons: Array.isArray(parsed.lagaAmalSeasons) ? parsed.lagaAmalSeasons : [],
-      };
+    if (playersRes.data && playersRes.data.length > 0) {
+      store.players = playersRes.data.map((r: any) => r.data).filter(Boolean);
     }
+    if (matchesRes.data && matchesRes.data.length > 0) {
+      store.matches = matchesRes.data.map((r: any) => r.data).filter(Boolean);
+    }
+    if (seasonsRes.data && seasonsRes.data.length > 0) {
+      store.lagaAmalSeasons = seasonsRes.data.map((r: any) => r.data).filter(Boolean);
+    }
+    console.log(
+      `[Supabase Store Sync] Loaded ${store.players.length} players, ${store.matches.length} matches, ${store.lagaAmalSeasons.length} seasons.`
+    );
   } catch (err) {
-    console.error('Error loading store:', err);
-  }
-
-  const initialData: StoreData = {
-    players: [],
-    matches: [],
-    lagaAmalSeasons: [],
-  };
-  saveStore(initialData);
-  return initialData;
-}
-
-function saveStore(data: StoreData) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving store:', err);
+    console.warn('Could not load store from Supabase on startup:', err);
   }
 }
 
-let store = loadStore();
+// Memory-only store sync helper; actual persistence is handled via Supabase
+function saveStore(_data: StoreData) {
+  // Persistence is now directly handled via Supabase, no local store.json file needed
+}
 
 // Gemini API lazy initialization
 let aiClient: GoogleGenAI | null = null;
@@ -750,6 +749,9 @@ app.delete('/api/laga-amal/:id', (req, res) => {
 
 // ----------------- VITE MIDDLEWARE / SPA FALLBACK -----------------
 async function startServer() {
+  // Pre-load current state from Supabase
+  await initStoreFromSupabase();
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

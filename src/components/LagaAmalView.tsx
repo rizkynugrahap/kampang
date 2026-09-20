@@ -33,8 +33,8 @@ import {
 } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
-import { recalculateSeasonStats, EMPTY_SEASON } from '../utils/seasonCalculations';
-import { syncLagaAmalToFirestore } from '../services/firestoreSync';
+import { recalculateSeasonStats, EMPTY_SEASON, sortSeasonsDescending } from '../utils/seasonCalculations';
+import { syncLagaAmalToSupabase } from '../services/supabaseSync';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
 type SortField = 'score' | 'mvp' | 'antam' | 'silver' | 'coklat' | 'matches' | 'winRate' | 'avgScore';
@@ -130,6 +130,9 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
   // View mode for standings: 'table' is default, 'cards' is mobile-friendly card mode
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
+
+  // Seasons sorted in descending order (highest season first)
+  const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
   // Sort and filter players for standings
   const filteredPlayers = useMemo(() => {
@@ -357,7 +360,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                   onChange={(e) => onSeasonChange && onSeasonChange(e.target.value)}
                   className="bg-transparent font-bold text-[#F2EDE4] focus:outline-none cursor-pointer pr-1"
                 >
-                  {seasons.map((s) => {
+                  {sortedSeasons.map((s) => {
                     const isItemActive = s.id === activeSeasonId || (!activeSeasonId && s.isActive);
                     return (
                       <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">

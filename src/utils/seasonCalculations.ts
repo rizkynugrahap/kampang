@@ -35,6 +35,26 @@ export const EMPTY_SEASON: LagaAmalSeasonData = {
 };
 
 /**
+ * Sorts seasons in descending order by season number (e.g. S43 > S42 > S41).
+ * If no numeric value is found, sorts descending by title or id.
+ */
+export function sortSeasonsDescending(seasonList: LagaAmalSeasonData[]): LagaAmalSeasonData[] {
+  if (!Array.isArray(seasonList)) return [];
+  return [...seasonList].sort((a, b) => {
+    const extractNum = (s: LagaAmalSeasonData) => {
+      const match = (s?.title || '').match(/(\d+)/) || (s?.id || '').match(/(\d+)/);
+      return match ? parseInt(match[1], 10) : 0;
+    };
+    const numA = extractNum(a);
+    const numB = extractNum(b);
+    if (numA !== numB) {
+      return numB - numA; // Descending: e.g. 43 before 42 before 41
+    }
+    return String(b?.title || b?.id || '').localeCompare(String(a?.title || a?.id || ''));
+  });
+}
+
+/**
  * Builds the application-wide Player[] roster directly from a LagaAmalSeasonData object.
  * This guarantees 100% data synchronicity across Dashboard, Profile, and Standings.
  */
