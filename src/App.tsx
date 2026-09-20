@@ -1362,14 +1362,6 @@ export default function App() {
 
           {/* Right Action Bar */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            {/* Supabase Status Live Badge */}
-            <SupabaseStatusBadge
-              players={players}
-              matches={matches}
-              seasons={seasons}
-              isConnected={isSupabaseConnected}
-              lastSyncedAt={lastSyncedAt}
-            />
 
             {/* Background & Tema Settings button */}
             <button
