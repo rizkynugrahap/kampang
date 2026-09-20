@@ -8,6 +8,7 @@ import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
 import { generateHeuristicMatchAnalysis } from './src/utils/matchAnalysis.ts';
 import { generateHeuristicPlayerJulukan } from './src/utils/julukan.ts';
+import { teamDisplayName } from './src/utils/teamLabels.ts';
 
 const app = express();
 const PORT = 3000;
@@ -102,11 +103,11 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
     .map((p) => `${p.player_name} (${p.hero_name}/${p.medal} - Skor ${p.score || '-'})`)
     .join(', ');
 
-  const promptText = `Match ${match.date}. ${winnerTeam} Menang. Tim Pemenang: ${winnerPlayers}. Tim Kalah (${loserTeam}): ${loserPlayers}.`;
+  const promptText = `Match ${match.date}. ${teamDisplayName(winnerTeam)} Menang. Tim Pemenang: ${winnerPlayers}. Tim Kalah (${teamDisplayName(loserTeam)}): ${loserPlayers}.`;
 
   const systemInstruction =
     'Kamu adalah komentator e-sport Mobile Legends yang sarkastik, jenaka, namun analitis khas tongkrongan gamer Pantos. ' +
-    'Tugasmu menganalisis hasil pertandingan antara Tim Pohon dan Tim Lobby. ' +
+    'Tugasmu menganalisis hasil pertandingan antara Tim Kiri dan Tim Kanan. ' +
     'Bahas siapa pemain kunci/MVP yang tampil gemilang, siapa yang "makan Coklat" (jadi semen / beban tim), ' +
     'serta dinamika hero yang dipakai. ' +
     'Gunakan istilah khas MLBB (laning, teamfight, blunder, lord, rotasi, kena culik, solo kill). ' +

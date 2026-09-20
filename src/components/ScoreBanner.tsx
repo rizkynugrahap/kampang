@@ -32,13 +32,13 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
       <div className="flex items-center justify-between border-b border-[#332C25] bg-[#191513] px-3 sm:px-4 py-2 text-[10px] sm:text-xs font-semibold tracking-wider text-[#9C948A] uppercase">
         <span className="flex items-center gap-1 sm:gap-1.5 text-[#4F7942] font-bold">
           <span className="inline-block h-2 w-2 rounded-full bg-[#4F7942]" />
-          Tim Pohon
+          Tim Kiri
         </span>
         <span className="font-mono text-[9px] sm:text-[11px] text-[#9C948A] truncate px-1">
           {seasonTitle} · {total} Match
         </span>
         <span className="flex items-center gap-1 sm:gap-1.5 text-[#C97A3D] font-bold">
-          Tim Lobby
+          Tim Kanan
           <span className="inline-block h-2 w-2 rounded-full bg-[#C97A3D]" />
         </span>
       </div>
@@ -57,7 +57,7 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
         >
           <div className="relative z-10 flex flex-col">
             <span className="text-[10px] sm:text-xs font-bold tracking-wider text-white/80 uppercase">
-              Tim Pohon
+              Tim Kiri
             </span>
             <div className="flex items-baseline gap-1 sm:gap-2">
               <span className="font-black text-3xl sm:text-5xl md:text-7xl tracking-tight text-white leading-none">
@@ -83,7 +83,7 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
         >
           <div className="relative z-10 flex flex-col items-end">
             <span className="text-[10px] sm:text-xs font-bold tracking-wider text-white/80 uppercase">
-              Tim Lobby
+              Tim Kanan
             </span>
             <div className="flex items-baseline gap-1 sm:gap-2">
               <span className="text-xs sm:text-sm font-semibold text-white/80">Win</span>

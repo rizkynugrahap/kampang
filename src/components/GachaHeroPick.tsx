@@ -106,7 +106,7 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
   const activeRoleStatus = useMemo(() => {
     const isLobby = lobbyTeam.some((p) => p.playerName === activePlayerForSpin);
     const teamSlots = isLobby ? lobbyTeam : pohonTeam;
-    const teamName = isLobby ? 'Tim Lobby' : 'Tim Pohon';
+    const teamName = isLobby ? 'Tim Kanan' : 'Tim Kiri';
 
     // Roles taken by OTHER players in this same team
     const takenRolesInTeam = new Set<MLBBHeroRole>(
@@ -572,7 +572,7 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                 {isTeamSpinning
                   ? 'Mengacak Pembagian Tim...'
                   : selectedPlayerNames.length === 10
-                  ? '🎰 Spin Acak Tim Pohon vs Lobby!'
+                  ? '🎰 Spin Acak Tim Kiri vs Kanan!'
                   : `Pilih ${10 - selectedPlayerNames.length} Pemain Lagi`}
               </span>
             </button>
@@ -802,13 +802,13 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 
           {/* DRAFT RESULTS DISPLAY (TIM LOBBY & TIM POHON) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-            {/* TIM LOBBY */}
+            {/* TIM KANAN */}
             <div className="rounded-2xl border border-[#332C25] bg-[#161311] p-4 sm:p-5 space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xl">🛋️</span>
+                  <span className="text-xl">➡️</span>
                   <h3 className="font-black text-sm sm:text-base text-[#F2EDE4] tracking-wide">
-                    Tim Lobby
+                    Tim Kanan
                   </h3>
                 </div>
                 <span className="rounded-full bg-[#251F1B] border border-[#332C25] px-2.5 py-0.5 text-[11px] font-bold text-[#9C948A]">
@@ -902,13 +902,13 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
               </div>
             </div>
 
-            {/* TIM POHON */}
+            {/* TIM KIRI */}
             <div className="rounded-2xl border border-[#332C25] bg-[#161311] p-4 sm:p-5 space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xl">🌳</span>
+                  <span className="text-xl">⬅️</span>
                   <h3 className="font-black text-sm sm:text-base text-[#F2EDE4] tracking-wide">
-                    Tim Pohon
+                    Tim Kiri
                   </h3>
                 </div>
                 <span className="rounded-full bg-[#251F1B] border border-[#332C25] px-2.5 py-0.5 text-[11px] font-bold text-[#9C948A]">

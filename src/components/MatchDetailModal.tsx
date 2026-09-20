@@ -5,6 +5,7 @@ import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
+import { teamDisplayName } from '../utils/teamLabels';
 
 interface MatchDetailModalProps {
   match: Match | null;
@@ -96,7 +97,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                   isPohonWinner ? 'text-[#4F7942]' : 'text-[#C97A3D]'
                 }
               >
-                {match.winner}
+                {teamDisplayName(match.winner)}
               </span>
             </h3>
             <p className="flex items-center gap-1 text-xs text-[#9C948A]">
@@ -115,7 +116,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
         {/* Rosters comparison */}
         <div className="my-4 space-y-4">
-          {/* Tim Pohon */}
+          {/* Tim Kiri */}
           <div
             className={`rounded-xl border p-3.5 ${
               isPohonWinner
@@ -125,7 +126,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
           >
             <div className="mb-2 flex items-center justify-between">
               <span className="font-bold text-xs text-[#4F7942] uppercase tracking-wider">
-                Tim Pohon {isPohonWinner && '👑 Menang'}
+                Tim Kiri {isPohonWinner && '👑 Menang'}
               </span>
               <span className="text-[11px] text-[#9C948A]">
                 {match.pohon.length} Pemain
@@ -165,7 +166,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Tim Lobby */}
+          {/* Tim Kanan */}
           <div
             className={`rounded-xl border p-3.5 ${
               !isPohonWinner
@@ -175,7 +176,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
           >
             <div className="mb-2 flex items-center justify-between">
               <span className="font-bold text-xs text-[#C97A3D] uppercase tracking-wider">
-                Tim Lobby {!isPohonWinner && '👑 Menang'}
+                Tim Kanan {!isPohonWinner && '👑 Menang'}
               </span>
               <span className="text-[11px] text-[#9C948A]">
                 {match.lobby.length} Pemain

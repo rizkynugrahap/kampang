@@ -17,6 +17,7 @@ import { ScoreBanner } from './ScoreBanner';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
 import { sortSeasonsDescending } from '../utils/seasonCalculations';
+import { teamDisplayName } from '../utils/teamLabels';
 
 interface MatchHistoryViewProps {
   seasons: LagaAmalSeasonData[];
@@ -158,7 +159,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     : 'text-[#9C948A] hover:text-[#4F7942]'
                 }`}
               >
-                Pohon Win
+                Kiri Win
               </button>
               <button
                 type="button"
@@ -169,7 +170,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     : 'text-[#9C948A] hover:text-[#C97A3D]'
                 }`}
               >
-                Lobby Win
+                Kanan Win
               </button>
             </div>
 
@@ -208,7 +209,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
         </div>
       </section>
 
-      {/* Pertandingan Kemenangan (ScoreBanner Tim Pohon vs Tim Lobby) — Intact as requested */}
+      {/* Pertandingan Kemenangan (ScoreBanner Tim Kiri vs Tim Kanan) — Intact as requested */}
       <section id="section-pertandingan-kemenangan">
         <ScoreBanner matches={matches} seasonTitle={activeSeason.title} />
       </section>
@@ -266,7 +267,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                       }`}
                     >
                       <Trophy size={13} />
-                      <span>{match.winner} VICTORY</span>
+                      <span>{teamDisplayName(match.winner)} VICTORY</span>
                     </span>
 
                     {/* Admin Delete Action */}
@@ -317,9 +318,9 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                   </p>
                 </div>
 
-                {/* Team Rosters: Tim Pohon vs Tim Lobby */}
+                {/* Team Rosters: Tim Kiri vs Tim Kanan */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
-                  {/* Tim Pohon Roster */}
+                  {/* Tim Kiri Roster */}
                   <div
                     className={`rounded-xl border p-3.5 ${
                       isPohon
@@ -330,7 +331,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     <div className="flex items-center justify-between mb-2.5">
                       <div className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-[#4F7942]" />
-                        <span className="text-xs font-bold text-[#F2EDE4]">Tim Pohon</span>
+                        <span className="text-xs font-bold text-[#F2EDE4]">Tim Kiri</span>
                       </div>
                       {isPohon && (
                         <span className="text-[10px] font-black uppercase text-[#649455]">
@@ -380,7 +381,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Tim Lobby Roster */}
+                  {/* Tim Kanan Roster */}
                   <div
                     className={`rounded-xl border p-3.5 ${
                       !isPohon
@@ -391,7 +392,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     <div className="flex items-center justify-between mb-2.5">
                       <div className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-[#C97A3D]" />
-                        <span className="text-xs font-bold text-[#F2EDE4]">Tim Lobby</span>
+                        <span className="text-xs font-bold text-[#F2EDE4]">Tim Kanan</span>
                       </div>
                       {!isPohon && (
                         <span className="text-[10px] font-black uppercase text-[#e08f51]">

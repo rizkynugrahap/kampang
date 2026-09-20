@@ -4,6 +4,7 @@ import { Match } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
+import { teamDisplayName } from '../utils/teamLabels';
 
 interface MatchFeedProps {
   matches: Match[];
@@ -76,7 +77,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
                     className="font-bold text-xs"
                     style={{ color: borderColor }}
                   >
-                    {match.winner} Menang
+                    {teamDisplayName(match.winner)} Menang
                   </span>
                 </div>
 
@@ -84,7 +85,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
                 <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#2B241E] bg-[#161210] p-2">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-bold text-[#4F7942] uppercase tracking-wider">
-                      Pohon
+                      Kiri
                     </span>
                     <div className="flex -space-x-1">
                       {match.pohon.map((p, i) => (
@@ -101,7 +102,7 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
 
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-bold text-[#C97A3D] uppercase tracking-wider">
-                      Lobby
+                      Kanan
                     </span>
                     <div className="flex -space-x-1">
                       {match.lobby.map((p, i) => (

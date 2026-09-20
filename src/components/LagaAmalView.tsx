@@ -35,6 +35,7 @@ import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { recalculateSeasonStats, EMPTY_SEASON, sortSeasonsDescending } from '../utils/seasonCalculations';
 import { syncLagaAmalToSupabase } from '../services/supabaseSync';
+import { teamDisplayName } from '../utils/teamLabels';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';
 type SortField = 'score' | 'mvp' | 'antam' | 'silver' | 'coklat' | 'matches' | 'winRate' | 'avgScore';
@@ -1067,20 +1068,20 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                   </div>
                   <div className="flex items-center gap-2 text-sm font-bold text-[#F2EDE4]">
                     <span>Pemenang:</span>
-                    <span className="text-emerald-400">{log.winner}</span>
+                    <span className="text-emerald-400">{teamDisplayName(log.winner)}</span>
                   </div>
                 </div>
 
               <div className="flex items-center gap-3 text-xs">
                 {log.pohonMvp && (
                   <div className="rounded-lg bg-[#241F1B] px-3 py-1.5 border border-[#332C25]">
-                    <span className="text-[10px] text-[#9C948A] block">MVP Pohon</span>
+                    <span className="text-[10px] text-[#9C948A] block">MVP Kiri</span>
                     <span className="font-bold text-[#E8B33D]">{log.pohonMvp}</span>
                   </div>
                 )}
                 {log.lobbyMvp && (
                   <div className="rounded-lg bg-[#241F1B] px-3 py-1.5 border border-[#332C25]">
-                    <span className="text-[10px] text-[#9C948A] block">MVP Lobby</span>
+                    <span className="text-[10px] text-[#9C948A] block">MVP Kanan</span>
                     <span className="font-bold text-[#E8B33D]">{log.lobbyMvp}</span>
                   </div>
                 )}

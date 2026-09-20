@@ -1,4 +1,5 @@
 import { Match, MatchPlayerDetail } from '../types';
+import { teamDisplayName } from './teamLabels';
 
 /**
  * Produces a serviceable "Kelas Semen" style commentary paragraph from the
@@ -18,7 +19,7 @@ export function generateHeuristicMatchAnalysis(match: Match): string {
   const coklat = allPlayers.find((p) => p.medal === 'Coklat');
   const secondMvp = winnerPlayers.find((p) => p.medal === 'Gold');
 
-  let commentary = `${winnerTeam} keluar sebagai pemenang atas ${loserTeam} dalam laga yang sengit. `;
+  let commentary = `${teamDisplayName(winnerTeam)} keluar sebagai pemenang atas ${teamDisplayName(loserTeam)} dalam laga yang sengit. `;
 
   if (mvp) {
     commentary += `${mvp.player_name} tampil gemilang membawa ${mvp.hero_name} dan pantas menyandang gelar MVP pertandingan ini${

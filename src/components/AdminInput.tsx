@@ -178,7 +178,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       if (pohonPlayers.length >= MAX_PLAYERS_PER_TEAM) {
         setNotification({
           type: 'error',
-          message: `Tim Pohon sudah penuh (maksimal ${MAX_PLAYERS_PER_TEAM} pemain)! Hapus salah satu terlebih dahulu jika ingin mengganti.`,
+          message: `Tim Kiri sudah penuh (maksimal ${MAX_PLAYERS_PER_TEAM} pemain)! Hapus salah satu terlebih dahulu jika ingin mengganti.`,
         });
         return;
       }
@@ -189,7 +189,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       if (lobbyPlayers.length >= MAX_PLAYERS_PER_TEAM) {
         setNotification({
           type: 'error',
-          message: `Tim Lobby sudah penuh (maksimal ${MAX_PLAYERS_PER_TEAM} pemain)! Hapus salah satu terlebih dahulu jika ingin mengganti.`,
+          message: `Tim Kanan sudah penuh (maksimal ${MAX_PLAYERS_PER_TEAM} pemain)! Hapus salah satu terlebih dahulu jika ingin mengganti.`,
         });
         return;
       }
@@ -256,7 +256,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
     if (pohonPlayers.length === 0 || lobbyPlayers.length === 0) {
       setNotification({
         type: 'error',
-        message: 'Minimal pilih 1 pemain untuk Tim Pohon dan 1 pemain untuk Tim Lobby!',
+        message: 'Minimal pilih 1 pemain untuk Tim Kiri dan 1 pemain untuk Tim Kanan!',
       });
       return;
     }
@@ -489,7 +489,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     : 'border border-[#332C25] bg-[#161311] text-[#9C948A] hover:text-[#F2EDE4]'
                 }`}
               >
-                🌳 Pohon
+                ⬅️ Kiri
               </button>
               <button
                 type="button"
@@ -500,7 +500,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     : 'border border-[#332C25] bg-[#161311] text-[#9C948A] hover:text-[#F2EDE4]'
                 }`}
               >
-                🛋️ Lobby
+                ➡️ Kanan
               </button>
             </div>
           </div>
@@ -509,13 +509,13 @@ export const AdminInput: React.FC<AdminInputProps> = ({
 
       {/* Roster Assignment Area */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* TIM POHON */}
+        {/* TIM KIRI */}
         <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
             <div className="flex items-center gap-2">
               <span className="flex h-3 w-3 rounded-full bg-[#4F7942]" />
               <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider flex items-center gap-2">
-                <span>Tim Pohon</span>
+                <span>Tim Kiri</span>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                     pohonPlayers.length === MAX_PLAYERS_PER_TEAM
@@ -548,7 +548,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           <div className="space-y-3 min-h-[140px]">
             {pohonPlayers.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#332C25] p-6 text-center text-xs text-[#9C948A]">
-                Belum ada pemain di Tim Pohon. Cari dan pilih pemain di panel pencarian bawah (maksimal {MAX_PLAYERS_PER_TEAM} pemain).
+                Belum ada pemain di Tim Kiri. Cari dan pilih pemain di panel pencarian bawah (maksimal {MAX_PLAYERS_PER_TEAM} pemain).
               </div>
             ) : (
               pohonPlayers.map((name, idx) => {
@@ -625,13 +625,13 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           </div>
         </div>
 
-        {/* TIM LOBBY */}
+        {/* TIM KANAN */}
         <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
             <div className="flex items-center gap-2">
               <span className="flex h-3 w-3 rounded-full bg-[#C97A3D]" />
               <h3 className="font-bold text-sm text-[#F2EDE4] uppercase tracking-wider flex items-center gap-2">
-                <span>Tim Lobby</span>
+                <span>Tim Kanan</span>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                     lobbyPlayers.length === MAX_PLAYERS_PER_TEAM
@@ -664,7 +664,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
           <div className="space-y-3 min-h-[140px]">
             {lobbyPlayers.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#332C25] p-6 text-center text-xs text-[#9C948A]">
-                Belum ada pemain di Tim Lobby. Cari dan pilih pemain di panel pencarian bawah (maksimal {MAX_PLAYERS_PER_TEAM} pemain).
+                Belum ada pemain di Tim Kanan. Cari dan pilih pemain di panel pencarian bawah (maksimal {MAX_PLAYERS_PER_TEAM} pemain).
               </div>
             ) : (
               lobbyPlayers.map((name, idx) => {
@@ -751,7 +751,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
               Pencarian & Penentuan Pemain Tim
             </h3>
             <p className="text-xs text-[#9C948A] mt-0.5">
-              Cari nama pemain untuk memasukkan ke Tim Pohon atau Tim Lobby (Maksimal 5 vs 5)
+              Cari nama pemain untuk memasukkan ke Tim Kiri atau Tim Kanan (Maksimal 5 vs 5)
             </p>
           </div>
 
@@ -764,9 +764,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-400'
                     : 'border-[#332C25] bg-[#241F1B] text-[#72ac60]'
                 }`}
-                title={`Tim Pohon: ${pohonPlayers.length} dari ${MAX_PLAYERS_PER_TEAM} pemain`}
+                title={`Tim Kiri: ${pohonPlayers.length} dari ${MAX_PLAYERS_PER_TEAM} pemain`}
               >
-                🌳 Pohon: {pohonPlayers.length}/{MAX_PLAYERS_PER_TEAM}
+                ⬅️ Kiri: {pohonPlayers.length}/{MAX_PLAYERS_PER_TEAM}
               </span>
               <span
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-bold border ${
@@ -774,9 +774,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                     ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-400'
                     : 'border-[#332C25] bg-[#241F1B] text-[#e29355]'
                 }`}
-                title={`Tim Lobby: ${lobbyPlayers.length} dari ${MAX_PLAYERS_PER_TEAM} pemain`}
+                title={`Tim Kanan: ${lobbyPlayers.length} dari ${MAX_PLAYERS_PER_TEAM} pemain`}
               >
-                🛋️ Lobby: {lobbyPlayers.length}/{MAX_PLAYERS_PER_TEAM}
+                ➡️ Kanan: {lobbyPlayers.length}/{MAX_PLAYERS_PER_TEAM}
               </span>
             </div>
           </div>
@@ -909,7 +909,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                       {isInPohon ? (
                         <div className="flex items-center gap-1">
                           <span className="rounded-lg bg-[#4F7942] text-white px-2 py-1 text-[10px] font-bold">
-                            🌳 Pohon
+                            ⬅️ Kiri
                           </span>
                           <button
                             type="button"
@@ -920,9 +920,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                                 ? 'border-[#332C25] text-[#554F47] cursor-not-allowed'
                                 : 'border-[#C97A3D]/50 text-[#e29355] hover:bg-[#C97A3D] hover:text-white cursor-pointer'
                             }`}
-                            title={isLobbyFull ? 'Tim Lobby penuh (5/5)' : 'Pindah ke Tim Lobby'}
+                            title={isLobbyFull ? 'Tim Kanan penuh (5/5)' : 'Pindah ke Tim Kanan'}
                           >
-                            ⇄ Lobby
+                            ⇄ Kanan
                           </button>
                           <button
                             type="button"
@@ -936,7 +936,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                       ) : isInLobby ? (
                         <div className="flex items-center gap-1">
                           <span className="rounded-lg bg-[#C97A3D] text-white px-2 py-1 text-[10px] font-bold">
-                            🛋️ Lobby
+                            ➡️ Kanan
                           </span>
                           <button
                             type="button"
@@ -947,9 +947,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                                 ? 'border-[#332C25] text-[#554F47] cursor-not-allowed'
                                 : 'border-[#4F7942]/50 text-[#72ac60] hover:bg-[#4F7942] hover:text-white cursor-pointer'
                             }`}
-                            title={isPohonFull ? 'Tim Pohon penuh (5/5)' : 'Pindah ke Tim Pohon'}
+                            title={isPohonFull ? 'Tim Kiri penuh (5/5)' : 'Pindah ke Tim Kiri'}
                           >
-                            ⇄ Pohon
+                            ⇄ Kiri
                           </button>
                           <button
                             type="button"
@@ -971,9 +971,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                                 ? 'bg-[#241F1B] text-[#554F47] border border-[#332C25] cursor-not-allowed'
                                 : 'bg-[#4F7942]/20 text-[#72ac60] hover:bg-[#4F7942] hover:text-white cursor-pointer'
                             }`}
-                            title={isPohonFull ? 'Tim Pohon sudah penuh (maksimal 5 pemain)' : 'Masukkan ke Tim Pohon'}
+                            title={isPohonFull ? 'Tim Kiri sudah penuh (maksimal 5 pemain)' : 'Masukkan ke Tim Kiri'}
                           >
-                            {isPohonFull ? 'Penuh' : '+ Pohon'}
+                            {isPohonFull ? 'Penuh' : '+ Kiri'}
                           </button>
                           <button
                             type="button"
@@ -984,9 +984,9 @@ export const AdminInput: React.FC<AdminInputProps> = ({
                                 ? 'bg-[#241F1B] text-[#554F47] border border-[#332C25] cursor-not-allowed'
                                 : 'bg-[#C97A3D]/20 text-[#e29355] hover:bg-[#C97A3D] hover:text-white cursor-pointer'
                             }`}
-                            title={isLobbyFull ? 'Tim Lobby sudah penuh (maksimal 5 pemain)' : 'Masukkan ke Tim Lobby'}
+                            title={isLobbyFull ? 'Tim Kanan sudah penuh (maksimal 5 pemain)' : 'Masukkan ke Tim Kanan'}
                           >
-                            {isLobbyFull ? 'Penuh' : '+ Lobby'}
+                            {isLobbyFull ? 'Penuh' : '+ Kanan'}
                           </button>
                         </div>
                       )}

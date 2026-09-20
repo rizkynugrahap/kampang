@@ -620,7 +620,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               }`}
             >
               <span className="inline-block h-2 w-2 rounded-full bg-[#4F7942] shrink-0" />
-              <span className="truncate">Tim Pohon</span>
+              <span className="truncate">Tim Kiri</span>
             </button>
 
             <button
@@ -634,7 +634,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               }`}
             >
               <span className="inline-block h-2 w-2 rounded-full bg-[#C97A3D] shrink-0" />
-              <span className="truncate">Tim Lobby</span>
+              <span className="truncate">Tim Kanan</span>
             </button>
           </div>
         </div>
@@ -653,7 +653,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     : 'bg-[#C97A3D]/20 text-[#e08f51] border border-[#C97A3D]/40'
                 }`}
               >
-                Hanya {teamFilter === 'Pohon' ? 'Tim Pohon' : 'Tim Lobby'}
+                Hanya {teamFilter === 'Pohon' ? 'Tim Kiri' : 'Tim Kanan'}
               </span>
             )}
           </div>
