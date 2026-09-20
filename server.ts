@@ -373,7 +373,11 @@ app.put('/api/players/:id', (req, res) => {
 
   store.players[playerIndex] = updatedPlayer;
 
-  // Also sync avatar_url, status, tier, and julukan across all seasons for this player
+  // Sync avatar_url, status, and tier across all seasons for this player.
+  // julukan is intentionally EXCLUDED from this cross-season sync — it is
+  // auto-generated per season from that season's own match results (see
+  // applyMatchToSeason) and must never be copied from one season to
+  // another, or the "julukan" would stop being season-specific.
   if (store.lagaAmalSeasons && store.lagaAmalSeasons.length > 0) {
     store.lagaAmalSeasons.forEach((season) => {
       const sp = season.players.find(
@@ -383,8 +387,6 @@ app.put('/api/players/:id', (req, res) => {
         if (avatar_url !== undefined) sp.avatar_url = avatar_url;
         if (status !== undefined) sp.status = status;
         if (tier !== undefined) sp.tier = tier;
-        if (julukan !== undefined) sp.julukan = julukan;
-        if (julukan_updated_at !== undefined) sp.julukan_updated_at = julukan_updated_at;
       }
     });
   }
@@ -500,6 +502,18 @@ app.post('/api/players/:id/generate-title', async (req, res) => {
     };
 
     store.players[playerIndex] = updatedPlayer;
+
+    // Persist into the active season's own player stat too — julukan lives
+    // per-season, so a manual regenerate must land there, not just on the
+    // global player record.
+    if (activeSeason) {
+      const sp = activeSeason.players.find((p) => p.nickname.toLowerCase() === player.name.toLowerCase());
+      if (sp) {
+        sp.julukan = generatedJulukan;
+        sp.julukan_updated_at = nowIso;
+      }
+    }
+
     saveStore(store);
 
     res.json({

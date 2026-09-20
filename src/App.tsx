@@ -171,8 +171,10 @@ export default function App() {
         ...base,
         tier: override.tier ?? base.tier,
         status: override.status ?? base.status,
-        julukan: override.julukan ?? base.julukan,
-        julukan_updated_at: override.julukan_updated_at ?? base.julukan_updated_at,
+        // julukan is intentionally NOT carried over from a cross-season/global
+        // override here — it must always come from the active season's own
+        // data (base), since it's auto-generated per season from that
+        // season's own match results and should never leak between seasons.
         avatar_url: override.avatar_url ?? base.avatar_url,
       };
     });
@@ -444,12 +446,14 @@ export default function App() {
                 if (override) {
                   const newStatus = override.status ?? sp.status;
                   const newTier = override.tier ?? sp.tier;
-                  const newJulukan = override.julukan ?? sp.julukan;
                   const newAvatar = override.avatar_url ?? sp.avatar_url;
+                  // julukan is deliberately excluded here — it must stay
+                  // whatever this specific season already computed for
+                  // itself, never overwritten by another device/season's
+                  // global player record.
                   if (
                     sp.status !== newStatus ||
                     sp.tier !== newTier ||
-                    sp.julukan !== newJulukan ||
                     sp.avatar_url !== newAvatar
                   ) {
                     changed = true;
@@ -457,7 +461,6 @@ export default function App() {
                       ...sp,
                       status: newStatus,
                       tier: newTier,
-                      julukan: newJulukan,
                       avatar_url: newAvatar,
                     };
                   }
@@ -1048,8 +1051,9 @@ export default function App() {
                   ...(updates.status !== undefined && { status: updates.status }),
                   ...(updates.tier !== undefined && { tier: updates.tier }),
                   ...(updates.avatar_url !== undefined && { avatar_url: updates.avatar_url }),
-                  ...(updates.julukan !== undefined && { julukan: updates.julukan }),
-                  ...(updates.julukan_updated_at !== undefined && { julukan_updated_at: updates.julukan_updated_at }),
+                  // julukan is NOT applied across every season here — see the
+                  // active-season-only update further below, which is the
+                  // only season a manual julukan edit should ever touch.
                 }
               : p
           ),
@@ -1236,6 +1240,18 @@ export default function App() {
             )
           );
 
+          // Persist into the ACTIVE SEASON only — julukan is season-specific,
+          // so a manual regenerate must never be stamped onto other seasons.
+          const seasonWithNewJulukan = {
+            ...activeSeason,
+            players: activeSeason.players.map((p) =>
+              p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
+                ? { ...p, julukan: data.julukan, julukan_updated_at: nowIso }
+                : p
+            ),
+          };
+          await handleUpdateSeason(seasonWithNewJulukan);
+
           // Sync to Supabase
           await syncPlayerToSupabase(updatedPlayer);
 
@@ -1260,6 +1276,18 @@ export default function App() {
             : p
         )
       );
+
+      // Persist into the active season only (see note above — julukan is
+      // per-season, never cross-season).
+      const seasonWithFallbackJulukan = {
+        ...activeSeason,
+        players: activeSeason.players.map((p) =>
+          p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
+            ? { ...p, julukan: fallbackJulukan, julukan_updated_at: nowIso }
+            : p
+        ),
+      };
+      await handleUpdateSeason(seasonWithFallbackJulukan);
 
       try {
         await syncPlayerToSupabase(updatedPlayer);
