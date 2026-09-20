@@ -1013,12 +1013,26 @@ export default function App() {
         console.warn('Could not reach backend player update, local cache preserved:', err);
       }
 
-      // 6. Persist to Supabase
+      // 6. Persist to Supabase — this is the shared source of truth other
+      // devices/sessions read from. Steps 2-4 above already updated this
+      // device's local state + localStorage optimistically, so if this
+      // step silently fails, this device would keep showing the new photo
+      // (masking the failure) while everyone else never receives it —
+      // exactly the "photo doesn't match across views" symptom. Surface it
+      // instead of swallowing it.
       if (targetPlayer) {
-        await syncPlayerToSupabase({
-          ...targetPlayer,
-          avatar_url: cleanUrl,
-        });
+        try {
+          await syncPlayerToSupabase({
+            ...targetPlayer,
+            avatar_url: cleanUrl,
+          });
+        } catch (syncErr: any) {
+          console.error('Error syncing avatar to Supabase:', syncErr);
+          showSyncNotice(
+            `Foto profil ${pName} tersimpan di perangkat ini, tapi gagal disinkronkan ke server: ${syncErr?.message || 'Koneksi terputus'}. Perangkat/pengguna lain mungkin belum melihat foto baru ini.`
+          );
+          return false;
+        }
       }
 
       return true;

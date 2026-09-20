@@ -33,6 +33,7 @@ import { HeroAvatar } from './HeroAvatar';
 import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
 import { UpdateAvatarModal } from './UpdateAvatarModal';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { getPlayerAvatarUrl } from '../data/playerAvatars';
 
 interface PlayerProfileProps {
   players: Player[];
@@ -762,7 +763,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
         <ImagePreviewModal
           isOpen={isImagePreviewOpen}
           onClose={() => setIsImagePreviewOpen(false)}
-          imageUrl={player.avatar_url || ''}
+          imageUrl={getPlayerAvatarUrl(player.name, player.avatar_url)}
           playerName={player.name}
           tier={player.tier}
           status={player.status}
