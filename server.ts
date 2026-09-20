@@ -9,6 +9,7 @@ import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
 import { generateHeuristicMatchAnalysis } from './src/utils/matchAnalysis.ts';
 import { generateHeuristicPlayerJulukan } from './src/utils/julukan.ts';
 import { teamDisplayName } from './src/utils/teamLabels.ts';
+import { generateTextViaPuter } from './src/utils/puterFallback.ts';
 
 const app = express();
 const PORT = 3000;
@@ -90,6 +91,15 @@ if (!process.env.GEMINI_API_KEY) {
   );
 }
 
+if (!process.env.PUTER_AUTH_TOKEN) {
+  console.warn(
+    '[Puter.js] PUTER_AUTH_TOKEN tidak ditemukan di environment — kalau kuota Gemini habis, ' +
+    'sistem akan langsung memakai komentar/julukan cadangan (heuristik), tanpa AI kedua sebagai ' +
+    'penyelamat. Ambil token gratis di puter.com/dashboard#account ("Create token") lalu set ' +
+    'sebagai secret PUTER_AUTH_TOKEN agar AI cadangan ini aktif.'
+  );
+}
+
 // Generate match commentary using Gemini
 async function generateMatchAnalysis(match: Match): Promise<string> {
   const winnerTeam = match.winner;
@@ -153,7 +163,17 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
     }
   }
 
-  // Fallback heuristic commentary if API key is not present or call fails
+  // Gemini unavailable or its quota just got hit — try Puter.js as a second
+  // AI provider before giving up on real AI text entirely. Returns null
+  // (never throws) if Puter isn't configured or also fails.
+  const puterText = await generateTextViaPuter(promptText, systemInstruction);
+  if (puterText) {
+    console.info('[Puter.js] Match analysis generated via Puter.js fallback.');
+    return puterText;
+  }
+
+  // Last resort: static heuristic commentary if neither AI provider is
+  // available/configured or both calls failed.
   return generateHeuristicMatchAnalysis(match);
 }
 
@@ -228,6 +248,16 @@ Panduan julukan:
         }
       }
     }
+  }
+
+  // Gemini unavailable or quota reached — try Puter.js as a second AI
+  // provider before falling back to the static heuristic title.
+  const puterTitle = await generateTextViaPuter(promptText);
+  if (puterTitle) {
+    let cleanTitle = puterTitle.replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
+    if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
+    console.info('[Puter.js] Julukan generated via Puter.js fallback.');
+    return cleanTitle;
   }
 
   return generateHeuristicPlayerJulukan(player, seasonStat);
