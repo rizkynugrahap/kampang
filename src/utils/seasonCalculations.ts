@@ -132,6 +132,35 @@ export function deriveHeroPicksForUI(heroPicksByUser: LagaAmalHeroPick[] = []): 
 }
 
 /**
+ * Derives the "Hero Pool" shape (one entry per hero actually picked this
+ * season, with its real pick count and share of total picks) from the same
+ * raw per-player-per-hero tally (heroPicksByUser) that the "Hero Picks" tab
+ * uses. This is the single source of truth for the Hero Pool tab — call it
+ * any time heroPicksByUser changes so the two tabs can never disagree, and
+ * so a hero nobody has ever picked can never show up with a leftover/ghost
+ * entry (e.g. "0x Pick (5%)").
+ */
+export function deriveHeroPoolFromPicks(heroPicksByUser: LagaAmalHeroPick[] = []): any[] {
+  const totals = new Map<string, number>();
+  heroPicksByUser.forEach((hp) => {
+    if (!hp.hero || !hp.total) return;
+    totals.set(hp.hero, (totals.get(hp.hero) || 0) + hp.total);
+  });
+
+  const grandTotal = Array.from(totals.values()).reduce((sum, n) => sum + n, 0);
+
+  return Array.from(totals.entries())
+    .map(([hero, count]) => ({
+      hero,
+      heroName: hero,
+      picked: count,
+      timesPicked: count,
+      percentage: grandTotal > 0 ? Math.round((count / grandTotal) * 100) : 0,
+    }))
+    .sort((a, b) => b.picked - a.picked);
+}
+
+/**
  * Recalculates season summary stats (tops, totals, averages)
  */
 export function recalculateSeasonStats(season: LagaAmalSeasonData): LagaAmalSeasonData {
@@ -181,6 +210,12 @@ export function recalculateSeasonStats(season: LagaAmalSeasonData): LagaAmalSeas
   if (updated.heroPicksByUser && updated.heroPicksByUser.length > 0) {
     updated.heroPicks = deriveHeroPicksForUI(updated.heroPicksByUser);
   }
+
+  // Always rebuild heroPool from heroPicksByUser (not incrementally patch
+  // it) so it self-heals: any never-picked hero left over from old/stale
+  // data is dropped, and percentages always reflect real totals instead of
+  // a hardcoded placeholder.
+  updated.heroPool = deriveHeroPoolFromPicks(updated.heroPicksByUser);
 
   return updated;
 }
@@ -305,18 +340,10 @@ export function applyMatchToSeason(season: LagaAmalSeasonData, match: Match): La
       else if (mp.medal === 'MVP') heroPick.mvp += 1;
     }
 
-    // Update Hero Pool
-    let poolItem = (updated.heroPool || []).find(
-      (item: any) => (item.heroName || item.hero || '').toLowerCase() === mp.hero_name.toLowerCase()
-    );
-    if (!poolItem) {
-      poolItem = { hero: mp.hero_name, heroName: mp.hero_name, picked: 1, timesPicked: 1, percentage: 5 };
-      if (!updated.heroPool) updated.heroPool = [];
-      updated.heroPool.push(poolItem);
-    } else {
-      poolItem.picked = (poolItem.picked || 0) + 1;
-      poolItem.timesPicked = (poolItem.timesPicked || 0) + 1;
-    }
+    // Hero Pool is no longer patched incrementally here — it's rebuilt
+    // from heroPicksByUser (just updated above) inside recalculateSeasonStats
+    // below, which is the single source of truth shared with the Hero
+    // Picks tab and self-heals any stale/ghost entries.
 
     // Append to matchRows
     if (!updated.matchRows) updated.matchRows = [];
@@ -343,11 +370,6 @@ export function applyMatchToSeason(season: LagaAmalSeasonData, match: Match): La
       count: 1,
     });
   });
-
-  // Re-sort hero pool
-  if (updated.heroPool) {
-    updated.heroPool.sort((a: any, b: any) => (b.picked || b.timesPicked || 0) - (a.picked || a.timesPicked || 0));
-  }
 
   if (!updated.matchLogs) updated.matchLogs = [];
   const pohonMvpEntry = (match.pohon || []).find((mp) => mp.medal === 'MVP');

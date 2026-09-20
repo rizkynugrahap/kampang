@@ -510,16 +510,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return medalPieData.reduce((a, b) => a + b.value, 0);
   }, [medalPieData]);
 
-  // Best Play (Top MVP) & Bad Play (Top Coklat)
+  // Best Play (Top MVP) & Bad Play (Top Coklat) — only ever pick from
+  // players who have actually played at least 1 match this season.
+  // Previously this sorted the full roster including players with 0
+  // matches; a never-played player has coklat=0 and winRate=0, which tied
+  // for "lowest win rate" against everyone else with 0 coklat and could
+  // win the Bad Play tiebreak despite never having played a single game.
+  const playersWithMatches = useMemo(
+    () => computedStats.filter((p) => p.matches > 0),
+    [computedStats]
+  );
+
   const bestPlayer = useMemo(() => {
-    if (computedStats.length === 0) return null;
-    return [...computedStats].sort((a, b) => b.mvp - a.mvp || b.score - a.score)[0];
-  }, [computedStats]);
+    if (playersWithMatches.length === 0) return null;
+    return [...playersWithMatches].sort((a, b) => b.mvp - a.mvp || b.score - a.score)[0];
+  }, [playersWithMatches]);
 
   const badPlayer = useMemo(() => {
-    if (computedStats.length === 0) return null;
-    return [...computedStats].sort((a, b) => b.coklat - a.coklat || a.winRate - b.winRate)[0];
-  }, [computedStats]);
+    if (playersWithMatches.length === 0) return null;
+    return [...playersWithMatches].sort((a, b) => b.coklat - a.coklat || a.winRate - b.winRate)[0];
+  }, [playersWithMatches]);
 
   return (
     <div id="dashboard-view-container" className="space-y-6">
