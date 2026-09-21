@@ -64,11 +64,38 @@ function getStoredAvatars(): Record<string, string> {
  */
 export function registerKnownPlayerAvatars(players: Array<{ name?: string; nickname?: string; avatar_url?: string }>): void {
   if (!players || !Array.isArray(players)) return;
+  const stored = getStoredAvatars();
+  let hasChanges = false;
+
   for (const p of players) {
-    const pName = (p.name || p.nickname || '').trim().toLowerCase();
+    const pName = (p.name || p.nickname || '').trim();
     if (pName && p.avatar_url && p.avatar_url.trim()) {
       const normalized = normalizeImageUrl(p.avatar_url);
-      memoryAvatarMap.set(pName, normalized);
+      const cleanKey = pName.toLowerCase();
+
+      // If stored avatar is already an uploaded image/custom, don't overwrite with default dicebear
+      const storedVal = stored[cleanKey] || stored[pName];
+      if (storedVal && normalized.includes('api.dicebear.com') && !storedVal.includes('api.dicebear.com')) {
+        memoryAvatarMap.set(cleanKey, storedVal);
+        continue;
+      }
+
+      memoryAvatarMap.set(cleanKey, normalized);
+
+      // If it's a real uploaded/custom avatar, ensure it is persisted in local storage
+      if (!normalized.includes('api.dicebear.com') && stored[cleanKey] !== normalized) {
+        stored[cleanKey] = normalized;
+        stored[pName] = normalized;
+        hasChanges = true;
+      }
+    }
+  }
+
+  if (hasChanges && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, JSON.stringify(stored));
+    } catch (e) {
+      // ignore
     }
   }
 }
@@ -116,38 +143,42 @@ export function saveCustomPlayerAvatar(playerName: string, url: string): void {
  * 5. Returns deterministic consistent DiceBear seed avatar
  */
 export function getPlayerAvatarUrl(name?: string, explicitUrl?: string): string {
+  const cleanName = (name || '').trim();
+  const key = cleanName.toLowerCase();
+  const stored = getStoredAvatars();
+  const storedCustom = cleanName ? (stored[key] || stored[cleanName]) : '';
+
   // 1. Explicit valid avatar URL provided
   if (explicitUrl && typeof explicitUrl === 'string' && explicitUrl.trim()) {
     const normalized = normalizeImageUrl(explicitUrl);
-    if (name) {
-      memoryAvatarMap.set(name.trim().toLowerCase(), normalized);
+    // If the explicitUrl is a default dicebear URL, but the user has an actual custom avatar stored, prefer stored
+    if (storedCustom && normalized.includes('api.dicebear.com') && !storedCustom.includes('api.dicebear.com')) {
+      const customNorm = normalizeImageUrl(storedCustom);
+      if (cleanName) memoryAvatarMap.set(key, customNorm);
+      return customNorm;
+    }
+
+    if (cleanName) {
+      memoryAvatarMap.set(key, normalized);
     }
     return normalized;
   }
 
-  if (!name || !name.trim()) {
+  if (!cleanName) {
     return 'https://api.dicebear.com/7.x/adventurer/svg?seed=PantosPlayer&backgroundColor=241f1b';
   }
 
-  const key = name.trim().toLowerCase();
+  // 2. Stored avatars in localStorage (uploaded photo or chosen preset)
+  if (storedCustom) {
+    const val = normalizeImageUrl(storedCustom);
+    memoryAvatarMap.set(key, val);
+    return val;
+  }
 
-  // 2. Memory cache lookup
+  // 3. Memory cache lookup
   if (memoryAvatarMap.has(key)) {
     const cached = memoryAvatarMap.get(key);
     if (cached) return cached;
-  }
-
-  // 3. Stored avatars in localStorage
-  const stored = getStoredAvatars();
-  if (stored[key]) {
-    const val = normalizeImageUrl(stored[key]);
-    memoryAvatarMap.set(key, val);
-    return val;
-  }
-  if (stored[name.trim()]) {
-    const val = normalizeImageUrl(stored[name.trim()]);
-    memoryAvatarMap.set(key, val);
-    return val;
   }
 
   // 4. Cached players in localStorage (pantos_players_cache or pantos_seasons_cache)

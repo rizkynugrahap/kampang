@@ -28,6 +28,7 @@ import {
 import { Player, Match, ChatMessage, ChatReaction, PlayerAuthSession } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
+import { SearchablePlayerSelect } from './SearchablePlayerSelect';
 import {
   subscribeToChatMessages,
   sendChatMessage,
@@ -502,9 +503,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
             <button
               id="btn-login-player-header"
               onClick={() => {
-                if (players.length > 0 && !selectedPlayerName) {
-                  setSelectedPlayerName(players[0].name);
-                }
                 setIsLoginModalOpen(true);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-md transition-all active:scale-95 cursor-pointer"
@@ -830,9 +828,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
             <button
               id="btn-login-overlay"
               onClick={() => {
-                if (players.length > 0 && !selectedPlayerName) {
-                  setSelectedPlayerName(players[0].name);
-                }
                 setIsLoginModalOpen(true);
               }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-lg shadow-[#E8B33D]/15 transition-all active:scale-95 cursor-pointer"
@@ -933,9 +928,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
             <button
               id="btn-login-to-chat"
               onClick={() => {
-                if (players.length > 0 && !selectedPlayerName) {
-                  setSelectedPlayerName(players[0].name);
-                }
                 setIsLoginModalOpen(true);
               }}
               className="px-4 py-2 rounded-xl text-xs font-black bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
@@ -952,9 +944,9 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
           id="chat-login-modal"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4"
         >
-          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] shadow-2xl overflow-visible animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#332C25] px-6 py-4 bg-[#241F1B]/60">
+            <div className="flex items-center justify-between border-b border-[#332C25] px-6 py-4 bg-[#241F1B]/60 rounded-t-2xl">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E8B33D]/20 text-[#E8B33D] border border-[#E8B33D]/30">
                   <KeyRound size={18} />
@@ -981,30 +973,21 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                 </div>
               )}
 
-              {/* Player Selector */}
+              {/* Player Selector with Search */}
               <div>
                 <label className="block text-xs font-bold text-[#F2EDE4] mb-1.5">
                   Pilih Nama Anda dari Roster
                 </label>
-                <div className="relative">
-                  <select
-                    id="login-player-select"
-                    value={selectedPlayerName}
-                    onChange={(e) => setSelectedPlayerName(e.target.value)}
-                    className="w-full rounded-xl bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none focus:ring-1 focus:ring-[#E8B33D] cursor-pointer appearance-none"
-                  >
-                    <option value="">-- Pilih Pemain --</option>
-                    {players.map((p) => (
-                      <option key={p.id} value={p.name}>
-                        {p.name} ({p.tier})
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#9C948A] pointer-events-none"
-                  />
-                </div>
+                <SearchablePlayerSelect
+                  id="login-player-select"
+                  players={players}
+                  selectedPlayerName={selectedPlayerName}
+                  onSelectPlayer={(name) => {
+                    setSelectedPlayerName(name);
+                    setLoginError(null);
+                  }}
+                  placeholder="-- Cari & Pilih Nama Anda --"
+                />
               </div>
 
               {/* PIN Input */}

@@ -2,9 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 import { PlayerStatus, TeamShort, TeamName } from '../types';
 
-interface PlayerAvatarProps {
-  name: string;
+export interface PlayerAvatarProps {
+  name?: string;
+  nickname?: string;
   avatarUrl?: string;
+  avatar_url?: string;
+  player?: {
+    name?: string;
+    nickname?: string;
+    avatar_url?: string;
+    status?: PlayerStatus;
+    team?: TeamShort | TeamName;
+    tier?: string;
+  } | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   status?: PlayerStatus;
   team?: TeamShort | TeamName;
@@ -24,21 +34,38 @@ const SIZE_MAP = {
 
 export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   name,
+  nickname,
   avatarUrl,
+  avatar_url,
+  player,
   size = 'md',
   status,
   team,
+  tier,
   className = '',
   showStatusDot = false,
 }) => {
+  const effectiveName = (
+    name ||
+    nickname ||
+    player?.name ||
+    (player as any)?.nickname ||
+    ''
+  ).trim();
+
+  const effectiveAvatarUrl = avatarUrl || avatar_url || player?.avatar_url;
+  const effectiveStatus = status || player?.status;
+  const effectiveTeam = team || player?.team;
+  const effectiveTier = tier || player?.tier;
+
   const [hasError, setHasError] = useState(false);
   const [, setRevision] = useState(0);
-  const resolvedUrl = getPlayerAvatarUrl(name, avatarUrl);
+  const resolvedUrl = getPlayerAvatarUrl(effectiveName, effectiveAvatarUrl);
 
-  // Reset error state when avatarUrl or resolvedUrl changes
+  // Reset error state when effectiveName, avatarUrl or resolvedUrl changes
   useEffect(() => {
     setHasError(false);
-  }, [name, avatarUrl, resolvedUrl]);
+  }, [effectiveName, effectiveAvatarUrl, resolvedUrl]);
 
   // Listen to global avatar updates for instant sync across all open tabs/components
   useEffect(() => {
@@ -46,7 +73,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       const customEvent = e as CustomEvent<{ playerName?: string }>;
       if (
         !customEvent.detail?.playerName ||
-        customEvent.detail.playerName.trim().toLowerCase() === (name || '').trim().toLowerCase()
+        customEvent.detail.playerName.trim().toLowerCase() === effectiveName.toLowerCase()
       ) {
         setHasError(false);
         setRevision((r) => r + 1);
@@ -54,13 +81,13 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
     };
     window.addEventListener('pantos-avatar-updated', handleAvatarUpdate);
     return () => window.removeEventListener('pantos-avatar-updated', handleAvatarUpdate);
-  }, [name]);
+  }, [effectiveName]);
 
   const sizeClass = SIZE_MAP[size] || SIZE_MAP.md;
 
   // Determine team ring color
-  const isPohon = team === 'Pohon' || team === 'Tim Pohon';
-  const isLobby = team === 'Lobby' || team === 'Tim Lobby';
+  const isPohon = effectiveTeam === 'Pohon' || effectiveTeam === 'Tim Pohon';
+  const isLobby = effectiveTeam === 'Lobby' || effectiveTeam === 'Tim Lobby';
 
   const ringClass = isPohon
     ? 'border-[#4F7942] ring-1 ring-[#4F7942]/50'
@@ -68,12 +95,13 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
     ? 'border-[#C97A3D] ring-1 ring-[#C97A3D]/50'
     : 'border-[#3D352E]';
 
-  const initials = (name || 'PL')
+  const initials = (effectiveName || 'PL')
     .split(' ')
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .slice(0, 2)
-    .toUpperCase();
+    .toUpperCase() || 'PL';
 
   return (
     <div className={`relative inline-flex shrink-0 items-center justify-center ${className}`}>
@@ -83,7 +111,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
         {!hasError && resolvedUrl ? (
           <img
             src={resolvedUrl}
-            alt={name}
+            alt={effectiveName || 'Player Avatar'}
             referrerPolicy="no-referrer"
             onError={() => setHasError(true)}
             className="h-full w-full object-cover bg-[#1A1614]"
@@ -95,12 +123,12 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       </div>
 
       {/* Status Dot */}
-      {showStatusDot && status && (
+      {showStatusDot && effectiveStatus && (
         <span
           className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-[#161311] ${
-            status === 'Aktif' ? 'bg-[#4F7942]' : 'bg-[#E8B33D]'
+            effectiveStatus === 'Aktif' ? 'bg-[#4F7942]' : 'bg-[#E8B33D]'
           }`}
-          title={`Status: ${status}`}
+          title={`Status: ${effectiveStatus}`}
         />
       )}
     </div>
