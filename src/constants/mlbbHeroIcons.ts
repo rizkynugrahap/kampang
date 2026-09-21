@@ -62,6 +62,7 @@ export const MLBB_OFFICIAL_HERO_ICONS: Record<string, string> = {
   "hayabusa": "https://akmweb.youngjoygame.com/web/madmin/image/3de2f55e701a340a02f1828e79cdb9fa.png?w=150-150-1f1820",
   "helcurt": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_2baf1efb2d414acedf4a89b6fa330ad2.png",
   "hilda": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_fec6f3923209642a74789e42c41a2038.png",
+  "hirara": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/0/02/Hero1331-icon.png",
   "hylos": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_f3ddb1088279d711417234034024223d.png",
   "irithel": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_1a30fb8c6fc6086fc2b3c9795e7305e6.png",
   "ixia": "https://akmweb.youngjoygame.com/web/madmin/image/71151817eb86c12a1114508b5aaded13.jpg?w=128-128-fff3d3",
@@ -72,6 +73,7 @@ export const MLBB_OFFICIAL_HERO_ICONS: Record<string, string> = {
   "kadita": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_c8bec784a42a812db26ea3f34c029fdc.png",
   "kagura": "https://akmweb.youngjoygame.com/web/madmin/image/b7bedaacdacd3de349e538f72fe640c9.png?w=150-150-423c5f",
   "kaja": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_7fe2a243687bb024b5728ea4bbf422fe.png",
+  "kalea": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/5/56/Hero1281-icon.png",
   "karina": "https://akmweb.youngjoygame.com/web/madmin/image/1691dbbde8237768590768a90510d5a6.jpg?w=100-100-f7fcc4",
   "karrie": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_2ae89c203ad1488fa1af6b7e51dae488.png",
   "khaleed": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_ac05d090c11fe4aefa6a7d004493fb65.jpg",
@@ -88,6 +90,7 @@ export const MLBB_OFFICIAL_HERO_ICONS: Record<string, string> = {
   "lunox": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_823bd0fce2a95b8452d52750df8d35f5.png",
   "luoyi": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_c9f30c0ebde489a34b70ba1064c6fb02.jpg",
   "lylia": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_bd89e9f00f56e708f4c9adecf0c57c64.png",
+  "marcel": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/e/ee/Hero1321-icon.png",
   "martis": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_f6b745cc6347b4666c8ae31e5bb8edaa.png",
   "masha": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_9d0de850dd87bd7780be02ec20cad693.png",
   "mathilda": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_74d09f52db9256502ecf2c32211a8102.jpg",
@@ -101,6 +104,7 @@ export const MLBB_OFFICIAL_HERO_ICONS: Record<string, string> = {
   "natan": "https://akmweb.youngjoygame.com/web/madmin/image/d48d72c81c740e59b3a67ed83a74c128.png?w=150-150-6d5846",
   "nolan": "https://akmweb.youngjoygame.com/web/madmin/image/a00c000fd13db499e4bd43766dc56101.png?w=150-150-fffffe",
   "novaria": "https://akmweb.youngjoygame.com/web/madmin/image/233e528d55a4c6083bd914c2768ac50d.png?w=150-150-704da9",
+  "obsidia": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/9/9b/Hero1301-icon.png",
   "odette": "https://akmweb.youngjoygame.com/web/madmin/image/071fd5539ac4ba53b1dc27195cd6d4bd.png?w=150-150-fff8da",
   "paquito": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_f3695c153689c30f8ebfd334931e0525.jpg",
   "pharsa": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_212e59ee7c8490397278ba68c8063a19.png",
@@ -113,6 +117,7 @@ export const MLBB_OFFICIAL_HERO_ICONS: Record<string, string> = {
   "saber": "https://akmweb.youngjoygame.com/web/madmin/image/35a5d68d1704e2c4c6323abd4859a622.jpg?w=100-100-4b3f67",
   "selena": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_0956f8d25d39312d0da5dca2cfca074c.png",
   "silvanna": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_743db67971d02b6a9a8065d9cedade23.png",
+  "sora": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/c/cc/Hero1311-icon.png",
   "sun": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_802a9c5f922e63054fcf11aa7d012482.png",
   "suyou": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/c/c4/Hero1261-icon.png",
   "terizla": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_45c908d0d59990c13d229ab22db05ebb.png",
@@ -133,6 +138,7 @@ export const MLBB_OFFICIAL_HERO_ICONS: Record<string, string> = {
   "zhask": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_ca13970038ce4d7590d2f271b6c6f7f5.png",
   "zhuxin": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/0/05/Hero1251-icon.png",
   "zilong": "https://akmwebstatic.yuanzhanapp.com/web/madmin/image_3bbb2c2b8a78d0d63ecd62d74048fcf4.jpg",
+  "zetian": "https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/5/5c/Hero1291-icon.png",
 };
 
 /**

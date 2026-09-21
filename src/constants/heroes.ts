@@ -128,4 +128,10 @@ export const MLBB_HEROES: Hero[] = [
   { id: 125, name: 'Paquito', role_primary: 'Fighter', avatar_url: 'https://akmwebstatic.yuanzhanapp.com/web/madmin/image_f3695c153689c30f8ebfd334931e0525.jpg' },
   { id: 126, name: 'Gloo', role_primary: 'Tank', avatar_url: 'https://akmweb.youngjoygame.com/web/madmin/image/14a44f871e2d9e0aaf35149e6201fb8a.png?w=150-150-e2ddd3' },
   { id: 127, name: 'Aamon', role_primary: 'Assassin', avatar_url: 'https://akmweb.youngjoygame.com/web/madmin/image/9d9bd7e99dcaad637c0c7b3280a84a31.png?w=150-150-f6fefd' },
+  { id: 128, name: 'Kalea', role_primary: 'Fighter', role_secondary: 'Support', avatar_url: 'https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/5/56/Hero1281-icon.png' },
+  { id: 129, name: 'Zetian', role_primary: 'Mage', avatar_url: 'https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/5/5c/Hero1291-icon.png' },
+  { id: 130, name: 'Obsidia', role_primary: 'Marksman', role_secondary: 'Assassin', avatar_url: 'https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/9/9b/Hero1301-icon.png' },
+  { id: 131, name: 'Sora', role_primary: 'Fighter', role_secondary: 'Assassin', avatar_url: 'https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/c/cc/Hero1311-icon.png' },
+  { id: 132, name: 'Marcel', role_primary: 'Support', role_secondary: 'Mage', avatar_url: 'https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/e/ee/Hero1321-icon.png' },
+  { id: 133, name: 'Hirara', role_primary: 'Assassin', role_secondary: 'Fighter', avatar_url: 'https://images.weserv.nl/?url=static.wikia.nocookie.net/mobile-legends/images/0/02/Hero1331-icon.png' },
 ];
