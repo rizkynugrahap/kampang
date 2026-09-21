@@ -9,7 +9,8 @@ import {
   AlertCircle,
   RefreshCw,
   Search,
-  ArrowRight,
+  ArrowDownAZ,
+  ArrowUpAZ,
   Shield,
   Lock,
   Calendar,
@@ -132,6 +133,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   const [playerSearchQuery, setPlayerSearchQuery] = useState('');
   const [playerStatusFilter, setPlayerStatusFilter] = useState<'Semua' | 'Aktif' | 'Cabutan'>('Semua');
   const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
+  const [playerSortDir, setPlayerSortDir] = useState<'asc' | 'desc'>('asc');
 
   // Player pool currently unassigned
   const pool = useMemo(() => {
@@ -143,7 +145,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
   // Filtered players list for the interactive assignment panel
   const filteredPlayersList = useMemo(() => {
     const term = playerSearchQuery.toLowerCase().trim();
-    return players.filter((p) => {
+    const filtered = players.filter((p) => {
       const isPohon = pohonPlayers.includes(p.name);
       const isLobby = lobbyPlayers.includes(p.name);
       const isAssigned = isPohon || isLobby;
@@ -153,12 +155,22 @@ export const AdminInput: React.FC<AdminInputProps> = ({
       }
 
       const matchName = p.name.toLowerCase().includes(term);
-      const matchStatus =
-        playerStatusFilter === 'Semua' || p.status === playerStatusFilter;
+      const matchStatus = playerStatusFilter === 'Semua' || p.status === playerStatusFilter;
 
       return matchName && matchStatus;
     });
-  }, [players, playerSearchQuery, playerStatusFilter, filterUnassignedOnly, pohonPlayers, lobbyPlayers]);
+
+    const dir = playerSortDir === 'asc' ? 1 : -1;
+    return filtered.sort((a, b) => dir * a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+  }, [
+    players,
+    playerSearchQuery,
+    playerStatusFilter,
+    filterUnassignedOnly,
+    pohonPlayers,
+    lobbyPlayers,
+    playerSortDir,
+  ]);
 
   const getDefaultScore = (medal: Medal): number => {
     switch (medal) {
@@ -861,6 +873,20 @@ export const AdminInput: React.FC<AdminInputProps> = ({
               <Filter size={13} />
               <span className="hidden sm:inline">Belum Masuk Tim</span>
               <span className="sm:hidden">Belum Tim</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlayerSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-bold transition-colors cursor-pointer border border-[#332C25] bg-[#241F1B] text-[#E8B33D] hover:text-[#F2EDE4] hover:border-[#E8B33D]/40"
+              title={
+                playerSortDir === 'asc'
+                  ? 'Urutan A-Z (ascended). Klik untuk Z-A'
+                  : 'Urutan Z-A (descended). Klik untuk A-Z'
+              }
+            >
+              {playerSortDir === 'asc' ? <ArrowUpAZ size={14} /> : <ArrowDownAZ size={14} />}
+              <span>{playerSortDir === 'asc' ? 'A-Z' : 'Z-A'}</span>
             </button>
           </div>
         </div>
