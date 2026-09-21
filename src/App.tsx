@@ -64,7 +64,6 @@ type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'chat' | 'admin' | 
 
 export default function App() {
   const [tab, setTab] = useState<ActiveTab>('dashboard');
-  const [adminSubTab, setAdminSubTab] = useState<'match' | 'players'>('match');
 
   // Multi-season state (primary source of truth from database, kept sorted descending)
   const [seasons, setSeasons] = useState<LagaAmalSeasonData[]>(() => {
@@ -1588,203 +1587,101 @@ export default function App() {
           </div>
         </div>
 
-        {/* Primary Tabs: Only shown on Tablet / Desktop (md+) */}
-        <div className="hidden md:block mx-auto max-w-7xl px-2 sm:px-6">
-          <nav className="flex space-x-1 sm:space-x-2 border-t border-[#332C25]/50 py-1.5 overflow-x-auto no-scrollbar scroll-smooth">
-            <button
-              id="nav-tab-dashboard"
-              onClick={() => setTab('dashboard')}
-              style={
-                tab === 'dashboard'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'dashboard'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <Trophy size={15} className="shrink-0" />
-              <span>Dashboard</span>
-            </button>
-
-            <button
-              id="nav-tab-match-history"
-              onClick={() => setTab('matchHistory')}
-              style={
-                tab === 'matchHistory'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'matchHistory'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <History size={15} className="shrink-0" />
-              <span>Riwayat Pertandingan</span>
-              <span
-                className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
-                style={
-                  tab === 'matchHistory'
-                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
-                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
-                }
-              >
-                {seasonMatches.length}
-              </span>
-            </button>
-
-            <button
-              id="nav-tab-laga-amal"
-              onClick={() => setTab('lagaAmal')}
-              style={
-                tab === 'lagaAmal'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'lagaAmal'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <Flame size={15} className="shrink-0" />
-              <span>Klasemen Laga Amal</span>
-              <span
-                className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
-                style={
-                  tab === 'lagaAmal'
-                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
-                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
-                }
-              >
-                {activeSeason.title.split('-')[1]?.trim() || (activeSeason.id ? activeSeason.id.toUpperCase() : 'Season')}
-              </span>
-            </button>
-
-            <button
-              id="nav-tab-chat"
-              onClick={() => setTab('chat')}
-              style={
-                tab === 'chat'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'chat'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <MessageSquare size={15} className="shrink-0" />
-              <span>Lobby Chat</span>
-              <span
-                className="flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold"
-                style={
-                  tab === 'chat'
-                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
-                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
-                }
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Live
-              </span>
-            </button>
-
-            <button
-              id="nav-tab-profile"
-              onClick={() => setTab('profile')}
-              style={
-                tab === 'profile'
-                  ? {
-                      backgroundColor: themeConfig.activeButtonColor,
-                      color: themeConfig.activeButtonTextColor,
-                    }
-                  : undefined
-              }
-              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                tab === 'profile'
-                  ? 'shadow-md font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              <UserRound size={15} className="shrink-0" />
-              <span>Profil Pemain</span>
-            </button>
-
-            {/* Database Pemain & Input Pertandingan are admin-only — hidden
-                from the nav entirely for anyone not logged in as admin. */}
-            {isAdmin && (
-              <button
-                id="nav-tab-players-crud"
-                onClick={() => setTab('players')}
-                style={
-                  tab === 'players'
-                    ? {
-                        backgroundColor: themeConfig.activeButtonColor,
-                        color: themeConfig.activeButtonTextColor,
-                      }
-                    : undefined
-                }
-                className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                  tab === 'players'
-                    ? 'shadow-md font-black'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-                }`}
-              >
-                <Users size={15} className="shrink-0" />
-                <span>Database Pemain</span>
-                <span
-                  className="rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+        {/* Primary Tabs: compact labels so they fit without clipping */}
+        <div className="hidden md:block mx-auto max-w-7xl px-2 sm:px-4 lg:px-6">
+          <nav className="flex flex-wrap items-center gap-1 border-t border-[#332C25]/50 py-1.5">
+            {(
+              [
+                { id: 'dashboard' as const, label: 'Dashboard', title: 'Dashboard', icon: Trophy, btnId: 'nav-tab-dashboard' },
+                {
+                  id: 'matchHistory' as const,
+                  label: 'Riwayat',
+                  title: 'Riwayat Pertandingan',
+                  icon: History,
+                  btnId: 'nav-tab-match-history',
+                  badge: String(seasonMatches.length),
+                },
+                {
+                  id: 'lagaAmal' as const,
+                  label: 'Klasemen',
+                  title: 'Klasemen Laga Amal',
+                  icon: Flame,
+                  btnId: 'nav-tab-laga-amal',
+                  badge:
+                    activeSeason.title.split('-')[1]?.trim() ||
+                    (activeSeason.id ? activeSeason.id.toUpperCase() : 'S'),
+                },
+                {
+                  id: 'chat' as const,
+                  label: 'Chat',
+                  title: 'Lobby Chat',
+                  icon: MessageSquare,
+                  btnId: 'nav-tab-chat',
+                  live: true,
+                },
+                { id: 'profile' as const, label: 'Profil', title: 'Profil Pemain', icon: UserRound, btnId: 'nav-tab-profile' },
+                ...(isAdmin
+                  ? [
+                      {
+                        id: 'players' as const,
+                        label: 'Pemain',
+                        title: 'Database Pemain',
+                        icon: Users,
+                        btnId: 'nav-tab-players-crud',
+                        badge: String(players.length),
+                      },
+                      {
+                        id: 'admin' as const,
+                        label: 'Input',
+                        title: 'Input Pertandingan',
+                        icon: ClipboardList,
+                        btnId: 'nav-tab-admin',
+                        live: true,
+                      },
+                    ]
+                  : []),
+              ]
+            ).map((item) => {
+              const Icon = item.icon;
+              const isActive = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  id={item.btnId}
+                  title={item.title}
+                  onClick={() => setTab(item.id)}
                   style={
-                    tab === 'players'
-                      ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
-                      : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                    isActive
+                      ? {
+                          backgroundColor: themeConfig.activeButtonColor,
+                          color: themeConfig.activeButtonTextColor,
+                        }
+                      : undefined
                   }
+                  className={`flex items-center gap-1.5 shrink-0 rounded-lg px-2.5 lg:px-3 py-1.5 text-[11px] lg:text-xs font-bold transition-all cursor-pointer min-h-[36px] active:scale-95 ${
+                    isActive ? 'shadow-md font-black' : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                  }`}
                 >
-                  {players.length}
-                </span>
-              </button>
-            )}
-
-            {isAdmin && (
-              <button
-                id="nav-tab-admin"
-                onClick={() => setTab('admin')}
-                style={
-                  tab === 'admin'
-                    ? {
-                        backgroundColor: themeConfig.activeButtonColor,
-                        color: themeConfig.activeButtonTextColor,
+                  <Icon size={14} className="shrink-0" />
+                  <span>{item.label}</span>
+                  {'badge' in item && item.badge ? (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none"
+                      style={
+                        isActive
+                          ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
+                          : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
                       }
-                    : undefined
-                }
-                className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
-                  tab === 'admin'
-                    ? 'shadow-md font-black'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-                }`}
-              >
-                <ClipboardList size={15} className="shrink-0" />
-                <span>Input Pertandingan</span>
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              </button>
-            )}
+                    >
+                      {item.badge}
+                    </span>
+                  ) : null}
+                  {'live' in item && item.live ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  ) : null}
+                </button>
+              );
+            })}
           </nav>
         </div>
       </header>
@@ -1845,6 +1742,9 @@ export default function App() {
             matches={seasonMatches}
             onSelectMatch={(m) => setSelectedMatch(m)}
             onDeleteMatch={handleDeleteMatch}
+            onEditMatch={handleEditMatch}
+            heroes={heroes}
+            players={players}
             isAdmin={isAdmin}
           />
         )}
@@ -1891,15 +1791,13 @@ export default function App() {
           />
         )}
 
-        {/* TAB 4: INPUT MATCH (ADMIN) & DATABASE PEMAIN SUB-TAB — admin-only,
-            never rendered for a non-admin session even if tab state ends up
-            here (e.g. a logout race, or a deep link). */}
+        {/* TAB 4: INPUT MATCH — admin-only */}
         {tab === 'admin' && !isAdmin && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#332C25] bg-[#1D1916] p-10 text-center">
             <Lock size={28} className="text-[#E8B33D]" />
             <h2 className="text-sm font-bold text-[#F2EDE4]">Halaman Khusus Admin</h2>
             <p className="max-w-xs text-xs text-[#9C948A]">
-              Input pertandingan dan database pemain hanya bisa dilihat oleh admin. Masuk sebagai admin untuk mengaksesnya.
+              Input pertandingan hanya bisa dilihat oleh admin. Masuk sebagai admin untuk mengaksesnya.
             </p>
             <button
               onClick={() => setIsLoginModalOpen(true)}
@@ -1911,81 +1809,27 @@ export default function App() {
           </div>
         )}
         {tab === 'admin' && isAdmin && (
-          <div className="space-y-4">
-            {/* Admin Sub-navigation Pill Bar */}
-            <div className="flex items-center gap-2 rounded-2xl border border-[#332C25] bg-[#191513] p-1.5 max-w-md">
-              <button
-                type="button"
-                onClick={() => setAdminSubTab('match')}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition-all cursor-pointer ${
-                  adminSubTab === 'match'
-                    ? 'bg-[#E8B33D] text-[#161311] shadow'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-                }`}
-              >
-                <ClipboardList size={15} />
-                <span>Input Pertandingan</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAdminSubTab('players')}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition-all cursor-pointer ${
-                  adminSubTab === 'players'
-                    ? 'bg-[#E8B33D] text-[#161311] shadow'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-                }`}
-              >
-                <Users size={15} />
-                <span>Database Pemain (CRUD)</span>
-                <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                    adminSubTab === 'players'
-                      ? 'bg-[#161311]/20 text-[#161311]'
-                      : 'bg-[#E8B33D]/20 text-[#E8B33D]'
-                  }`}
-                >
-                  {players.length}
-                </span>
-              </button>
-            </div>
-
-            {adminSubTab === 'match' ? (
-              <AdminInput
-                players={players}
-                heroes={heroes}
-                matches={matches}
-                seasons={seasons}
-                activeSeasonId={activeSeasonId || selectedSeasonId}
-                isAdmin={isAdmin}
-                prefilledDraft={draftForAdmin}
-                onOpenLogin={() => setIsLoginModalOpen(true)}
-                onSaveMatch={handleSaveMatch}
-                onAddPlayer={handleAddPlayer}
-              />
-            ) : (
-              <PlayerCrudManager
-                players={players}
-                activeSeason={activeSeason}
-                isAdmin={isAdmin}
-                onAddPlayer={handleAddPlayer}
-                onUpdatePlayer={handleUpdatePlayerDetails}
-                onDeletePlayer={handleDeletePlayer}
-                onGenerateJulukan={handleGeneratePlayerJulukan}
-                onOpenLogin={() => setIsLoginModalOpen(true)}
-                onSelectPlayer={(playerId) => handleViewPlayerProfile(playerId)}
-              />
-            )}
-          </div>
+          <AdminInput
+            players={players}
+            heroes={heroes}
+            matches={matches}
+            seasons={seasons}
+            activeSeasonId={activeSeasonId || selectedSeasonId}
+            isAdmin={isAdmin}
+            prefilledDraft={draftForAdmin}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
+            onSaveMatch={handleSaveMatch}
+            onAddPlayer={handleAddPlayer}
+          />
         )}
 
-        {/* TAB 5: DEDICATED DATABASE PEMAIN (CRUD) — admin-only */}
+        {/* TAB 5: DATABASE PEMAIN (CRUD) — admin-only, satu-satunya pintu CRUD */}
         {tab === 'players' && !isAdmin && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#332C25] bg-[#1D1916] p-10 text-center">
             <Lock size={28} className="text-[#E8B33D]" />
             <h2 className="text-sm font-bold text-[#F2EDE4]">Halaman Khusus Admin</h2>
             <p className="max-w-xs text-xs text-[#9C948A]">
-              Input pertandingan dan database pemain hanya bisa dilihat oleh admin. Masuk sebagai admin untuk mengaksesnya.
+              Database pemain hanya bisa dilihat oleh admin. Masuk sebagai admin untuk mengaksesnya.
             </p>
             <button
               onClick={() => setIsLoginModalOpen(true)}
@@ -2036,7 +1880,7 @@ export default function App() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#332C25] bg-[#191513]/95 backdrop-blur-xl px-2 pt-1.5 shadow-[0_-10px_25px_rgba(0,0,0,0.6)]"
         style={{ paddingBottom: 'max(0.4rem, env(safe-area-inset-bottom))' }}
       >
-        <div className={`grid ${isAdmin ? 'grid-cols-6' : 'grid-cols-5'} gap-1 max-w-lg mx-auto`}>
+        <div className={`grid ${isAdmin ? 'grid-cols-7' : 'grid-cols-5'} gap-0.5 max-w-lg mx-auto`}>
           {/* 1. Dashboard */}
           <button
             id="mobile-btn-dashboard"
@@ -2184,7 +2028,35 @@ export default function App() {
             </span>
           </button>
 
-          {/* 5. Input — admin-only, hidden entirely for non-admins */}
+          {isAdmin && (
+            <button
+              id="mobile-btn-players"
+              type="button"
+              onClick={() => {
+                setTab('players');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+              style={tab === 'players' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
+            >
+              <div
+                className="flex items-center justify-center h-7 w-12 rounded-full transition-all"
+                style={tab === 'players' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
+              >
+                <Users
+                  size={18}
+                  style={tab === 'players' ? { color: themeConfig.activeButtonColor } : undefined}
+                />
+              </div>
+              <span
+                className={`text-[10px] tracking-tight mt-0.5 ${tab === 'players' ? 'font-black' : 'font-medium'}`}
+              >
+                Pemain
+              </span>
+            </button>
+          )}
+
+          {/* Input — admin-only */}
           {isAdmin && (
             <button
               id="mobile-btn-admin"
