@@ -189,3 +189,46 @@ export interface LagaAmalSeasonData {
   matchRows?: LagaAmalMatchRow[];
   matchLogs?: LagaAmalMatchLog[];
 }
+
+export interface ChatReaction {
+  emoji: string;
+  count: number;
+  users: string[]; // names of players who reacted
+}
+
+export interface ChatMessage {
+  id: string;
+  senderName: string;
+  senderAvatar?: string;
+  senderTier?: string;
+  senderJulukan?: string;
+  content: string;
+  createdAt: string; // ISO string
+  timestamp: number;
+  isSystem?: boolean;
+  systemType?: 'match_result' | 'announcement' | 'player_joined';
+  matchData?: {
+    matchId: string | number;
+    seasonName?: string;
+    winner: string;
+    scorePohon?: number;
+    scoreLobby?: number;
+    mvpPlayer?: string;
+    mvpHero?: string;
+  };
+  mentions?: string[];
+  reactions?: Record<string, ChatReaction>;
+  isPinned?: boolean;
+  pinnedAt?: string;
+  pinnedBy?: string;
+}
+
+export interface PlayerAuthSession {
+  playerId: string | number;
+  playerName: string;
+  avatar_url?: string;
+  tier?: string;
+  julukan?: string;
+  isLoggedIn: boolean;
+}
+

@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   History,
   Users,
+  MessageSquare,
 } from 'lucide-react';
 import { Player, Match, Hero, LagaAmalSeasonData } from './types';
 import { ScoreBanner } from './components/ScoreBanner';
@@ -25,6 +26,8 @@ import { PlayerCrudManager } from './components/PlayerCrudManager';
 import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { SupabaseStatusBadge } from './components/SupabaseStatusBadge';
+import { CommunityChat } from './components/CommunityChat';
+import { sendMatchResultSystemMessage } from './services/chatService';
 import {
   BackgroundSettingsModal,
   DEFAULT_GIT_BACKGROUND_URL,
@@ -51,13 +54,13 @@ import {
 } from './services/supabaseSync';
 import { MLBB_HEROES } from './data/heroes';
 import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason, EMPTY_SEASON, sortSeasonsDescending } from './utils/seasonCalculations';
-import { saveCustomPlayerAvatar, normalizeImageUrl } from './data/playerAvatars';
+import { saveCustomPlayerAvatar, normalizeImageUrl, registerKnownPlayerAvatars } from './data/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
 import { sanitizeMatches } from './utils/matchSequence';
 
-type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'admin' | 'profile' | 'players';
+type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'chat' | 'admin' | 'profile' | 'players';
 
 export default function App() {
   const [tab, setTab] = useState<ActiveTab>('dashboard');
@@ -220,6 +223,20 @@ export default function App() {
   // Modals & active selections
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+
+  // Sync all known player avatars across the app so any PlayerAvatar displays the real profile photo
+  useEffect(() => {
+    if (players && players.length > 0) {
+      registerKnownPlayerAvatars(players);
+    }
+    seasons.forEach((s) => {
+      if (s.players && Array.isArray(s.players)) {
+        registerKnownPlayerAvatars(
+          s.players.map((p) => ({ name: p.nickname, avatar_url: p.avatar_url }))
+        );
+      }
+    });
+  }, [players, seasons]);
   const [profilePlayerId, setProfilePlayerId] = useState<number | string>(1);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     return Boolean(localStorage.getItem('pantos_admin_token'));
@@ -678,6 +695,13 @@ export default function App() {
       showSyncNotice(
         `Pertandingan tersimpan lokal, namun gagal disinkronkan ke Supabase: ${syncErr?.message || 'Koneksi terputus'}.`
       );
+    }
+
+    // Automatically broadcast match result announcement to Community Lobby Chat
+    try {
+      await sendMatchResultSystemMessage(savedMatch, activeSeason?.title);
+    } catch (chatErr) {
+      console.warn('Could not post automated match result to chat:', chatErr);
     }
 
     return true;
@@ -1651,6 +1675,38 @@ export default function App() {
             </button>
 
             <button
+              id="nav-tab-chat"
+              onClick={() => setTab('chat')}
+              style={
+                tab === 'chat'
+                  ? {
+                      backgroundColor: themeConfig.activeButtonColor,
+                      color: themeConfig.activeButtonTextColor,
+                    }
+                  : undefined
+              }
+              className={`flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-bold transition-all cursor-pointer min-h-[40px] sm:min-h-[42px] active:scale-95 ${
+                tab === 'chat'
+                  ? 'shadow-md font-black'
+                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+              }`}
+            >
+              <MessageSquare size={15} className="shrink-0" />
+              <span>Lobby Chat</span>
+              <span
+                className="flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold"
+                style={
+                  tab === 'chat'
+                    ? { backgroundColor: 'rgba(0,0,0,0.2)', color: themeConfig.activeButtonTextColor }
+                    : { backgroundColor: `${themeConfig.activeButtonColor}25`, color: themeConfig.activeButtonColor }
+                }
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live
+              </span>
+            </button>
+
+            <button
               id="nav-tab-profile"
               onClick={() => setTab('profile')}
               style={
@@ -1805,6 +1861,18 @@ export default function App() {
             onDeleteSeason={handleDeleteSeason}
             onViewPlayerProfile={handleViewPlayerProfile}
             isAdmin={isAdmin}
+          />
+        )}
+
+        {/* TAB: LOBBY CHAT KOMUNITAS */}
+        {tab === 'chat' && (
+          <CommunityChat
+            players={players}
+            isAdmin={isAdmin}
+            onOpenMatchDetail={(matchId) => {
+              const found = seasonMatches.find((m) => String(m.id) === String(matchId));
+              if (found) setSelectedMatch(found);
+            }}
           />
         )}
 
@@ -1968,7 +2036,7 @@ export default function App() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#332C25] bg-[#191513]/95 backdrop-blur-xl px-2 pt-1.5 shadow-[0_-10px_25px_rgba(0,0,0,0.6)]"
         style={{ paddingBottom: 'max(0.4rem, env(safe-area-inset-bottom))' }}
       >
-        <div className={`grid ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'} gap-1 max-w-md mx-auto`}>
+        <div className={`grid ${isAdmin ? 'grid-cols-6' : 'grid-cols-5'} gap-1 max-w-lg mx-auto`}>
           {/* 1. Dashboard */}
           <button
             id="mobile-btn-dashboard"
@@ -2061,7 +2129,35 @@ export default function App() {
             </span>
           </button>
 
-          {/* 4. Profil */}
+          {/* 4. Chat */}
+          <button
+            id="mobile-btn-chat"
+            type="button"
+            onClick={() => {
+              setTab('chat');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="flex flex-col items-center justify-center py-1 rounded-xl transition-all cursor-pointer active:scale-95"
+            style={tab === 'chat' ? { color: themeConfig.activeButtonColor } : { color: '#9C948A' }}
+          >
+            <div
+              className="relative flex items-center justify-center h-7 w-12 rounded-full transition-all"
+              style={tab === 'chat' ? { backgroundColor: `${themeConfig.activeButtonColor}25` } : undefined}
+            >
+              <MessageSquare
+                size={18}
+                style={tab === 'chat' ? { color: themeConfig.activeButtonColor } : undefined}
+              />
+              <span className="absolute top-1 right-2.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <span
+              className={`text-[10px] tracking-tight mt-0.5 ${tab === 'chat' ? 'font-black' : 'font-medium'}`}
+            >
+              Chat
+            </span>
+          </button>
+
+          {/* 5. Profil */}
           <button
             id="mobile-btn-profile"
             type="button"
