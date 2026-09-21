@@ -23,6 +23,7 @@ import { HeroAvatar } from './HeroAvatar';
 import { SearchableHeroSelect } from './SearchableHeroSelect';
 import { calculateNextMatchNumber } from '../utils/matchSequence';
 import { sortSeasonsDescending } from '../utils/seasonCalculations';
+import { getPlayerDocId } from '../utils/playerId';
 
 const MAX_PLAYERS_PER_TEAM = 5;
 
@@ -340,7 +341,30 @@ export const AdminInput: React.FC<AdminInputProps> = ({
 
   const handleAddPlayerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPlayerName.trim()) return;
+    const cleanNewName = newPlayerName.trim();
+    if (!cleanNewName) return;
+
+    // Duplicate check — exact name
+    if (players.some((p) => p.name.trim().toLowerCase() === cleanNewName.toLowerCase())) {
+      setNotification({
+        type: 'error',
+        message: `Pemain dengan nama "${cleanNewName}" sudah terdaftar di database!`,
+      });
+      return;
+    }
+
+    // Storage-key collision check — a name that only differs by
+    // spaces/punctuation from an existing player would overwrite that
+    // player's data in Supabase (the storage key is a slug of the name).
+    const newSlug = getPlayerDocId({ name: cleanNewName, id: 0 } as Player);
+    const slugConflict = players.find((p) => getPlayerDocId(p) === newSlug);
+    if (slugConflict) {
+      setNotification({
+        type: 'error',
+        message: `Nama "${cleanNewName}" terlalu mirip dengan "${slugConflict.name}" yang sudah ada (beda spasi/simbol saja) — datanya bisa saling menimpa. Pakai nama yang lebih berbeda.`,
+      });
+      return;
+    }
 
     setIsAddingPlayer(true);
     try {

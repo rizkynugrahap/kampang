@@ -17,6 +17,7 @@ import { ScoreBanner } from './components/ScoreBanner';
 import { DashboardView } from './components/DashboardView';
 import { MatchHistoryView } from './components/MatchHistoryView';
 import { MatchDetailModal } from './components/MatchDetailModal';
+import { EditMatchSaveData } from './components/EditMatchModal';
 import { PlayerModal } from './components/PlayerModal';
 import { AdminInput } from './components/AdminInput';
 import { PlayerProfile } from './components/PlayerProfile';
@@ -892,6 +893,112 @@ export default function App() {
       } catch (syncErr) {
         console.warn('Error syncing fallback analysis to Supabase:', syncErr);
       }
+    }
+  };
+
+  // Edit an existing match: date/type/winner/hero/medal/score, who played
+  // (the roster), and even which season it belongs to. Correctly
+  // re-derives affected season(s)' stats by reverting the ORIGINAL match's
+  // contribution first, then applying the EDITED version — the same
+  // building block used for match deletion, so hero picks/pool, player
+  // medals/score/winRate, matchRows and matchLogs all stay consistent. If
+  // the season changed, the OLD season loses the match's contribution and
+  // the NEW season gains it, and the match is re-keyed in Supabase (its
+  // row id is namespaced by season, see buildMatchRowId) so it can never
+  // collide with an existing match already in the target season.
+  const handleEditMatch = async (
+    originalMatch: Match,
+    updates: EditMatchSaveData
+  ): Promise<boolean> => {
+    if (!isAdmin) {
+      setIsLoginModalOpen(true);
+      return false;
+    }
+
+    try {
+      setIsLoading(true);
+      const updatedMatch: Match = { ...originalMatch, ...updates };
+      const seasonChanged = updates.season !== originalMatch.season;
+      const idChanged = updates.id !== originalMatch.id;
+
+      const oldSeason = seasons.find((s) => s.title === originalMatch.season);
+      const newSeason = seasons.find((s) => s.title === updates.season);
+
+      setSeasons((prev) => {
+        let next = prev;
+
+        if (oldSeason) {
+          const reverted = revertMatchFromSeason(oldSeason, originalMatch);
+          if (newSeason && newSeason.id === oldSeason.id) {
+            // Same season — revert then re-apply the edited version in one go.
+            const reapplied = applyMatchToSeason(reverted, updatedMatch);
+            next = next.map((s) => (s.id === oldSeason.id ? reapplied : s));
+            syncLagaAmalToSupabase(reapplied).catch((e) =>
+              console.warn('Error syncing edited match season to Supabase:', e)
+            );
+          } else {
+            // Moved to a different season — old season only loses it.
+            next = next.map((s) => (s.id === oldSeason.id ? reverted : s));
+            syncLagaAmalToSupabase(reverted).catch((e) =>
+              console.warn('Error syncing old season after match move:', e)
+            );
+            if (newSeason) {
+              const applied = applyMatchToSeason(newSeason, updatedMatch);
+              next = next.map((s) => (s.id === newSeason.id ? applied : s));
+              syncLagaAmalToSupabase(applied).catch((e) =>
+                console.warn('Error syncing new season after match move:', e)
+              );
+            }
+          }
+        }
+
+        localStorage.setItem('pantos_seasons_cache', JSON.stringify(next));
+        return next;
+      });
+
+      setMatches((prev) => prev.map((m) => (m.id === originalMatch.id ? updatedMatch : m)));
+      if (selectedMatch && selectedMatch.id === originalMatch.id) {
+        setSelectedMatch(updatedMatch);
+      }
+
+      // The match's Supabase row key includes its season+id, so if either
+      // changed the old row is now orphaned — clean it up before writing
+      // the new one so we never leave a stale duplicate behind.
+      if (seasonChanged || idChanged) {
+        try {
+          await deleteMatchFromSupabase(originalMatch);
+        } catch (cleanupErr) {
+          console.warn('Error cleaning up old match row after edit:', cleanupErr);
+        }
+      }
+
+      try {
+        await syncMatchToSupabase(updatedMatch);
+      } catch (syncErr: any) {
+        console.error('Error syncing edited match to Supabase:', syncErr);
+        showSyncNotice(
+          `Perubahan pada Match #${updatedMatch.matchNumber || updatedMatch.id} tersimpan di perangkat ini, tapi gagal disinkronkan ke server: ${syncErr?.message || 'Koneksi terputus'}.`
+        );
+        return false;
+      }
+
+      // Best-effort backend cache update — never blocks the save above.
+      if (seasonChanged || idChanged) {
+        fetch(`/api/matches/${originalMatch.id}`, { method: 'DELETE' }).catch(() => {});
+      } else {
+        fetch(`/api/matches/${updatedMatch.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedMatch),
+        }).catch((e) => console.warn('Backend edit match sync:', e));
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Error editing match:', err);
+      return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -2032,8 +2139,13 @@ export default function App() {
         <MatchDetailModal
           match={selectedMatch}
           isAdmin={isAdmin}
+          heroes={heroes}
+          players={players}
+          seasons={seasons}
+          matches={matches}
           onClose={() => setSelectedMatch(null)}
           onDeleteMatch={(id) => handleDeleteMatch(id)}
+          onEditMatch={handleEditMatch}
           onReanalyzeMatch={(id) => handleAnalyzeMatch(id)}
           onSelectPlayer={(name) => {
             handleViewPlayerProfile(name);

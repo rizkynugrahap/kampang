@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Player, Match, LagaAmalSeasonData } from '../types';
+import { getPlayerDocId } from '../utils/playerId';
+export { getPlayerDocId };
 
 export type Unsubscribe = () => void;
 
@@ -35,15 +37,6 @@ export function buildMatchRowId(match: { id: number | string; season?: string })
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return seasonSlug ? `${seasonSlug}-${match.id}` : String(match.id);
-}
-
-export function getPlayerDocId(player: Player): string {
-  const slug = (player.name || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || String(player.id);
 }
 
 // ----------------- SUBSCRIPTIONS (REAL-TIME VIA SUPABASE) -----------------

@@ -10,6 +10,7 @@ import { generateHeuristicMatchAnalysis } from './src/utils/matchAnalysis.ts';
 import { generateHeuristicPlayerJulukan } from './src/utils/julukan.ts';
 import { teamDisplayName } from './src/utils/teamLabels.ts';
 import { generateTextViaPuter } from './src/utils/puterFallback.ts';
+import { getPlayerDocId } from './src/utils/playerId.ts';
 
 const app = express();
 const PORT = 3000;
@@ -295,6 +296,18 @@ app.post('/api/players', (req, res) => {
     return res.status(400).json({ error: `Pemain dengan nama '${trimmed}' sudah terdaftar` });
   }
 
+  // Storage-key collision guard — the players table's Supabase row id is a
+  // slug of the name (see getPlayerDocId), so a name that only differs by
+  // spacing/punctuation from an existing player would silently overwrite
+  // that player's row. Reject it here too, not just in the UI.
+  const newSlug = getPlayerDocId({ name: trimmed });
+  const slugConflict = store.players.find((p) => getPlayerDocId(p) === newSlug);
+  if (slugConflict) {
+    return res.status(400).json({
+      error: `Nama '${trimmed}' terlalu mirip dengan '${slugConflict.name}' yang sudah ada (beda spasi/simbol saja) — datanya bisa saling menimpa.`,
+    });
+  }
+
   const nextId =
     store.players.length > 0
       ? Math.max(...store.players.map((p) => (typeof p.id === 'number' ? p.id : 0))) + 1
@@ -392,6 +405,28 @@ app.put('/api/players/:id', (req, res) => {
   }
 
   const existing = store.players[playerIndex];
+
+  // Renaming a player is the same collision risk as creating one: block
+  // both an exact-name clash and a same-slug-different-spelling clash
+  // against any OTHER player.
+  if (name && typeof name === 'string' && name.trim()) {
+    const trimmedName = name.trim();
+    const exactConflict = store.players.some(
+      (p, i) => i !== playerIndex && p.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (exactConflict) {
+      return res.status(400).json({ error: `Nama '${trimmedName}' sudah digunakan pemain lain!` });
+    }
+    const renameSlug = getPlayerDocId({ name: trimmedName });
+    const slugConflict = store.players.find(
+      (p, i) => i !== playerIndex && getPlayerDocId(p) === renameSlug
+    );
+    if (slugConflict) {
+      return res.status(400).json({
+        error: `Nama '${trimmedName}' terlalu mirip dengan '${slugConflict.name}' yang sudah ada (beda spasi/simbol saja) — datanya bisa saling menimpa.`,
+      });
+    }
+  }
   const updatedPlayer: Player = {
     ...existing,
     ...(avatar_url !== undefined && { avatar_url }),
@@ -669,6 +704,24 @@ app.post('/api/matches', async (req, res) => {
     console.error('Error saving match:', error);
     res.status(500).json({ error: error.message || 'Gagal menyimpan pertandingan' });
   }
+});
+
+// PUT /api/matches/:id (Edit an existing match — best-effort cache update;
+// the client is the source of truth here and has already recalculated
+// season stats and synced to Supabase before calling this. This just keeps
+// this server's own in-memory store from serving stale data on next load.)
+app.put('/api/matches/:id', (req, res) => {
+  const matchId = Number(req.params.id);
+  const idx = store.matches.findIndex((m) => m.id === matchId || String(m.id) === String(req.params.id));
+  if (idx === -1) {
+    // Not known to this server's local store (e.g. saved while this
+    // backend was unreachable) — nothing to update locally, but that's
+    // fine since Supabase already has the authoritative copy.
+    return res.json({ success: true, updatedLocally: false });
+  }
+  store.matches[idx] = { ...store.matches[idx], ...req.body };
+  saveStore(store);
+  res.json({ success: true, updatedLocally: true, match: store.matches[idx] });
 });
 
 // DELETE /api/matches/:id

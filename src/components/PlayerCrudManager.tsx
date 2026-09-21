@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Player, MLBB_TIER_OPTIONS, LagaAmalSeasonData } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
+import { getPlayerDocId } from '../utils/playerId';
 import {
   Users,
   UserPlus,
@@ -246,12 +247,28 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
       return;
     }
 
-    // Duplicate check
+    // Duplicate check — exact name first
     const isDuplicate = players.some(
       (p) => p.name.trim().toLowerCase() === cleanName.toLowerCase()
     );
     if (isDuplicate) {
       showToast(`Pemain dengan nama "${cleanName}" sudah terdaftar di database!`, 'error');
+      return;
+    }
+
+    // Also block names that LOOK different but would collide in storage —
+    // the database key is a slug of the name (spaces/punctuation stripped),
+    // so e.g. "Mr. GiL" and "Mr GiL" normalize to the same key and one
+    // would silently overwrite the other's data. Catch that here instead.
+    const newSlug = getPlayerDocId({ name: cleanName, id: 0 } as Player);
+    const slugConflict = players.find(
+      (p) => getPlayerDocId(p) === newSlug && p.name.trim().toLowerCase() !== cleanName.toLowerCase()
+    );
+    if (slugConflict) {
+      showToast(
+        `Nama "${cleanName}" terlalu mirip dengan "${slugConflict.name}" yang sudah ada (beda spasi/simbol saja) — datanya bisa saling menimpa. Pakai nama yang lebih berbeda.`,
+        'error'
+      );
       return;
     }
 
@@ -301,6 +318,24 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
     );
     if (isConflict) {
       showToast(`Nama "${cleanName}" sudah digunakan pemain lain!`, 'error');
+      return;
+    }
+
+    // Same storage-key collision guard as the Add form — renaming a player
+    // to something that slugs the same as another existing player would
+    // silently merge/overwrite their data in Supabase.
+    const editedSlug = getPlayerDocId({ name: cleanName, id: 0 } as Player);
+    const editedSlugConflict = players.find(
+      (p) =>
+        String(p.id) !== String(editingPlayer.id) &&
+        getPlayerDocId(p) === editedSlug &&
+        p.name.trim().toLowerCase() !== cleanName.toLowerCase()
+    );
+    if (editedSlugConflict) {
+      showToast(
+        `Nama "${cleanName}" terlalu mirip dengan "${editedSlugConflict.name}" yang sudah ada (beda spasi/simbol saja) — datanya bisa saling menimpa. Pakai nama yang lebih berbeda.`,
+        'error'
+      );
       return;
     }
 

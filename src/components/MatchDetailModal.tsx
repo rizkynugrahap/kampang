@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Trophy, Calendar, RefreshCw, Bot, Trash2 } from 'lucide-react';
-import { Match, Medal } from '../types';
+import { X, Trophy, Calendar, RefreshCw, Bot, Trash2, Pencil } from 'lucide-react';
+import { Match, Medal, Hero, Player, LagaAmalSeasonData } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
+import { EditMatchModal, EditMatchSaveData } from './EditMatchModal';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
 import { teamDisplayName } from '../utils/teamLabels';
@@ -10,10 +11,15 @@ import { teamDisplayName } from '../utils/teamLabels';
 interface MatchDetailModalProps {
   match: Match | null;
   isAdmin?: boolean;
+  heroes?: Hero[];
+  players?: Player[];
+  seasons?: LagaAmalSeasonData[];
+  matches?: Match[];
   onClose: () => void;
   onReanalyze?: (matchId: number) => Promise<void>;
   onReanalyzeMatch?: (matchId: number) => Promise<void>;
   onDeleteMatch?: (matchId: number) => void | Promise<void>;
+  onEditMatch?: (originalMatch: Match, updates: EditMatchSaveData) => Promise<boolean>;
   onSelectPlayer?: (name: string) => void;
 }
 
@@ -27,15 +33,21 @@ const MEDAL_BADGES: Record<Medal, { bg: string; text: string; label: string }> =
 export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
   match,
   isAdmin = false,
+  heroes = [],
+  players = [],
+  seasons = [],
+  matches = [],
   onClose,
   onReanalyze,
   onReanalyzeMatch,
   onDeleteMatch,
+  onEditMatch,
   onSelectPlayer,
 }) => {
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const reanalyzeFn = onReanalyzeMatch || onReanalyze;
 
@@ -264,6 +276,17 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
         {/* Action Buttons */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          {isAdmin && onEditMatch && (
+            <button
+              id="edit-match-modal-btn"
+              onClick={() => setIsEditing(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-[#332C25] bg-[#241F1B] px-3 py-2 font-medium text-xs text-[#E8B33D] hover:bg-[#2e2722] hover:border-[#E8B33D]/40 transition-all cursor-pointer"
+            >
+              <Pencil size={13} />
+              <span>Edit Match</span>
+            </button>
+          )}
+
           {isAdmin && onDeleteMatch ? (
             showDeleteConfirm ? (
               <div className="flex items-center gap-2 rounded-lg border border-red-900/60 bg-red-950/40 p-1.5">
@@ -310,6 +333,20 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      {isEditing && onEditMatch && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <EditMatchModal
+            match={match}
+            heroes={heroes}
+            players={players}
+            seasons={seasons}
+            matches={matches}
+            onClose={() => setIsEditing(false)}
+            onSave={onEditMatch}
+          />
+        </div>
+      )}
     </div>
   );
 };
