@@ -5,7 +5,7 @@ import { getPlayerTopHeroes } from '../utils/stats';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { ImagePreviewModal } from './ImagePreviewModal';
-import { getPlayerAvatarUrl } from '../data/playerAvatars';
+import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 
 interface PlayerModalProps {
   player: Player | null;

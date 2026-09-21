@@ -52,9 +52,9 @@ import {
   deleteMatchesBatchFromSupabase,
   deletePlayerFromSupabase,
 } from './services/supabaseSync';
-import { MLBB_HEROES } from './data/heroes';
+import { MLBB_HEROES } from './constants/heroes';
 import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason, EMPTY_SEASON, sortSeasonsDescending } from './utils/seasonCalculations';
-import { saveCustomPlayerAvatar, normalizeImageUrl, registerKnownPlayerAvatars } from './data/playerAvatars';
+import { saveCustomPlayerAvatar, normalizeImageUrl, registerKnownPlayerAvatars } from './constants/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';

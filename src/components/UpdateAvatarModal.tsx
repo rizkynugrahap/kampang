@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { X, Upload, Link, Sparkles, Check, RotateCcw, Image as ImageIcon } from 'lucide-react';
 import { Player } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
-import { PRESET_PLAYER_AVATARS, getPlayerAvatarUrl, normalizeImageUrl } from '../data/playerAvatars';
+import { PRESET_PLAYER_AVATARS, getPlayerAvatarUrl, normalizeImageUrl } from '../constants/playerAvatars';
 
 interface UpdateAvatarModalProps {
   isOpen: boolean;

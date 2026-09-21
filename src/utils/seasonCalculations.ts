@@ -7,7 +7,7 @@ import {
   HeroPickByUser,
   UserHeroPercentage,
 } from '../types';
-import { getPlayerAvatarUrl } from '../data/playerAvatars';
+import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 import { generateHeuristicPlayerJulukan } from './julukan';
 
 export const EMPTY_SEASON: LagaAmalSeasonData = {

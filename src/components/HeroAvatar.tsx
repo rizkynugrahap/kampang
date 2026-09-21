@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getHeroIconUrl } from '../data/mlbbHeroIcons';
+import { getHeroIconUrl } from '../constants/mlbbHeroIcons';
 import { Medal } from '../types';
 
 interface HeroAvatarProps {

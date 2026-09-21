@@ -17,7 +17,7 @@ import {
 import { Player, Hero } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
-import { MLBB_HEROES } from '../data/heroes';
+import { MLBB_HEROES } from '../constants/heroes';
 import { casinoSound } from '../utils/casinoSound';
 
 export type MLBBHeroRole = 'Tank' | 'Fighter' | 'Assassin' | 'Mage' | 'Marksman' | 'Support';

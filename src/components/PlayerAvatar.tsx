@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getPlayerAvatarUrl } from '../data/playerAvatars';
+import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 import { PlayerStatus, TeamShort, TeamName } from '../types';
 
 interface PlayerAvatarProps {

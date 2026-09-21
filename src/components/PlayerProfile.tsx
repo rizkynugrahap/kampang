@@ -33,7 +33,7 @@ import { HeroAvatar } from './HeroAvatar';
 import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
 import { UpdateAvatarModal } from './UpdateAvatarModal';
 import { ImagePreviewModal } from './ImagePreviewModal';
-import { getPlayerAvatarUrl } from '../data/playerAvatars';
+import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 
 interface PlayerProfileProps {
   players: Player[];

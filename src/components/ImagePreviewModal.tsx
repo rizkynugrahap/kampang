@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { X, ExternalLink, Camera, Sparkles, ZoomIn } from 'lucide-react';
-import { normalizeImageUrl } from '../data/playerAvatars';
+import { normalizeImageUrl } from '../constants/playerAvatars';
 
 interface ImagePreviewModalProps {
   isOpen: boolean;
