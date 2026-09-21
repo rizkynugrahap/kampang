@@ -10,6 +10,33 @@ export interface SyncStatus {
   error: string | null;
 }
 
+/**
+ * The `matches` table's row id (text) used to just be the plain numeric
+ * match id (e.g. "1", "2"...). That id is only ever unique WITHIN one
+ * season — the "Match #" counter admins see resets back to 1 for every
+ * new season — so once a second season existed, its Match #1 upserted
+ * straight over Season 1's Match #1 row in Supabase (same key = same
+ * row), silently overwriting/losing the older match.
+ *
+ * Every match's Supabase row id is now namespaced by its season (e.g.
+ * "season-41-3"), so the same in-season match number can never collide
+ * across seasons again. `match.id` itself (the plain number used
+ * everywhere in the app — display, React keys, comparisons) is untouched;
+ * only the row key used to store/locate it in Supabase changes. Matches
+ * saved before this fix keep their old plain-numeric row id forever (that
+ * historical data is left alone) — this only changes how NEW rows are
+ * keyed, and delete calls check both formats so old rows can still be
+ * removed.
+ */
+export function buildMatchRowId(match: { id: number | string; season?: string }): string {
+  const seasonSlug = (match.season || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return seasonSlug ? `${seasonSlug}-${match.id}` : String(match.id);
+}
+
 export function getPlayerDocId(player: Player): string {
   const slug = (player.name || '')
     .trim()
@@ -347,7 +374,7 @@ export async function syncPlayersBatchToSupabase(players: Player[]): Promise<voi
 
 export async function syncMatchToSupabase(match: Match): Promise<void> {
   const { error } = await supabase.from('matches').upsert({
-    id: String(match.id),
+    id: buildMatchRowId(match),
     data: match,
     updated_at: new Date().toISOString(),
   });
@@ -417,15 +444,35 @@ export async function deleteLagaAmalFromSupabase(seasonId: string): Promise<void
   if (error) throw error;
 }
 
-export async function deleteMatchFromSupabase(matchId: string | number): Promise<void> {
-  const { error } = await supabase.from('matches').delete().eq('id', String(matchId));
+/**
+ * Accepts either a bare id (legacy call sites / the old plain-numeric row
+ * key, e.g. cleaning up a stale un-namespaced row) or a match-like object
+ * with a season (the normal case) so the season-namespaced row can be
+ * found. Deletes whichever of the two possible row keys actually exists.
+ */
+export async function deleteMatchFromSupabase(
+  match: string | number | { id: number | string; season?: string }
+): Promise<void> {
+  const candidateIds =
+    typeof match === 'object'
+      ? Array.from(new Set([buildMatchRowId(match), String(match.id)]))
+      : [String(match)];
+  const { error } = await supabase.from('matches').delete().in('id', candidateIds);
   if (error) throw error;
 }
 
-export async function deleteMatchesBatchFromSupabase(matchIds: (string | number)[]): Promise<void> {
-  if (!matchIds || matchIds.length === 0) return;
-  const stringIds = matchIds.map(String);
-  const { error } = await supabase.from('matches').delete().in('id', stringIds);
+export async function deleteMatchesBatchFromSupabase(
+  matches: Array<string | number | { id: number | string; season?: string }>
+): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const candidateIds = Array.from(
+    new Set(
+      matches.flatMap((m) =>
+        typeof m === 'object' ? [buildMatchRowId(m), String(m.id)] : [String(m)]
+      )
+    )
+  );
+  const { error } = await supabase.from('matches').delete().in('id', candidateIds);
   if (error) throw error;
 }
 

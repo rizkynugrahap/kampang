@@ -777,16 +777,17 @@ export default function App() {
     try {
       setIsLoading(true);
 
+      // Find the match first — its season is needed to locate the right
+      // season-namespaced Supabase row (see buildMatchRowId).
+      const deletedMatch = matches.find((m) => m.id === matchId);
+
       // 1. Delete from Supabase so it doesn't reappear on snapshot/refresh
-      await deleteMatchFromSupabase(matchId);
+      await deleteMatchFromSupabase(deletedMatch || matchId);
 
       // 2. Delete from backend server
       fetch(`/api/matches/${matchId}`, { method: 'DELETE' }).catch((e) =>
         console.warn('Backend delete match sync:', e)
       );
-
-      // 3. Find the deleted match for reverting season stats
-      const deletedMatch = matches.find((m) => m.id === matchId);
 
       // 4. Update local matches state
       setMatches((prev) => {
@@ -930,7 +931,7 @@ export default function App() {
 
       // 2. Cascade delete all matching matches from Supabase
       if (matchesToDelete.length > 0) {
-        await deleteMatchesBatchFromSupabase(matchesToDelete.map((m) => m.id));
+        await deleteMatchesBatchFromSupabase(matchesToDelete);
       }
 
       // 3. Delete from backend server
