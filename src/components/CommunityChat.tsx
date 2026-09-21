@@ -68,6 +68,8 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     }
   });
 
+  const isLoggedIn = Boolean(session && session.isLoggedIn);
+
   // Modals & UI States
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
@@ -514,38 +516,44 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
         </div>
       </div>
 
-      {/* 2. PINNED MESSAGE BANNER */}
-      {pinnedMessage && (
-        <div
-          id="chat-pinned-banner"
-          className="flex items-center justify-between px-4 py-2 bg-[#E8B33D]/10 border-b border-[#E8B33D]/30 shrink-0 text-xs text-[#F2EDE4]"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <Pin size={14} className="text-[#E8B33D] shrink-0 fill-[#E8B33D]" />
-            <span className="font-bold text-[#E8B33D] shrink-0">Pesan Disematkan:</span>
-            <span className="text-[#F2EDE4]/90 truncate">
-              <strong className="text-[#E8B33D]">{pinnedMessage.senderName}: </strong>
-              {pinnedMessage.content}
-            </span>
+      {/* 2 & 3. CHAT CONTENT AREA (BLURRED WHEN USER NOT LOGGED IN) */}
+      <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* 2. PINNED MESSAGE BANNER */}
+        {pinnedMessage && (
+          <div
+            id="chat-pinned-banner"
+            className={`flex items-center justify-between px-4 py-2 bg-[#E8B33D]/10 border-b border-[#E8B33D]/30 shrink-0 text-xs text-[#F2EDE4] transition-all duration-300 ${
+              !isLoggedIn ? 'filter blur-xs select-none pointer-events-none opacity-30' : ''
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Pin size={14} className="text-[#E8B33D] shrink-0 fill-[#E8B33D]" />
+              <span className="font-bold text-[#E8B33D] shrink-0">Pesan Disematkan:</span>
+              <span className="text-[#F2EDE4]/90 truncate">
+                <strong className="text-[#E8B33D]">{pinnedMessage.senderName}: </strong>
+                {pinnedMessage.content}
+              </span>
+            </div>
+            {isAdmin && (
+              <button
+                onClick={() => handleTogglePin(pinnedMessage)}
+                className="text-[10px] text-[#9C948A] hover:text-[#F2EDE4] font-medium ml-2 shrink-0 underline cursor-pointer"
+              >
+                Lepas Pin
+              </button>
+            )}
           </div>
-          {isAdmin && (
-            <button
-              onClick={() => handleTogglePin(pinnedMessage)}
-              className="text-[10px] text-[#9C948A] hover:text-[#F2EDE4] font-medium ml-2 shrink-0 underline cursor-pointer"
-            >
-              Lepas Pin
-            </button>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* 3. MESSAGE STREAM */}
-      <div
-        ref={chatScrollContainerRef}
-        onScroll={handleScroll}
-        id="chat-messages-container"
-        className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth"
-      >
+        {/* 3. MESSAGE STREAM */}
+        <div
+          ref={chatScrollContainerRef}
+          onScroll={handleScroll}
+          id="chat-messages-container"
+          className={`flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth transition-all duration-300 ${
+            !isLoggedIn ? 'filter blur-md select-none pointer-events-none opacity-25' : ''
+          }`}
+        >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-16 px-4">
             <div className="h-12 w-12 rounded-2xl bg-[#241F1B] border border-[#332C25] flex items-center justify-center text-[#E8B33D] mb-3">
@@ -802,6 +810,40 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* LOCKED BLUR OVERLAY FOR GUEST / UNLOGGED USERS */}
+      {!isLoggedIn && (
+        <div
+          id="chat-locked-overlay"
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-[#161311]/60 backdrop-blur-[3px] text-center"
+        >
+          <div className="flex flex-col items-center max-w-sm w-full p-6 rounded-2xl bg-[#1D1916]/95 border border-[#3D352E] shadow-2xl">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#E8B33D]/15 text-[#E8B33D] border border-[#E8B33D]/30 mb-4 shadow-inner">
+              <Lock size={26} />
+            </div>
+            <h4 className="text-base font-black text-[#F2EDE4] mb-1.5">
+              Lobby Chat Terkunci
+            </h4>
+            <p className="text-xs text-[#9C948A] leading-relaxed mb-5">
+              Seluruh percakapan di Lobby Chat diburamkan karena Anda belum login. Masuk dengan nama pemain &amp; PIN Anda untuk melihat percakapan secara normal.
+            </p>
+            <button
+              id="btn-login-overlay"
+              onClick={() => {
+                if (players.length > 0 && !selectedPlayerName) {
+                  setSelectedPlayerName(players[0].name);
+                }
+                setIsLoginModalOpen(true);
+              }}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-lg shadow-[#E8B33D]/15 transition-all active:scale-95 cursor-pointer"
+            >
+              <KeyRound size={16} />
+              <span>Login Pemain Sekarang</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
 
       {/* 4. MENTION AUTOCOMPLETE POPUP */}
       {mentionQuery !== null && filteredMentionPlayers.length > 0 && (
