@@ -15,6 +15,8 @@ import {
   FileText,
   BarChart3,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Filter,
   Layers,
   Plus,
@@ -62,6 +64,75 @@ function formatSeasonDateRange(startStr: string, endStr: string): string {
   }
   return `${start.day} ${start.month} ${start.year} - ${end.day} ${end.month} ${end.year}`;
 }
+
+const HERO_PICK_VISIBLE_LIMIT = 5;
+
+const HeroPickUserCard: React.FC<{ hp: HeroPickByUser }> = ({ hp }) => {
+  const [expanded, setExpanded] = useState(false);
+  const sortedHeroes = useMemo(
+    () => [...(hp.heroes || [])].sort((a, b) => (b.percentage || 0) - (a.percentage || 0)),
+    [hp.heroes]
+  );
+  const visibleHeroes = expanded ? sortedHeroes : sortedHeroes.slice(0, HERO_PICK_VISIBLE_LIMIT);
+  const hiddenCount = Math.max(0, sortedHeroes.length - HERO_PICK_VISIBLE_LIMIT);
+
+  return (
+    <div
+      key={`hp-user-card-${hp.user}`}
+      className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 space-y-3 shadow-md"
+    >
+      <div className="flex items-center justify-between border-b border-[#332C25] pb-2.5">
+        <div className="flex items-center gap-2.5">
+          <PlayerAvatar name={hp.user} size="sm" />
+          <div>
+            <h4 className="font-bold text-sm text-[#F2EDE4]">{hp.user}</h4>
+            <span className="text-[10px] text-[#9C948A]">{sortedHeroes.length} Hero Dimainkan</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {visibleHeroes.map((h, i) => (
+          <div key={`hero-pct-${h.heroName}-${i}`} className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <HeroAvatar heroName={h.heroName} size="xs" shape="rounded" />
+              <span className="font-medium text-[#F2EDE4]">{h.heroName}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-16 bg-[#251E17] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#E8B33D] rounded-full"
+                  style={{ width: `${Math.min(100, h.percentage)}%` }}
+                />
+              </div>
+              <span className="font-bold text-[11px] text-[#E8B33D] w-10 text-right">{h.percentage}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="w-full flex items-center justify-center gap-1 rounded-lg border border-[#332C25] bg-[#241F1B] px-2.5 py-1.5 text-[11px] font-bold text-[#E8B33D] hover:bg-[#2A241E] transition-colors cursor-pointer"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp size={13} />
+              <span>Sembunyikan</span>
+            </>
+          ) : (
+            <>
+              <ChevronDown size={13} />
+              <span>Tampilkan selengkapnya ({hiddenCount})</span>
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+};
 
 interface LagaAmalViewProps {
   seasons?: LagaAmalSeasonData[];
@@ -979,44 +1050,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredHeroPicks.map((hp, idx) => (
-              <div
-                key={`hp-user-card-${hp.user}-${idx}`}
-                className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 space-y-3 shadow-md"
-              >
-                <div className="flex items-center justify-between border-b border-[#332C25] pb-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <PlayerAvatar name={hp.user} size="sm" />
-                    <div>
-                      <h4 className="font-bold text-sm text-[#F2EDE4]">{hp.user}</h4>
-                      <span className="text-[10px] text-[#9C948A]">
-                        {hp.heroes.length} Hero Dimainkan
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {hp.heroes.map((h, i) => (
-                    <div key={`hero-pct-${h.heroName}-${i}`} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <HeroAvatar heroName={h.heroName} size="xs" shape="rounded" />
-                        <span className="font-medium text-[#F2EDE4]">{h.heroName}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 bg-[#251E17] rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[#E8B33D] rounded-full"
-                            style={{ width: `${Math.min(100, h.percentage)}%` }}
-                          />
-                        </div>
-                        <span className="font-bold text-[11px] text-[#E8B33D] w-10 text-right">
-                          {h.percentage}%
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <HeroPickUserCard key={`hp-user-card-${hp.user}-${idx}`} hp={hp} />
             ))}
           </div>
         </div>
