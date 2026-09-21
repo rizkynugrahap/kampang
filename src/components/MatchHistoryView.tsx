@@ -9,11 +9,13 @@ import {
   ChevronRight,
   Filter,
   Trash2,
+  Pencil,
 } from 'lucide-react';
-import { Match, LagaAmalSeasonData } from '../types';
+import { Match, LagaAmalSeasonData, Hero, Player } from '../types';
 import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
 import { ScoreBanner } from './ScoreBanner';
+import { EditMatchModal, EditMatchSaveData } from './EditMatchModal';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
 import { sortSeasonsDescending } from '../utils/seasonCalculations';
@@ -29,6 +31,9 @@ interface MatchHistoryViewProps {
   matches: Match[];
   onSelectMatch: (match: Match) => void;
   onDeleteMatch?: (matchId: number) => void;
+  onEditMatch?: (originalMatch: Match, updates: EditMatchSaveData) => Promise<boolean>;
+  heroes?: Hero[];
+  players?: Player[];
   isAdmin?: boolean;
 }
 
@@ -42,10 +47,14 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
   matches,
   onSelectMatch,
   onDeleteMatch,
+  onEditMatch,
+  heroes = [],
+  players = [],
   isAdmin = false,
 }) => {
   const [winnerFilter, setWinnerFilter] = useState<'all' | 'Tim Pohon' | 'Tim Lobby'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
 
   // Seasons sorted descending (highest season first)
   const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
@@ -209,9 +218,9 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
         </div>
       </section>
 
-      {/* Pertandingan Kemenangan (ScoreBanner Tim Kiri vs Tim Kanan) — Intact as requested */}
+      {/* Bar skor mengikuti filter Kiri/Kanan Win: sisi yang dipilih hampir penuh, warna lawan tetap tersisa sedikit. */}
       <section id="section-pertandingan-kemenangan">
-        <ScoreBanner matches={matches} seasonTitle={activeSeason.title} />
+        <ScoreBanner matches={filteredMatches} seasonTitle={activeSeason.title} />
       </section>
 
       {/* Match Cards List */}
@@ -270,7 +279,19 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                       <span>{teamDisplayName(match.winner)} VICTORY</span>
                     </span>
 
-                    {/* Admin Delete Action */}
+                    {isAdmin && onEditMatch && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMatch(match);
+                        }}
+                        className="p-1.5 text-[#9C948A] hover:text-[#E8B33D] hover:bg-[#E8B33D]/10 rounded-lg transition-colors"
+                        title="Edit Pertandingan"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
                     {isAdmin && onDeleteMatch && (
                       <button
                         type="button"
@@ -458,6 +479,22 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {isAdmin && editingMatch && onEditMatch && (
+        <EditMatchModal
+          match={editingMatch}
+          heroes={heroes}
+          players={players}
+          seasons={seasons}
+          matches={matches}
+          onClose={() => setEditingMatch(null)}
+          onSave={async (original, updates) => {
+            const ok = await onEditMatch(original, updates);
+            if (ok) setEditingMatch(null);
+            return ok;
+          }}
+        />
       )}
     </div>
   );
