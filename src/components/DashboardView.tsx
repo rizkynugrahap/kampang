@@ -2,551 +2,101 @@ import React, { useState, useMemo } from 'react';
 import {
   History,
   Calendar,
-  Users,
-  Trophy,
-  Award,
-  Flame,
-  BarChart3,
-  PieChart as PieChartIcon,
-  Crown,
-  AlertTriangle,
   Sparkles,
-  ShieldAlert,
+  Search,
+  Trophy,
+  Flame,
+  ChevronRight,
+  Filter,
+  Trash2,
+  Pencil,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  CartesianGrid,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  LabelList,
-} from 'recharts';
-import { LagaAmalSeasonData, Match, Player, TeamShort, Hero } from '../types';
-import { ScoreBanner } from './ScoreBanner';
+import { Match, LagaAmalSeasonData, Hero, Player } from '../types';
+import { HeroAvatar } from './HeroAvatar';
 import { PlayerAvatar } from './PlayerAvatar';
-import { generateHeuristicPlayerJulukan } from '../utils/julukan';
-import { GachaHeroPick } from './GachaHeroPick';
+import { ScoreBanner } from './ScoreBanner';
+import { EditMatchModal, EditMatchSaveData } from './EditMatchModal';
+import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
+import { getMatchDisplayNumber } from '../utils/matchSequence';
 import { sortSeasonsDescending } from '../utils/seasonCalculations';
+import { teamDisplayName } from '../utils/teamLabels';
 
-type TeamFilter = 'all' | 'Pohon' | 'Lobby';
-
-interface DashboardViewProps {
+interface MatchHistoryViewProps {
   seasons: LagaAmalSeasonData[];
   selectedSeasonId: string;
   onSeasonChange: (seasonId: string) => void;
   activeSeason: LagaAmalSeasonData;
   activeSeasonId?: string;
   onSetActiveSeason?: (seasonId: string) => void;
-  seasonMatches: Match[];
-  players: Player[];
+  matches: Match[];
+  onSelectMatch: (match: Match) => void;
+  onDeleteMatch?: (matchId: number) => void;
+  onEditMatch?: (originalMatch: Match, updates: EditMatchSaveData) => Promise<boolean>;
   heroes?: Hero[];
-  onSelectPlayer?: (playerName: string) => void;
-  onExportToAdmin?: (draft: {
-    pohon: Array<{ player: string; hero: string }>;
-    lobby: Array<{ player: string; hero: string }>;
-  }) => void;
+  players?: Player[];
+  isAdmin?: boolean;
 }
 
-interface PlayerStatsComputed {
-  nickname: string;
-  avatar_url?: string;
-  tier?: string;
-  julukan?: string;
-  matches: number;
-  mvp: number;
-  antam: number; // Gold
-  silver: number;
-  coklat: number;
-  score: number;
-  avgScore: number;
-  winRate: number;
-  teamAffinity?: string;
-}
-
-const MEDAL_COLORS = {
-  MVP: '#F59E0B',      // Shiny Gold / Amber
-  Gold: '#D97706',     // Antam Deep Gold
-  Silver: '#94A3B8',   // Slate Silver
-  Coklat: '#78350F',   // Cocoa Bronze
-};
-
-export type KpiMetricType = 'coklat' | 'silver' | 'gold' | 'mvp' | 'match' | 'score' | 'wr';
-
-export interface KpiMetricConfig {
-  id: KpiMetricType;
-  label: string;
-  title: string;
-  description: string;
-  unit: string;
-  color: string;
-  activeBg: string;
-  activeBorder: string;
-  activeText: string;
-  iconText: string;
-  getValue: (p: PlayerStatsComputed) => number;
-  formatValue: (val: number) => string | number;
-}
-
-export const KPI_METRICS: KpiMetricConfig[] = [
-  {
-    id: 'coklat',
-    label: 'Coklat',
-    title: 'Medali Coklat',
-    description: 'total perolehan Medali Coklat',
-    unit: 'Medali',
-    color: '#A16207',
-    activeBg: 'bg-[#A16207]/25',
-    activeBorder: 'border-[#A16207]',
-    activeText: 'text-[#FDE68A]',
-    iconText: '🍫',
-    getValue: (p) => p.coklat,
-    formatValue: (v) => v,
-  },
-  {
-    id: 'silver',
-    label: 'Silver',
-    title: 'Medali Silver',
-    description: 'total perolehan Medali Silver',
-    unit: 'Medali',
-    color: '#94A3B8',
-    activeBg: 'bg-[#94A3B8]/25',
-    activeBorder: 'border-[#94A3B8]',
-    activeText: 'text-[#F1F5F9]',
-    iconText: '🥈',
-    getValue: (p) => p.silver,
-    formatValue: (v) => v,
-  },
-  {
-    id: 'gold',
-    label: 'Gold',
-    title: 'Medali Gold (Antam)',
-    description: 'total perolehan Medali Gold (Antam)',
-    unit: 'Medali',
-    color: '#D97706',
-    activeBg: 'bg-[#D97706]/25',
-    activeBorder: 'border-[#D97706]',
-    activeText: 'text-[#FDE047]',
-    iconText: '🥇',
-    getValue: (p) => p.antam,
-    formatValue: (v) => v,
-  },
-  {
-    id: 'mvp',
-    label: 'MVP',
-    title: 'Gelar MVP',
-    description: 'total perolehan Gelar MVP',
-    unit: 'Gelar',
-    color: '#F59E0B',
-    activeBg: 'bg-[#F59E0B]/25',
-    activeBorder: 'border-[#F59E0B]',
-    activeText: 'text-[#FBBF24]',
-    iconText: '👑',
-    getValue: (p) => p.mvp,
-    formatValue: (v) => v,
-  },
-  {
-    id: 'match',
-    label: 'Match',
-    title: 'Total Match',
-    description: 'jumlah pertandingan yang dimainkan',
-    unit: 'Match',
-    color: '#3B82F6',
-    activeBg: 'bg-[#3B82F6]/25',
-    activeBorder: 'border-[#3B82F6]',
-    activeText: 'text-[#93C5FD]',
-    iconText: '⚔️',
-    getValue: (p) => p.matches,
-    formatValue: (v) => v,
-  },
-  {
-    id: 'score',
-    label: 'Skor',
-    title: 'Skor Pemain',
-    description: 'total akumulasi skor performa pemain',
-    unit: 'Poin',
-    color: '#E8B33D',
-    activeBg: 'bg-[#E8B33D]/25',
-    activeBorder: 'border-[#E8B33D]',
-    activeText: 'text-[#F2EDE4]',
-    iconText: '🏆',
-    getValue: (p) => p.score,
-    formatValue: (v) => v,
-  },
-  {
-    id: 'wr',
-    label: 'WR',
-    title: 'Win Rate (%)',
-    description: 'persentase kemenangan (Win Rate)',
-    unit: '%',
-    color: '#10B981',
-    activeBg: 'bg-[#10B981]/25',
-    activeBorder: 'border-[#10B981]',
-    activeText: 'text-[#6EE7B7]',
-    iconText: '📈',
-    getValue: (p) => p.winRate,
-    formatValue: (v) => `${v}%`,
-  },
-];
-
-export const DashboardView: React.FC<DashboardViewProps> = ({
+export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
   seasons,
   selectedSeasonId,
   onSeasonChange,
   activeSeason,
   activeSeasonId,
   onSetActiveSeason,
-  seasonMatches,
-  players,
-  heroes,
-  onSelectPlayer,
-  onExportToAdmin,
+  matches,
+  onSelectMatch,
+  onDeleteMatch,
+  onEditMatch,
+  heroes = [],
+  players = [],
+  isAdmin = false,
 }) => {
-  const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
-  const [selectedKpiMetric, setSelectedKpiMetric] = useState<KpiMetricType>('score');
+  const [winnerFilter, setWinnerFilter] = useState<'all' | 'Tim Pohon' | 'Tim Lobby'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
 
-  // Seasons sorted in descending order (highest season first)
+  // Seasons sorted descending (highest season first)
   const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
-  // Compute player stats according to the selected season AND team filter
-  const computedStats = useMemo(() => {
-    // Lookup dictionary from `players` state to get custom avatars, tier, and julukan
-    const playerMetaMap = new Map<string, Player>();
-    players.forEach((p) => {
-      playerMetaMap.set(p.name.trim().toLowerCase(), p);
-    });
+  // Filter matches belonging to the active season
+  const filteredMatches = useMemo(() => {
+    return matches.filter((m) => {
+      // Winner filter
+      if (winnerFilter !== 'all' && m.winner !== winnerFilter) {
+        return false;
+      }
 
-    if (teamFilter === 'all') {
-      // Use the season's official aggregated roster
-      const list: PlayerStatsComputed[] = (activeSeason.players || []).map((p) => {
-        const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
-        const julukan =
-          meta?.julukan ||
-          generateHeuristicPlayerJulukan(
-            meta || {
-              id: p.nickname,
-              name: p.nickname,
-              status: 'Aktif',
-              tier: 'Legend',
-              total_match: p.matches,
-              medals: { MVP: p.mvp, Gold: p.antam, Silver: p.silver, Coklat: p.coklat },
-            },
-            p
-          );
-
-        return {
-          nickname: p.nickname,
-          avatar_url: meta?.avatar_url || p.avatar_url,
-          tier: meta?.tier || (p.mvp >= 15 ? 'Mythic Glory' : p.mvp >= 5 ? 'Mythic' : 'Legend'),
-          julukan,
-          matches: p.matches,
-          mvp: p.mvp,
-          antam: p.antam,
-          silver: p.silver,
-          coklat: p.coklat,
-          score: Math.round(p.score * 10) / 10,
-          avgScore: Math.round(p.avgScore * 100) / 100,
-          winRate: Math.round(p.winRate * 10) / 10,
-        };
-      });
-      return list;
-    }
-
-    // If filtered by Tim Pohon or Tim Lobby:
-    // Aggregate from matches in this season where players were on that team
-    const targetTeam: TeamShort = teamFilter;
-    const targetTeamFull = targetTeam === 'Pohon' ? 'Tim Pohon' : 'Tim Lobby';
-
-    if (seasonMatches.length > 0) {
-      const tallyMap = new Map<
-        string,
-        {
-          nickname: string;
-          matches: number;
-          wins: number;
-          mvp: number;
-          antam: number;
-          silver: number;
-          coklat: number;
-          scores: number[];
-        }
-      >();
-
-      seasonMatches.forEach((m) => {
-        const isWinner = m.winner === targetTeamFull;
-        const roster = targetTeam === 'Pohon' ? m.pohon : m.lobby;
-
-        roster.forEach((mp) => {
-          const key = mp.player_name.trim().toLowerCase();
-          if (!tallyMap.has(key)) {
-            tallyMap.set(key, {
-              nickname: mp.player_name,
-              matches: 0,
-              wins: 0,
-              mvp: 0,
-              antam: 0,
-              silver: 0,
-              coklat: 0,
-              scores: [],
-            });
-          }
-          const item = tallyMap.get(key)!;
-          item.matches += 1;
-          if (isWinner) item.wins += 1;
-          if (mp.medal === 'MVP') item.mvp += 1;
-          else if (mp.medal === 'Gold') item.antam += 1;
-          else if (mp.medal === 'Silver') item.silver += 1;
-          else if (mp.medal === 'Coklat') item.coklat += 1;
-
-          const s =
-            typeof mp.score === 'number' && !isNaN(mp.score)
-              ? mp.score
-              : mp.medal === 'MVP'
-              ? 10.0
-              : mp.medal === 'Gold'
-              ? 8.5
-              : mp.medal === 'Silver'
-              ? 6.0
-              : 3.5;
-          item.scores.push(s);
-        });
-      });
-
-      const list: PlayerStatsComputed[] = Array.from(tallyMap.values()).map((item) => {
-        const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
-        const totalScore = item.scores.reduce((a, b) => a + b, 0);
-        const avgScore = item.scores.length > 0 ? totalScore / item.scores.length : 0;
-        const winRate = item.matches > 0 ? (item.wins / item.matches) * 100 : 0;
-
-        const julukan =
-          meta?.julukan ||
-          generateHeuristicPlayerJulukan(
-            meta || {
-              id: item.nickname,
-              name: item.nickname,
-              status: 'Aktif',
-              tier: 'Legend',
-              total_match: item.matches,
-              medals: { MVP: item.mvp, Gold: item.antam, Silver: item.silver, Coklat: item.coklat },
-            },
-            { mvp: item.mvp, coklat: item.coklat, antam: item.antam, winRate }
-          );
-
-        return {
-          nickname: item.nickname,
-          avatar_url: meta?.avatar_url,
-          tier: meta?.tier || 'Legend',
-          julukan,
-          matches: item.matches,
-          mvp: item.mvp,
-          antam: item.antam,
-          silver: item.silver,
-          coklat: item.coklat,
-          score: Math.round(totalScore * 10) / 10,
-          avgScore: Math.round(avgScore * 100) / 100,
-          winRate: Math.round(winRate * 10) / 10,
-          teamAffinity: targetTeamFull,
-        };
-      });
-
-      return list;
-    }
-
-    // Fallback if season has no individual match records yet (split or estimated)
-    return (activeSeason.players || []).map((p) => {
-      const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
-      const julukan =
-        meta?.julukan ||
-        generateHeuristicPlayerJulukan(
-          meta || {
-            id: p.nickname,
-            name: p.nickname,
-            status: 'Aktif',
-            tier: 'Legend',
-            total_match: p.matches,
-            medals: { MVP: p.mvp, Gold: p.antam, Silver: p.silver, Coklat: p.coklat },
-          },
-          p
+      // Search query (player name or hero name)
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const allPlayers = [...m.pohon, ...m.lobby];
+        const matchFound = allPlayers.some(
+          (p) => p.player_name.toLowerCase().includes(q) || p.hero_name.toLowerCase().includes(q)
         );
+        const matchIdFound = m.id.toString().includes(q);
+        if (!matchFound && !matchIdFound) return false;
+      }
 
-      return {
-        nickname: p.nickname,
-        avatar_url: meta?.avatar_url || p.avatar_url,
-        tier: meta?.tier || 'Legend',
-        julukan,
-        matches: p.matches,
-        mvp: p.mvp,
-        antam: p.antam,
-        silver: p.silver,
-        coklat: p.coklat,
-        score: p.score,
-        avgScore: p.avgScore,
-        winRate: p.winRate,
-        teamAffinity: targetTeamFull,
-      };
+      return true;
     });
-  }, [teamFilter, activeSeason, seasonMatches, players]);
-
-  // 7 Quick Stat Ribbon Values
-  const ribbonStats = useMemo(() => {
-    const activeCount = computedStats.length;
-
-    let topCoklat = { player: '-', count: 0, avatar: '' };
-    let topSilver = { player: '-', count: 0, avatar: '' };
-    let topAntam = { player: '-', count: 0, avatar: '' };
-    let topMvp = { player: '-', count: 0, avatar: '' };
-
-    computedStats.forEach((p) => {
-      if (p.coklat > topCoklat.count) {
-        topCoklat = { player: p.nickname, count: p.coklat, avatar: p.avatar_url || '' };
-      }
-      if (p.silver > topSilver.count) {
-        topSilver = { player: p.nickname, count: p.silver, avatar: p.avatar_url || '' };
-      }
-      if (p.antam > topAntam.count) {
-        topAntam = { player: p.nickname, count: p.antam, avatar: p.avatar_url || '' };
-      }
-      if (p.mvp > topMvp.count) {
-        topMvp = { player: p.nickname, count: p.mvp, avatar: p.avatar_url || '' };
-      }
-    });
-
-    // Fallbacks if all counts are 0
-    if (!topCoklat.player || topCoklat.player === '-') {
-      topCoklat.player = computedStats[0]?.nickname || activeSeason.topCoklat?.player || '-';
-      topCoklat.count = activeSeason.topCoklat?.count || 0;
-    }
-    if (!topSilver.player || topSilver.player === '-') {
-      topSilver.player = computedStats[0]?.nickname || activeSeason.topSilver?.player || '-';
-      topSilver.count = activeSeason.topSilver?.count || 0;
-    }
-    if (!topAntam.player || topAntam.player === '-') {
-      topAntam.player = computedStats[0]?.nickname || activeSeason.topAntam?.player || '-';
-      topAntam.count = activeSeason.topAntam?.count || 0;
-    }
-    if (!topMvp.player || topMvp.player === '-') {
-      topMvp.player = computedStats[0]?.nickname || activeSeason.topMvp?.player || '-';
-      topMvp.count = activeSeason.topMvp?.count || 0;
-    }
-
-    const totalMatches =
-      seasonMatches.length > 0
-        ? seasonMatches.length
-        : activeSeason.totalMatchesRecorded || activeSeason.totalMatches || 0;
-
-    const avgWinRate =
-      computedStats.length > 0
-        ? Math.round((computedStats.reduce((a, b) => a + b.winRate, 0) / computedStats.length) * 10) / 10
-        : activeSeason.averageWinRate || 50;
-
-    const avgScore =
-      computedStats.length > 0
-        ? Math.round((computedStats.reduce((a, b) => a + b.avgScore, 0) / computedStats.length) * 100) / 100
-        : activeSeason.averageScore || 7.5;
-
-    return {
-      activeCount,
-      topCoklat,
-      topSilver,
-      topAntam,
-      topMvp,
-      totalMatches,
-      avgWinRate,
-      avgScore,
-    };
-  }, [computedStats, activeSeason, seasonMatches]);
-
-  // Active KPI Metric Configuration
-  const currentMetricConfig = useMemo(() => {
-    return KPI_METRICS.find((m) => m.id === selectedKpiMetric) || KPI_METRICS[5];
-  }, [selectedKpiMetric]);
-
-  // KPI Chart Data (Players sorted by selected metric descending)
-  const kpiChartData = useMemo(() => {
-    return [...computedStats]
-      .map((p) => {
-        const rawVal = currentMetricConfig.getValue(p);
-        return {
-          name: p.nickname,
-          shortName: p.nickname.length > 9 ? p.nickname.slice(0, 8) + '…' : p.nickname,
-          value: rawVal,
-          displayValue: currentMetricConfig.formatValue(rawVal),
-          score: p.score,
-          avgScore: p.avgScore,
-          matches: p.matches,
-          mvp: p.mvp,
-          antam: p.antam,
-          silver: p.silver,
-          coklat: p.coklat,
-          winRate: p.winRate,
-        };
-      })
-      .sort((a, b) => b.value - a.value);
-  }, [computedStats, currentMetricConfig]);
-
-  const scoreChartData = kpiChartData;
-
-  // KPI Total Medal Pie Chart Data
-  const medalPieData = useMemo(() => {
-    const totalMvp = computedStats.reduce((a, b) => a + b.mvp, 0);
-    const totalAntam = computedStats.reduce((a, b) => a + b.antam, 0);
-    const totalSilver = computedStats.reduce((a, b) => a + b.silver, 0);
-    const totalCoklat = computedStats.reduce((a, b) => a + b.coklat, 0);
-
-    return [
-      { name: 'MVP (Emas)', value: totalMvp, color: MEDAL_COLORS.MVP },
-      { name: 'Antam (Gold)', value: totalAntam, color: MEDAL_COLORS.Gold },
-      { name: 'Silver (Perak)', value: totalSilver, color: MEDAL_COLORS.Silver },
-      { name: 'Coklat (Perunggu)', value: totalCoklat, color: MEDAL_COLORS.Coklat },
-    ];
-  }, [computedStats]);
-
-  const totalAllMedals = useMemo(() => {
-    return medalPieData.reduce((a, b) => a + b.value, 0);
-  }, [medalPieData]);
-
-  // Best Play (Top MVP) & Bad Play (Top Coklat) — only ever pick from
-  // players who have actually played at least 1 match this season.
-  // Previously this sorted the full roster including players with 0
-  // matches; a never-played player has coklat=0 and winRate=0, which tied
-  // for "lowest win rate" against everyone else with 0 coklat and could
-  // win the Bad Play tiebreak despite never having played a single game.
-  const playersWithMatches = useMemo(
-    () => computedStats.filter((p) => p.matches > 0),
-    [computedStats]
-  );
-
-  const bestPlayer = useMemo(() => {
-    if (playersWithMatches.length === 0) return null;
-    return [...playersWithMatches].sort((a, b) => b.mvp - a.mvp || b.score - a.score)[0];
-  }, [playersWithMatches]);
-
-  const badPlayer = useMemo(() => {
-    if (playersWithMatches.length === 0) return null;
-    return [...playersWithMatches].sort((a, b) => b.coklat - a.coklat || a.winRate - b.winRate)[0];
-  }, [playersWithMatches]);
+  }, [matches, winnerFilter, searchQuery]);
 
   return (
-    <div id="dashboard-view-container" className="space-y-6">
-      {/* Top Banner Card: Season Selector + Team Filter*/}
+    <div id="match-history-view-container" className="space-y-6">
+      {/* Header Bar with Season Selector & Filter Controls */}
       <section
-        id="dashboard-header-card"
+        id="match-history-header"
         className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl"
       >
-        {/* Top Control Bar: Season Selector (Left) & Team Filter (Right) */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-[#332C25]/60">
-          {/* Left: Season dropdown & date string */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pb-4 border-b border-[#332C25]/60">
+          {/* Left: Season dropdown & Active Season indicator/button */}
           <div className="flex items-center justify-between sm:justify-start gap-2.5 flex-wrap">
             <div className="flex items-center gap-1.5 rounded-xl border border-[#E8B33D]/40 bg-[#E8B33D]/10 px-2.5 py-1.5 text-xs font-bold text-[#E8B33D]">
               <History size={14} className="text-[#E8B33D] shrink-0" />
               <span className="shrink-0 text-[11px] sm:text-xs">Season:</span>
               <select
-                id="dashboard-season-dropdown"
+                id="history-season-dropdown"
                 value={selectedSeasonId}
                 onChange={(e) => onSeasonChange(e.target.value)}
                 className="bg-transparent font-black text-[#F2EDE4] focus:outline-none cursor-pointer pr-1 text-xs sm:text-sm max-w-[130px] sm:max-w-none truncate"
@@ -565,7 +115,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {/* Active Season Button / Badge */}
             {activeSeason.id === activeSeasonId || (!activeSeasonId && seasons[0]?.id === activeSeason.id) ? (
               <div
-                id="dashboard-badge-active-season"
+                id="history-badge-active-season"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/50 bg-emerald-950/60 px-2.5 py-1.5 text-[11px] sm:text-xs font-bold text-emerald-300 shadow-sm"
                 title="Season ini saat ini berstatus Active Season (Season Utama)"
               >
@@ -577,7 +127,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             ) : (
               <button
-                id="dashboard-btn-set-active-season"
+                id="history-btn-set-active-season"
                 type="button"
                 onClick={() => onSetActiveSeason && onSetActiveSeason(activeSeason.id)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/60 bg-amber-500/20 hover:bg-amber-500/30 px-3 py-1.5 text-[11px] sm:text-xs font-bold text-amber-300 hover:text-amber-100 transition-all cursor-pointer shadow-sm active:scale-95"
@@ -594,520 +144,358 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Right: Team Filter (Select All, Tim Pohon, Tim Lobby) - 3-column on mobile */}
-          <div className="grid grid-cols-3 sm:flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 shadow-inner w-full sm:w-auto">
-            <button
-              id="filter-team-all"
-              type="button"
-              onClick={() => setTeamFilter('all')}
-              className={`px-2 py-1.5 sm:px-3 text-center justify-center rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] flex items-center ${
-                teamFilter === 'all'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              Semua Tim
-            </button>
-
-            <button
-              id="filter-team-pohon"
-              type="button"
-              onClick={() => setTeamFilter('Pohon')}
-              className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
-                teamFilter === 'Pohon'
-                  ? 'bg-[#4F7942] text-white shadow-sm ring-1 ring-[#649455] font-black'
-                  : 'text-[#9C948A] hover:text-[#4F7942] hover:bg-[#241F1B]'
-              }`}
-            >
-              <span className="inline-block h-2 w-2 rounded-full bg-[#4F7942] shrink-0" />
-              <span className="truncate">Tim Kiri</span>
-            </button>
-
-            <button
-              id="filter-team-lobby"
-              type="button"
-              onClick={() => setTeamFilter('Lobby')}
-              className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
-                teamFilter === 'Lobby'
-                  ? 'bg-[#C97A3D] text-white shadow-sm ring-1 ring-[#e08f51] font-black'
-                  : 'text-[#9C948A] hover:text-[#C97A3D] hover:bg-[#241F1B]'
-              }`}
-            >
-              <span className="inline-block h-2 w-2 rounded-full bg-[#C97A3D] shrink-0" />
-              <span className="truncate">Tim Kanan</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Title & Description */}
-        <div className="pt-4 pb-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-[#F2EDE4]">
-              {activeSeason.title}
-            </h1>
-            {teamFilter !== 'all' && (
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                  teamFilter === 'Pohon'
-                    ? 'bg-[#4F7942]/20 text-[#649455] border border-[#4F7942]/40'
-                    : 'bg-[#C97A3D]/20 text-[#e08f51] border border-[#C97A3D]/40'
+          {/* Right: Winner Filter & Search */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Winner Filter */}
+            <div className="flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setWinnerFilter('all')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  winnerFilter === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4]'
                 }`}
               >
-                Hanya {teamFilter === 'Pohon' ? 'Tim Kiri' : 'Tim Kanan'}
-              </span>
-            )}
+                Semua Hasil
+              </button>
+              <button
+                type="button"
+                onClick={() => setWinnerFilter('Tim Pohon')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  winnerFilter === 'Tim Pohon'
+                    ? 'bg-[#4F7942] text-white'
+                    : 'text-[#9C948A] hover:text-[#4F7942]'
+                }`}
+              >
+                Kiri Win
+              </button>
+              <button
+                type="button"
+                onClick={() => setWinnerFilter('Tim Lobby')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  winnerFilter === 'Tim Lobby'
+                    ? 'bg-[#C97A3D] text-white'
+                    : 'text-[#9C948A] hover:text-[#C97A3D]'
+                }`}
+              >
+                Kanan Win
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9C948A]"
+              />
+              <input
+                type="text"
+                placeholder="Cari pemain/hero..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-40 sm:w-52 rounded-xl border border-[#332C25] bg-[#141210] pl-8 pr-3 py-1.5 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+              />
+            </div>
           </div>
-          <p className="mt-1 text-xs sm:text-sm text-[#9C948A] max-w-3xl leading-relaxed">
-            Papan klasemen performa individu resmi Laga Amal MLBB Pantos. Dihitung berdasarkan perolehan Medali Coklat, Silver, Antam (Gold), dan Gelar MVP.
+        </div>
+
+        {/* Title and summary counter */}
+        <div className="pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-[#F2EDE4]">
+              Riwayat Pertandingan · {activeSeason.title}
+            </h1>
+            <p className="mt-0.5 text-xs text-[#9C948A]">
+              Seluruh rekap pertandingan resmi lengkap dengan analisis tajam AI Gemini sebagai highlight.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-lg bg-[#241F1B] border border-[#332C25] px-3 py-1 text-xs font-bold text-[#E8B33D]">
+              {filteredMatches.length} Laga Ditampilkan
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Bar skor mengikuti filter Kiri/Kanan Win: sisi yang dipilih hampir penuh, warna lawan tetap tersisa sedikit. */}
+      <section id="section-pertandingan-kemenangan">
+        <ScoreBanner matches={filteredMatches} seasonTitle={activeSeason.title} />
+      </section>
+
+      {/* Match Cards List */}
+      {filteredMatches.length === 0 ? (
+        <div className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-12 text-center shadow-xl">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#241F1B] text-[#9C948A] mb-3">
+            <Flame size={24} />
+          </div>
+          <h3 className="font-bold text-base text-[#F2EDE4]">Tidak Ada Riwayat Pertandingan</h3>
+          <p className="mt-1 text-xs text-[#9C948A] max-w-md mx-auto">
+            {matches.length === 0
+              ? 'Belum ada pertandingan tercatat untuk season ini. Pertandingan yang diinput melalui tab Input Pertandingan akan muncul otomatis di sini.'
+              : 'Tidak ada pertandingan yang cocok dengan filter pencarian.'}
           </p>
         </div>
-      </section>
+      ) : (
+        <div className="space-y-5">
+          {filteredMatches.map((match, idx) => {
+            const isPohon = match.winner === 'Tim Pohon';
+            const allPlayers = [...match.pohon, ...match.lobby];
+            const mvp = allPlayers.find((p) => p.medal === 'MVP');
+            const coklat = allPlayers.find((p) => p.medal === 'Coklat');
+            const analysisText = match.ai_analysis || generateHeuristicMatchAnalysis(match);
 
-
-
-      {/* KPI Section: Left (KPI Score Bar Chart) & Right (KPI Total Medal Pie Chart) */}
-      <section id="section-kpi-charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: KPI Score / Metric Selector (Grafik Score & Metrik Setiap Player) */}
-      <div
-        id="card-kpi-score-chart"
-        className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl flex flex-col"
-      >
-        {/* Header & Metric Selector */}
-        <div className="flex flex-col gap-3.5 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5">
-              <div
-                className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0 transition-colors shadow-sm"
-                style={{
-                  backgroundColor: `${currentMetricConfig.color}20`,
-                  color: currentMetricConfig.color,
-                }}
+            return (
+              <article
+                key={`match-card-${match.id}-${idx}`}
+                id={`match-history-card-${match.id}`}
+                className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-5 sm:p-6 shadow-xl transition-all hover:border-[#4A3F33] relative overflow-hidden space-y-4"
               >
-                <BarChart3 size={19} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-bold text-base text-[#F2EDE4]">
-                    KPI {currentMetricConfig.title}
-                  </h3>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border flex items-center gap-1"
-                    style={{
-                      backgroundColor: `${currentMetricConfig.color}15`,
-                      borderColor: `${currentMetricConfig.color}45`,
-                      color: currentMetricConfig.color,
-                    }}
-                  >
-                    <span>{currentMetricConfig.iconText}</span>
-                    <span>{currentMetricConfig.label}</span>
-                  </span>
-                </div>
-                <p className="text-xs text-[#9C948A]">
-                  Grafik peringkat {currentMetricConfig.description} ({computedStats.length} pemain)
-                </p>
-              </div>
-            </div>
-          </div>
+                {/* Top bar of card: Match ID, Date, Winner Banner */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#332C25]/60 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="rounded-lg bg-[#251F1B] border border-[#3D352E] px-2.5 py-1 text-xs font-black text-[#F2EDE4]">
+                      Match #{getMatchDisplayNumber(match, matches)}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs text-[#9C948A]">
+                      <Calendar size={12} className="text-[#E8B33D]" />
+                      {match.date}
+                    </span>
+                    <span className="rounded bg-[#241F1B] px-2 py-0.5 text-[11px] font-semibold text-[#9C948A]">
+                      {match.season || activeSeason.title}
+                    </span>
+                  </div>
 
-          {/* Metric Selector Buttons (Coklat, Silver, Gold, MVP, Match, Skor, WR) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none">
-            <span className="text-[11px] font-bold text-[#9C948A] shrink-0 mr-1 hidden sm:inline">
-              Pilih Metrik:
-            </span>
-            {KPI_METRICS.map((opt) => {
-              const isActive = selectedKpiMetric === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  id={`kpi-metric-btn-${opt.id}`}
-                  type="button"
-                  onClick={() => setSelectedKpiMetric(opt.id)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-xl border transition-all shrink-0 cursor-pointer flex items-center gap-1.5 min-h-[32px] ${
-                    isActive
-                      ? `${opt.activeBg} ${opt.activeBorder} ${opt.activeText} shadow-md font-black ring-1 ring-white/10`
-                      : 'bg-[#161311] border-[#332C25] text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#221C18] hover:border-[#4D4238]'
-                  }`}
-                >
-                  <span className="text-xs">{opt.iconText}</span>
-                  <span>{opt.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+                  <div className="flex items-center gap-2">
+                    {/* Winner Pill */}
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black tracking-wide ${
+                        isPohon
+                          ? 'bg-[#4F7942]/20 text-[#649455] border border-[#4F7942]/50'
+                          : 'bg-[#C97A3D]/20 text-[#e08f51] border border-[#C97A3D]/50'
+                      }`}
+                    >
+                      <Trophy size={13} />
+                      <span>{teamDisplayName(match.winner)} VICTORY</span>
+                    </span>
 
-        {/* Chart area — TANPA overflow, tinggi auto mengikuti jumlah pemain */}
-        <div className="flex-1 w-full pt-2 min-h-[320px]">
-          {kpiChartData.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
-              Tidak ada data untuk metrik ini
-            </div>
-          ) : (
-            <div
-              style={{ height: Math.max(320, kpiChartData.length * 32) }}
-              className="w-full"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  layout="vertical"
-                  data={kpiChartData}
-                  margin={{ top: 8, right: 46, left: 4, bottom: 8 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="#332C25"
-                    horizontal={false}
-                    opacity={0.6}
-                  />
-                  <XAxis
-                    type="number"
-                    stroke="#9C948A"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={{ stroke: '#332C25' }}
-                    domain={selectedKpiMetric === 'wr' ? [0, 100] : [0, 'auto']}
-                    unit={selectedKpiMetric === 'wr' ? '%' : ''}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="shortName"
-                    stroke="#9C948A"
-                    fontSize={10}
-                    width={70}
-                    tickLine={false}
-                    axisLine={{ stroke: '#332C25' }}
-                    interval={0}
-                  />
-                  <RechartsTooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload || !payload.length) return null;
-                      const data = payload[0].payload;
-                      return (
-                        <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs space-y-1.5">
-                          <div className="flex items-center justify-between gap-3 border-b border-[#332C25]/80 pb-1">
-                            <span className="font-bold text-[#F2EDE4]">{data.name}</span>
-                            <span
-                              className="px-1.5 py-0.5 rounded text-[10px] font-bold border"
-                              style={{
-                                color: currentMetricConfig.color,
-                                borderColor: `${currentMetricConfig.color}50`,
-                                backgroundColor: `${currentMetricConfig.color}15`,
-                              }}
-                            >
-                              {currentMetricConfig.label}: {data.displayValue}
-                            </span>
-                          </div>
-                          <div className="text-[#9C948A] text-[11px] grid grid-cols-2 gap-x-3 gap-y-0.5">
-                            <div>Total Skor: <span className="text-[#F2EDE4] font-semibold">{data.score}</span></div>
-                            <div>Win Rate: <span className="text-[#F2EDE4] font-semibold">{data.winRate}%</span></div>
-                            <div>Total Match: <span className="text-[#F2EDE4] font-semibold">{data.matches}</span></div>
-                            <div>Total MVP: <span className="text-[#F59E0B] font-semibold">{data.mvp}</span></div>
-                          </div>
-                          <div className="text-[10px] text-[#9C948A] pt-0.5 border-t border-[#332C25]/50 flex items-center gap-2">
-                            <span>🥇 {data.antam}</span>
-                            <span>🥈 {data.silver}</span>
-                            <span>🍫 {data.coklat}</span>
-                          </div>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Bar
-                    dataKey="value"
-                    fill={
-                      selectedKpiMetric === 'score' && teamFilter === 'Pohon'
-                        ? '#4F7942'
-                        : selectedKpiMetric === 'score' && teamFilter === 'Lobby'
-                        ? '#C97A3D'
-                        : currentMetricConfig.color
-                    }
-                    radius={[0, 4, 4, 0]}
-                    barSize={14}
-                    className="cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={(entry) => {
-                      if (entry && entry.name) {
-                        onSelectPlayer?.(entry.name);
-                      }
-                    }}
-                  >
-                    <LabelList
-                      dataKey="displayValue"
-                      position="right"
-                      fill="#F2EDE4"
-                      fontSize={10}
-                      fontWeight="bold"
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      </div>
-
-        {/* Right: KPI Total Medal (Pie Chart Total Medal) */}
-        <div
-          id="card-kpi-medal-chart"
-          className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 sm:p-6 shadow-xl flex flex-col"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E8B33D]/10 text-[#E8B33D] shrink-0">
-                <PieChartIcon size={18} />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm sm:text-base text-[#F2EDE4]">KPI Total Medali</h3>
-                <p className="text-[11px] sm:text-xs text-[#9C948A]">
-                  Distribusi medali ({totalAllMedals} medali)
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="h-64 sm:h-80 w-full pt-2 flex flex-col">
-            {totalAllMedals === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
-                Belum ada perolehan medali untuk filter ini
-              </div>
-            ) : (
-              <>
-                {/* Chart area — flex-1 biar mengisi sisa ruang setelah legend */}
-                <div className="flex-1 min-h-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                      <Pie
-                        data={medalPieData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        startAngle={90}
-                        endAngle={-270}
-                        innerRadius="45%"
-                        outerRadius="75%"
-                        paddingAngle={3}
-                        stroke="#1D1916"
-                        strokeWidth={2}
-                      >
-                        {medalPieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip
-                        content={({ active, payload }) => {
-                          if (!active || !payload || !payload.length) return null;
-                          const data = payload[0];
-                          const pct =
-                            totalAllMedals > 0
-                              ? ((Number(data.value) / totalAllMedals) * 100).toFixed(1)
-                              : '0';
-                          return (
-                            <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
-                              <div className="font-bold" style={{ color: data.payload.color }}>
-                                {data.name}
-                              </div>
-                              <div className="mt-1 text-[#F2EDE4]">
-                                Total: <span className="font-bold">{data.value} medali</span> ({pct}%)
-                              </div>
-                            </div>
-                          );
+                    {isAdmin && onEditMatch && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMatch(match);
                         }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                        className="p-1.5 text-[#9C948A] hover:text-[#E8B33D] hover:bg-[#E8B33D]/10 rounded-lg transition-colors"
+                        title="Edit Pertandingan"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
+                    {isAdmin && onDeleteMatch && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteMatch(match.id)}
+                        className="p-1.5 text-[#9C948A] hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                        title="Hapus Pertandingan"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Legend manual di luar chart — posisi 100% terkontrol */}
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-3">
-                  {medalPieData.map((entry) => (
-                    <div key={entry.name} className="flex items-center gap-1.5">
-                      <span
-                        className="inline-block h-2 w-2 rounded-full shrink-0"
-                        style={{ backgroundColor: entry.color }}
-                      />
-                      <span className="text-[11px] sm:text-xs text-[#C5BCAD] whitespace-nowrap">
-                        {entry.name}
+                {/* HIGHLIGHT ANALISIS PERTANDINGAN (AI GEMINI) — PROMINENT AS REQUESTED */}
+                <div
+                  id={`match-analysis-highlight-${match.id}`}
+                  className="rounded-xl border-2 border-[#E8B33D]/60 bg-gradient-to-r from-[#2B2014] via-[#241B13] to-[#1D1610] p-4 sm:p-5 shadow-lg relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#E8B33D]/20 text-[#E8B33D]">
+                        <Sparkles size={16} className="animate-pulse" />
+                      </div>
+                      <span className="text-xs font-black uppercase tracking-wider text-[#E8B33D]">
+                        Highlight Analisis Pertandingan (AI Gemini)
                       </span>
                     </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-  
-      {/* Best Play & Bad Play Section */}
-      <section id="section-best-bad-play" className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Left: BEST PLAY OF THE SEASON */}
-        <div
-          id="card-best-play"
-          className="rounded-2xl border-2 border-[#E8B33D]/60 bg-gradient-to-br from-[#292015] via-[#1D1916] to-[#161311] p-4 sm:p-6 shadow-2xl relative overflow-hidden"
-        >
-          {/* Header Tag */}
-          <div className="flex items-center justify-between mb-4 sm:mb-5">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#E8B33D]/20 border border-[#E8B33D]/50 px-2.5 py-1 text-[11px] sm:text-xs font-black text-[#E8B33D] uppercase tracking-wider shadow-sm">
-              <Crown size={14} className="text-[#E8B33D]" />
-              <span>Best Play of The Season</span>
-            </div>
-            <span className="text-xs font-bold text-[#9C948A]">Top MVP</span>
-          </div>
 
-          {bestPlayer ? (
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5">
-              {/* Big Photo */}
-              <div className="relative shrink-0">
-                <PlayerAvatar
-                  name={bestPlayer.nickname}
-                  avatarUrl={bestPlayer.avatar_url}
-                  size="xl"
-                  className="shadow-2xl ring-4 ring-[#E8B33D]/40 rounded-full sm:w-24 sm:h-24"
-                />
-                <div className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#E8B33D] text-[#161311] font-black shadow-lg text-sm">
-                  👑
-                </div>
-              </div>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      {mvp && (
+                        <span className="hidden sm:inline-flex items-center gap-1 rounded bg-[#E8B33D]/15 px-2 py-0.5 text-[#E8B33D] font-bold">
+                          👑 MVP: {mvp.player_name}
+                        </span>
+                      )}
+                      {coklat && (
+                        <span className="hidden sm:inline-flex items-center gap-1 rounded bg-[#8B4513]/30 px-2 py-0.5 text-[#D97706] font-bold">
+                          🍫 Coklat: {coklat.player_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-              {/* Player Info */}
-              <div className="flex-1 text-center sm:text-left space-y-2.5 w-full">
-                <div>
+                  <p className="text-xs sm:text-sm text-[#F2EDE4] leading-relaxed italic font-medium">
+                    "{analysisText}"
+                  </p>
+                </div>
+
+                {/* Team Rosters: Tim Kiri vs Tim Kanan */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
+                  {/* Tim Kiri Roster */}
+                  <div
+                    className={`rounded-xl border p-3.5 ${
+                      isPohon
+                        ? 'border-[#4F7942]/60 bg-[#172314]/40'
+                        : 'border-[#332C25] bg-[#141210]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-[#4F7942]" />
+                        <span className="text-xs font-bold text-[#F2EDE4]">Tim Kiri</span>
+                      </div>
+                      {isPohon && (
+                        <span className="text-[10px] font-black uppercase text-[#649455]">
+                          Pemenang
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                      {match.pohon.map((p, idx) => (
+                        <div
+                          key={idx}
+                          className="flex sm:flex-col items-center gap-2 sm:gap-1 p-2 rounded-lg bg-[#1D1916]/80 border border-[#332C25]/50 text-center"
+                        >
+                          <div className="relative shrink-0">
+                            <HeroAvatar heroName={p.hero_name} size="sm" />
+                            {p.medal === 'MVP' && (
+                              <span className="absolute -top-1.5 -right-1.5 text-xs">👑</span>
+                            )}
+                            {p.medal === 'Coklat' && (
+                              <span className="absolute -top-1.5 -right-1.5 text-xs">🍫</span>
+                            )}
+                          </div>
+                          <div className="flex-1 sm:w-full overflow-hidden text-left sm:text-center">
+                            <div className="truncate text-xs font-bold text-[#F2EDE4]">
+                              {p.player_name}
+                            </div>
+                            <div className="truncate text-[10px] text-[#9C948A]">
+                              {p.hero_name}
+                            </div>
+                          </div>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                              p.medal === 'MVP'
+                                ? 'bg-[#E8B33D]/20 text-[#E8B33D]'
+                                : p.medal === 'Gold'
+                                ? 'bg-amber-600/20 text-amber-400'
+                                : p.medal === 'Silver'
+                                ? 'bg-slate-500/20 text-slate-300'
+                                : 'bg-orange-950/40 text-amber-600'
+                            }`}
+                          >
+                            {p.medal} {typeof p.score === 'number' ? `(${p.score})` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tim Kanan Roster */}
+                  <div
+                    className={`rounded-xl border p-3.5 ${
+                      !isPohon
+                        ? 'border-[#C97A3D]/60 bg-[#281A10]/40'
+                        : 'border-[#332C25] bg-[#141210]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-[#C97A3D]" />
+                        <span className="text-xs font-bold text-[#F2EDE4]">Tim Kanan</span>
+                      </div>
+                      {!isPohon && (
+                        <span className="text-[10px] font-black uppercase text-[#e08f51]">
+                          Pemenang
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                      {match.lobby.map((p, idx) => (
+                        <div
+                          key={idx}
+                          className="flex sm:flex-col items-center gap-2 sm:gap-1 p-2 rounded-lg bg-[#1D1916]/80 border border-[#332C25]/50 text-center"
+                        >
+                          <div className="relative shrink-0">
+                            <HeroAvatar heroName={p.hero_name} size="sm" />
+                            {p.medal === 'MVP' && (
+                              <span className="absolute -top-1.5 -right-1.5 text-xs">👑</span>
+                            )}
+                            {p.medal === 'Coklat' && (
+                              <span className="absolute -top-1.5 -right-1.5 text-xs">🍫</span>
+                            )}
+                          </div>
+                          <div className="flex-1 sm:w-full overflow-hidden text-left sm:text-center">
+                            <div className="truncate text-xs font-bold text-[#F2EDE4]">
+                              {p.player_name}
+                            </div>
+                            <div className="truncate text-[10px] text-[#9C948A]">
+                              {p.hero_name}
+                            </div>
+                          </div>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                              p.medal === 'MVP'
+                                ? 'bg-[#E8B33D]/20 text-[#E8B33D]'
+                                : p.medal === 'Gold'
+                                ? 'bg-amber-600/20 text-amber-400'
+                                : p.medal === 'Silver'
+                                ? 'bg-slate-500/20 text-slate-300'
+                                : 'bg-orange-950/40 text-amber-600'
+                            }`}
+                          >
+                            {p.medal} {typeof p.score === 'number' ? `(${p.score})` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer action */}
+                <div className="flex justify-end pt-1">
                   <button
                     type="button"
-                    onClick={() => onSelectPlayer && onSelectPlayer(bestPlayer.nickname)}
-                    className="text-xl sm:text-2xl font-black text-[#F2EDE4] hover:text-[#E8B33D] transition-colors cursor-pointer inline-block"
+                    onClick={() => onSelectMatch(match)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#E8B33D] hover:underline cursor-pointer"
                   >
-                    {bestPlayer.nickname}
+                    <span>Lihat Detail Lengkap Pertandingan</span>
+                    <ChevronRight size={14} />
                   </button>
-                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-1">
-                    <span className="rounded bg-[#251F1B] px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-[#9C948A] border border-[#332C25]">
-                      {bestPlayer.tier || 'Sepuh Pantos'}
-                    </span>
-                    <span className="text-[11px] sm:text-xs text-emerald-400 font-bold">
-                      Win Rate {bestPlayer.winRate}%
-                    </span>
-                  </div>
                 </div>
-
-                {/* JULUKAN JADI HIGHLIGHT */}
-                <div
-                  id="best-play-julukan-highlight"
-                  className="rounded-xl border border-[#E8B33D]/60 bg-gradient-to-r from-[#E8B33D]/25 via-[#3D2C17]/40 to-[#E8B33D]/10 px-3.5 py-2.5 shadow-md"
-                >
-                  <div className="flex items-center justify-center sm:justify-start gap-1.5 text-[10px] uppercase tracking-wider font-bold text-[#E8B33D]">
-                    <Sparkles size={12} />
-                    <span>Julukan Resmi:</span>
-                  </div>
-                  <div className="text-sm sm:text-lg font-black text-[#F2EDE4] italic tracking-wide mt-0.5 text-center sm:text-left">
-                    "{bestPlayer.julukan}"
-                  </div>
-                </div>
-
-                {/* Total MVP Stat Pill */}
-                <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 sm:gap-3 pt-1">
-                  <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#E8B33D] px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-black text-[#161311] shadow-md">
-                    <Trophy size={15} />
-                    <span>{bestPlayer.mvp}x Gelar MVP</span>
-                  </div>
-                  <div className="text-[11px] sm:text-xs text-[#9C948A]">
-                    Total Skor: <strong className="text-[#F2EDE4]">{bestPlayer.score}</strong> ({bestPlayer.matches} Match)
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-[#9C948A]">Belum ada data pemain</p>
-          )}
+              </article>
+            );
+          })}
         </div>
+      )}
 
-        {/* Right: BAD PLAY OF THE SEASON */}
-        <div
-          id="card-bad-play"
-          className="rounded-2xl border-2 border-[#8B4513]/60 bg-gradient-to-br from-[#2B1B14] via-[#1D1916] to-[#161311] p-4 sm:p-6 shadow-2xl relative overflow-hidden"
-        >
-          {/* Header Tag */}
-          <div className="flex items-center justify-between mb-4 sm:mb-5">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#8B4513]/25 border border-[#8B4513]/60 px-2.5 py-1 text-[11px] sm:text-xs font-black text-[#D97706] uppercase tracking-wider shadow-sm">
-              <AlertTriangle size={14} className="text-[#D97706]" />
-              <span>Bad Play of The Season</span>
-            </div>
-            <span className="text-xs font-bold text-[#9C948A]">Kolektor Coklat</span>
-          </div>
-
-          {badPlayer ? (
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5">
-              {/* Big Photo */}
-              <div className="relative shrink-0">
-                <PlayerAvatar
-                  name={badPlayer.nickname}
-                  avatarUrl={badPlayer.avatar_url}
-                  size="xl"
-                  className="shadow-2xl ring-4 ring-[#8B4513]/50 rounded-full sm:w-24 sm:h-24"
-                />
-                <div className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#8B4513] text-[#F2EDE4] font-black shadow-lg text-sm">
-                  🍫
-                </div>
-              </div>
-
-              {/* Player Info */}
-              <div className="flex-1 text-center sm:text-left space-y-2.5 w-full">
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => onSelectPlayer && onSelectPlayer(badPlayer.nickname)}
-                    className="text-xl sm:text-2xl font-black text-[#F2EDE4] hover:text-[#D97706] transition-colors cursor-pointer inline-block"
-                  >
-                    {badPlayer.nickname}
-                  </button>
-                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-1">
-                    <span className="rounded bg-[#251F1B] px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-[#9C948A] border border-[#332C25]">
-                      {badPlayer.tier || 'Warga Kelas Semen'}
-                    </span>
-                    <span className="text-[11px] sm:text-xs text-rose-400 font-bold">
-                      Win Rate {badPlayer.winRate}%
-                    </span>
-                  </div>
-                </div>
-
-                {/* JULUKAN JADI HIGHLIGHT */}
-                <div
-                  id="bad-play-julukan-highlight"
-                  className="rounded-xl border border-[#8B4513]/60 bg-gradient-to-r from-amber-950/40 via-[#3D1E14]/40 to-rose-950/20 px-3.5 py-2.5 shadow-md"
-                >
-                  <div className="flex items-center justify-center sm:justify-start gap-1.5 text-[10px] uppercase tracking-wider font-bold text-[#D97706]">
-                    <ShieldAlert size={12} />
-                    <span>Julukan Resmi:</span>
-                  </div>
-                  <div className="text-sm sm:text-lg font-black text-[#F2EDE4] italic tracking-wide mt-0.5 text-center sm:text-left">
-                    "{badPlayer.julukan}"
-                  </div>
-                </div>
-
-                {/* Total Coklat Stat Pill */}
-                <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 sm:gap-3 pt-1">
-                  <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#8B4513] px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-black text-[#F2EDE4] shadow-md">
-                    <span>🍫 {badPlayer.coklat}x Medali Coklat</span>
-                  </div>
-                  <div className="text-[11px] sm:text-xs text-[#9C948A]">
-                    Total MVP: <strong className="text-[#E8B33D]">{badPlayer.mvp}x</strong> ({badPlayer.matches} Match)
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-[#9C948A]">Belum ada data pemain</p>
-          )}
-        </div>
-      </section>
-
-
-      {/* SYSTEM GACHA PICK TEAM & HERO */}
-      <section id="section-gacha-hero-pick" className="mt-8">
-        <GachaHeroPick
-          players={players}
+      {isAdmin && editingMatch && onEditMatch && (
+        <EditMatchModal
+          match={editingMatch}
           heroes={heroes}
-          onExportToAdmin={onExportToAdmin}
+          players={players}
+          seasons={seasons}
+          matches={matches}
+          onClose={() => setEditingMatch(null)}
+          onSave={async (original, updates) => {
+            const ok = await onEditMatch(original, updates);
+            if (ok) setEditingMatch(null);
+            return ok;
+          }}
         />
-      </section>
+      )}
     </div>
   );
 };
