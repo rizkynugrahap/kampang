@@ -7,7 +7,6 @@ import {
   Smile,
   Shield,
   KeyRound,
-  LogOut,
   Trophy,
   Swords,
   Sparkles,
@@ -23,6 +22,7 @@ import { Player, Match, ChatMessage, ChatReaction } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { usePlayerAuth } from '../contexts/PlayerAuthContext';
+import { PlayerAccountMenu } from './PlayerAccountMenu';
 import {
   subscribeToChatMessages,
   sendChatMessage,
@@ -46,7 +46,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   onOpenMatchDetail,
   className = '',
 }) => {
-  const { session, isLoggedIn, openLogin, openChangePin, logout } = usePlayerAuth();
+  const { session, isLoggedIn, openLogin } = usePlayerAuth();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -301,49 +301,8 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
           </div>
         </div>
 
-        {/* Player Session Controls */}
-        <div className="flex items-center gap-2">
-          {session && session.isLoggedIn ? (
-            <div className="flex items-center gap-2 bg-[#241F1B] border border-[#332C25] rounded-xl px-2.5 py-1.5">
-              <PlayerAvatar name={session.playerName} avatarUrl={session.avatar_url} size="xs" />
-              <div className="hidden sm:flex flex-col min-w-0 max-w-[120px]">
-                <span className="text-xs font-bold text-[#F2EDE4] truncate leading-none">
-                  {session.playerName}
-                </span>
-                <span className="text-[9px] text-[#E8B33D] truncate mt-0.5 font-medium">
-                  {session.tier || 'Player'}
-                </span>
-              </div>
-              <button
-                id="btn-change-pin"
-                onClick={() => openChangePin()}
-                className="p-1 rounded-lg hover:bg-[#2A241E] text-[#9C948A] hover:text-[#E8B33D] transition-colors cursor-pointer"
-                title="Ubah PIN Pemain"
-              >
-                <KeyRound size={14} />
-              </button>
-              <button
-                id="btn-logout-player"
-                onClick={logout}
-                className="p-1 rounded-lg hover:bg-[#2A241E] text-[#9C948A] hover:text-red-400 transition-colors cursor-pointer"
-                title="Ganti Pemain / Keluar"
-              >
-                <LogOut size={14} />
-              </button>
-            </div>
-          ) : (
-            <button
-              id="btn-login-player-header"
-              onClick={() => {
-                openLogin();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-md transition-all active:scale-95 cursor-pointer"
-            >
-              <KeyRound size={14} />
-              <span>Login Pemain</span>
-            </button>
-          )}
-        </div>
+        {/* Player Session Controls — satu tombol/menu akun yang sama dipakai di seluruh app */}
+        <PlayerAccountMenu />
       </div>
 
       {/* 2 & 3. CHAT CONTENT AREA (BLURRED WHEN USER NOT LOGGED IN) */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 import { PlayerStatus, TeamShort, TeamName } from '../types';
 
@@ -32,7 +32,7 @@ const SIZE_MAP = {
   '2xl': 'h-28 w-28 text-3xl',
 };
 
-export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
+const PlayerAvatarComponent: React.FC<PlayerAvatarProps> = ({
   name,
   nickname,
   avatarUrl,
@@ -59,8 +59,14 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   const effectiveTier = tier || player?.tier;
 
   const [hasError, setHasError] = useState(false);
-  const [, setRevision] = useState(0);
-  const resolvedUrl = getPlayerAvatarUrl(effectiveName, effectiveAvatarUrl);
+  const [revision, setRevision] = useState(0);
+  // getPlayerAvatarUrl() touches localStorage; memoize per name+url (and
+  // revision, bumped when a global avatar-updated event fires) so it isn't
+  // recomputed on every parent re-render (e.g. typing in a search box).
+  const resolvedUrl = useMemo(
+    () => getPlayerAvatarUrl(effectiveName, effectiveAvatarUrl),
+    [effectiveName, effectiveAvatarUrl, revision]
+  );
 
   // Reset error state when effectiveName, avatarUrl or resolvedUrl changes
   useEffect(() => {
@@ -134,3 +140,10 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
     </div>
   );
 };
+
+// Memoized: avatar lists (e.g. the login player picker) can render 15-20+ of
+// these at once, and re-rendering all of them on every keystroke of an
+// unrelated search box was a big part of what made opening that list feel
+// heavy. React.memo skips a re-render entirely when this player's own props
+// haven't changed.
+export const PlayerAvatar = React.memo(PlayerAvatarComponent);

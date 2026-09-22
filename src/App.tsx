@@ -28,6 +28,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { SupabaseStatusBadge } from './components/SupabaseStatusBadge';
 import { CommunityChat } from './components/CommunityChat';
 import { PlayerAuthProvider } from './contexts/PlayerAuthContext';
+import { PlayerAccountMenu } from './components/PlayerAccountMenu';
 import { sendMatchResultSystemMessage } from './services/chatService';
 import {
   BackgroundSettingsModal,
@@ -1562,6 +1563,9 @@ export default function App() {
               <span className="hidden md:inline">Background & Tema</span>
               <span className="md:hidden">Tema</span>
             </button>
+
+            {/* Akun Pemain — satu tombol login/logout untuk seluruh aplikasi (chat & profil) */}
+            <PlayerAccountMenu compact />
 
             {isAdmin ? (
               <button

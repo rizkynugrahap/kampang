@@ -23,6 +23,23 @@ const LOCAL_STORAGE_AVATAR_KEY = 'pantos_player_avatars';
 // In-memory cache of resolved player avatars
 const memoryAvatarMap = new Map<string, string>();
 
+// getPlayerAvatarUrl() runs once per rendered <PlayerAvatar>, and lists can
+// render 15-20+ of them at once (e.g. the login player picker). Previously
+// every single call re-read AND JSON.parse'd two localStorage blobs from
+// scratch, so typing in the search box re-parsed the same JSON dozens of
+// times per keystroke. These caches skip the JSON.parse when the raw
+// localStorage string hasn't actually changed since the last read.
+let storedAvatarsCache: { hasRead: boolean; raw: string | null; parsed: Record<string, string> } = {
+  hasRead: false,
+  raw: null,
+  parsed: {},
+};
+let playersCacheCache: { hasRead: boolean; raw: string | null; parsed: any[] } = {
+  hasRead: false,
+  raw: null,
+  parsed: [],
+};
+
 /**
  * Normalizes URLs from various providers (Google Drive, Dropbox, etc.) into direct image links
  */
@@ -52,8 +69,13 @@ export function normalizeImageUrl(url: string): string {
 function getStoredAvatars(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   try {
-    const data = localStorage.getItem(LOCAL_STORAGE_AVATAR_KEY);
-    return data ? JSON.parse(data) : {};
+    const raw = localStorage.getItem(LOCAL_STORAGE_AVATAR_KEY);
+    if (storedAvatarsCache.hasRead && raw === storedAvatarsCache.raw) {
+      return storedAvatarsCache.parsed;
+    }
+    const parsed = raw ? JSON.parse(raw) : {};
+    storedAvatarsCache = { hasRead: true, raw, parsed };
+    return parsed;
   } catch (e) {
     return {};
   }
@@ -93,7 +115,9 @@ export function registerKnownPlayerAvatars(players: Array<{ name?: string; nickn
 
   if (hasChanges && typeof window !== 'undefined') {
     try {
-      localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, JSON.stringify(stored));
+      const raw = JSON.stringify(stored);
+      localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, raw);
+      storedAvatarsCache = { hasRead: true, raw, parsed: stored };
     } catch (e) {
       // ignore
     }
@@ -119,7 +143,9 @@ export function saveCustomPlayerAvatar(playerName: string, url: string): void {
       delete current[cleanName];
       delete current[playerName.trim()];
     }
-    localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, JSON.stringify(current));
+    const raw = JSON.stringify(current);
+    localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, raw);
+    storedAvatarsCache = { hasRead: true, raw, parsed: current };
   } catch (e) {
     console.error('Failed to save avatar to localStorage:', e);
   }
@@ -185,15 +211,19 @@ export function getPlayerAvatarUrl(name?: string, explicitUrl?: string): string 
   if (typeof window !== 'undefined') {
     try {
       const playersJson = localStorage.getItem('pantos_players_cache');
-      if (playersJson) {
-        const parsed = JSON.parse(playersJson);
-        if (Array.isArray(parsed)) {
-          const found = parsed.find((p: any) => (p.name || '').trim().toLowerCase() === key);
-          if (found && found.avatar_url && found.avatar_url.trim()) {
-            const val = normalizeImageUrl(found.avatar_url);
-            memoryAvatarMap.set(key, val);
-            return val;
-          }
+      let parsed: any[];
+      if (playersCacheCache.hasRead && playersJson === playersCacheCache.raw) {
+        parsed = playersCacheCache.parsed;
+      } else {
+        parsed = playersJson ? JSON.parse(playersJson) : [];
+        playersCacheCache = { hasRead: true, raw: playersJson, parsed: Array.isArray(parsed) ? parsed : [] };
+      }
+      if (Array.isArray(parsed)) {
+        const found = parsed.find((p: any) => (p.name || '').trim().toLowerCase() === key);
+        if (found && found.avatar_url && found.avatar_url.trim()) {
+          const val = normalizeImageUrl(found.avatar_url);
+          memoryAvatarMap.set(key, val);
+          return val;
         }
       }
     } catch (e) {
