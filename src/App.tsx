@@ -61,6 +61,8 @@ import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
 import { sanitizeMatches } from './utils/matchSequence';
+import { safeSetItem, safeGetItem, safeRemoveItem } from './utils/storage';
+import { supabase } from './lib/supabase';
 
 type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'chat' | 'admin' | 'profile' | 'players';
 
@@ -69,7 +71,7 @@ export default function App() {
 
   // Multi-season state (primary source of truth from database, kept sorted descending)
   const [seasons, setSeasons] = useState<LagaAmalSeasonData[]>(() => {
-    const saved = localStorage.getItem('pantos_seasons_cache');
+    const saved = safeGetItem('pantos_seasons_cache');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -82,11 +84,11 @@ export default function App() {
   });
 
   const [activeSeasonId, setActiveSeasonId] = useState<string>(() => {
-    return localStorage.getItem('pantos_active_season_id') || '';
+    return safeGetItem('pantos_active_season_id') || '';
   });
 
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>(() => {
-    return localStorage.getItem('pantos_active_season_id') || '';
+    return safeGetItem('pantos_active_season_id') || '';
   });
 
   // Active season resolved: prioritize selected view, then activeSeasonId, then isActive tag, then first season
@@ -106,7 +108,7 @@ export default function App() {
       if (!activeSeasonId) {
         const foundActive = seasons.find((s) => s.isActive)?.id || seasons[0].id;
         setActiveSeasonId(foundActive);
-        localStorage.setItem('pantos_active_season_id', foundActive);
+        safeSetItem('pantos_active_season_id', foundActive);
         if (!selectedSeasonId) {
           setSelectedSeasonId(foundActive);
         }
@@ -197,7 +199,7 @@ export default function App() {
 
   // Primary source of truth for matches (persisted in cache and synced with backend & Firestore)
   const [matches, setMatches] = useState<Match[]>(() => {
-    const saved = localStorage.getItem('pantos_matches_cache');
+    const saved = safeGetItem('pantos_matches_cache');
     if (saved !== null) {
       try {
         const parsed = JSON.parse(saved);
@@ -240,7 +242,7 @@ export default function App() {
   }, [players, seasons]);
   const [profilePlayerId, setProfilePlayerId] = useState<number | string>(1);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    return Boolean(localStorage.getItem('pantos_admin_token'));
+    return Boolean(safeGetItem('pantos_admin_token'));
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -280,16 +282,16 @@ export default function App() {
   // Theme and Branding state (Background, Opacity, Logo, Brand Name, Slogan, Header & Button Colors)
   // Cached instantly from localStorage and synced live to Supabase across all devices
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
-    const saved = localStorage.getItem('pantos_theme_settings');
+    const saved = safeGetItem('pantos_theme_settings');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         return {
           ...DEFAULT_THEME_CONFIG,
           ...parsed,
-          bgUrl: localStorage.getItem('pantos_custom_bg') || parsed.bgUrl || DEFAULT_GIT_BACKGROUND_URL,
-          bgOpacity: localStorage.getItem('pantos_bg_opacity')
-            ? Number(localStorage.getItem('pantos_bg_opacity'))
+          bgUrl: safeGetItem('pantos_custom_bg') || parsed.bgUrl || DEFAULT_GIT_BACKGROUND_URL,
+          bgOpacity: safeGetItem('pantos_bg_opacity')
+            ? Number(safeGetItem('pantos_bg_opacity'))
             : parsed.bgOpacity ?? 65,
         };
       } catch (e) {
@@ -298,9 +300,9 @@ export default function App() {
     }
     return {
       ...DEFAULT_THEME_CONFIG,
-      bgUrl: localStorage.getItem('pantos_custom_bg') || DEFAULT_GIT_BACKGROUND_URL,
-      bgOpacity: localStorage.getItem('pantos_bg_opacity')
-        ? Number(localStorage.getItem('pantos_bg_opacity'))
+      bgUrl: safeGetItem('pantos_custom_bg') || DEFAULT_GIT_BACKGROUND_URL,
+      bgOpacity: safeGetItem('pantos_bg_opacity')
+        ? Number(safeGetItem('pantos_bg_opacity'))
         : 65,
     };
   });
@@ -308,9 +310,9 @@ export default function App() {
 
   const handleSaveTheme = (newConfig: ThemeConfig) => {
     setThemeConfig(newConfig);
-    localStorage.setItem('pantos_theme_settings', JSON.stringify(newConfig));
-    localStorage.setItem('pantos_custom_bg', newConfig.bgUrl);
-    localStorage.setItem('pantos_bg_opacity', String(newConfig.bgOpacity));
+    safeSetItem('pantos_theme_settings', JSON.stringify(newConfig));
+    safeSetItem('pantos_custom_bg', newConfig.bgUrl);
+    safeSetItem('pantos_bg_opacity', String(newConfig.bgOpacity));
 
     syncBackgroundSettingsToSupabase({
       bgUrl: newConfig.bgUrl,
@@ -334,7 +336,7 @@ export default function App() {
   // Keep players in sync when activeSeason changes, preserving admin overrides (badge, tier, julukan, avatar)
   useEffect(() => {
     const derived = buildPlayersFromSeason(activeSeason);
-    const cachedPlayersStr = localStorage.getItem('pantos_players_cache');
+    const cachedPlayersStr = safeGetItem('pantos_players_cache');
     let cachedOverrides: Player[] = [];
     if (cachedPlayersStr) {
       try {
@@ -350,56 +352,110 @@ export default function App() {
     });
   }, [activeSeason]);
 
-  // Initial load from backend API
+  // Initial load from backend API, with automatic fallback directly to Supabase
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [playersRes, matchesRes, heroesRes, lagaAmalRes] = await Promise.all([
-        fetch('/api/players'),
-        fetch('/api/matches'),
-        fetch('/api/heroes'),
-        fetch('/api/laga-amal'),
-      ]);
+      let seasonsLoaded = false;
+      let matchesLoaded = false;
+      let playersLoaded = false;
 
-      if (lagaAmalRes.ok) {
-        const laData = await lagaAmalRes.json();
-        if (Array.isArray(laData) && laData.length > 0) {
-          setSeasons(laData);
-          localStorage.setItem('pantos_seasons_cache', JSON.stringify(laData));
-        }
-      }
+      try {
+        const [playersRes, matchesRes, heroesRes, lagaAmalRes] = await Promise.all([
+          fetch('/api/players').catch(() => null),
+          fetch('/api/matches').catch(() => null),
+          fetch('/api/heroes').catch(() => null),
+          fetch('/api/laga-amal').catch(() => null),
+        ]);
 
-      if (matchesRes.ok) {
-        const mData = await matchesRes.json();
-        if (Array.isArray(mData)) {
-          const { sanitized, remapped } = sanitizeMatches(mData);
-          setMatches(sanitized);
-          localStorage.setItem('pantos_matches_cache', JSON.stringify(sanitized));
-          if (remapped.length > 0) {
-            remapped.forEach(async ({ oldId, newId }) => {
-              const corrected = sanitized.find((m) => m.id === newId);
-              if (corrected) {
-                try {
-                  await syncMatchToSupabase(corrected);
-                  await deleteMatchFromSupabase(oldId);
-                } catch (e) {
-                  console.warn('Match ID remapping sync error:', e);
-                }
-              }
-            });
+        if (lagaAmalRes && lagaAmalRes.ok) {
+          const laData = await lagaAmalRes.json();
+          if (Array.isArray(laData) && laData.length > 0) {
+            setSeasons(laData);
+            safeSetItem('pantos_seasons_cache', JSON.stringify(laData));
+            seasonsLoaded = true;
           }
         }
+
+        if (matchesRes && matchesRes.ok) {
+          const mData = await matchesRes.json();
+          if (Array.isArray(mData)) {
+            const { sanitized, remapped } = sanitizeMatches(mData);
+            setMatches(sanitized);
+            safeSetItem('pantos_matches_cache', JSON.stringify(sanitized));
+            matchesLoaded = true;
+            if (remapped.length > 0) {
+              remapped.forEach(async ({ oldId, newId }) => {
+                const corrected = sanitized.find((m) => m.id === newId);
+                if (corrected) {
+                  try {
+                    await syncMatchToSupabase(corrected);
+                    await deleteMatchFromSupabase(oldId);
+                  } catch (e) {
+                    console.warn('Match ID remapping sync error:', e);
+                  }
+                }
+              });
+            }
+          }
+        }
+
+        if (heroesRes && heroesRes.ok) {
+          const hData = await heroesRes.json();
+          if (Array.isArray(hData) && hData.length > 0) {
+            setHeroes(hData);
+          }
+        } else {
+          setHeroes(MLBB_HEROES);
+        }
+
+        if (playersRes && playersRes.ok) {
+          const pData = await playersRes.json();
+          if (Array.isArray(pData) && pData.length > 0) {
+            setPlayers((prev) => mergePlayerOverrides(prev, pData));
+            playersLoaded = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend API fetch error, switching to direct Supabase query:', err);
       }
 
-      if (heroesRes.ok) {
-        const hData = await heroesRes.json();
-        setHeroes(hData);
-      }
+      // If backend API returned 404 or empty (e.g. running on Vercel as a static SPA)
+      // fetch directly from Supabase!
+      if (!seasonsLoaded || !matchesLoaded || !playersLoaded) {
+        try {
+          const [supaSeasons, supaMatches, supaPlayers] = await Promise.all([
+            !seasonsLoaded ? supabase.from('laga_amal_seasons').select('*') : Promise.resolve({ data: null, error: null }),
+            !matchesLoaded ? supabase.from('matches').select('*') : Promise.resolve({ data: null, error: null }),
+            !playersLoaded ? supabase.from('players').select('*') : Promise.resolve({ data: null, error: null }),
+          ]);
 
-      if (playersRes.ok) {
-        const pData = await playersRes.json();
-        if (Array.isArray(pData) && pData.length > 0) {
-          setPlayers((prev) => mergePlayerOverrides(prev, pData));
+          if (supaSeasons.data && supaSeasons.data.length > 0) {
+            const parsed = supaSeasons.data.map((r: any) => r.data).filter(Boolean);
+            if (parsed.length > 0) {
+              const sorted = sortSeasonsDescending(parsed);
+              setSeasons(sorted);
+              safeSetItem('pantos_seasons_cache', JSON.stringify(sorted));
+            }
+          }
+
+          if (supaMatches.data && supaMatches.data.length > 0) {
+            const parsedMatches = supaMatches.data.map((r: any) => r.data).filter(Boolean);
+            if (parsedMatches.length > 0) {
+              const { sanitized } = sanitizeMatches(parsedMatches);
+              setMatches(sanitized);
+              safeSetItem('pantos_matches_cache', JSON.stringify(sanitized));
+            }
+          }
+
+          if (supaPlayers.data && supaPlayers.data.length > 0) {
+            const parsedPlayers = supaPlayers.data.map((r: any) => r.data).filter(Boolean);
+            if (parsedPlayers.length > 0) {
+              setPlayers((prev) => mergePlayerOverrides(prev, parsedPlayers));
+            }
+          }
+        } catch (supaErr) {
+          console.warn('Direct Supabase fetch fallback error:', supaErr);
         }
       }
     } catch (err) {
@@ -421,7 +477,7 @@ export default function App() {
         if (remoteSeasons && remoteSeasons.length > 0) {
           const sorted = sortSeasonsDescending(remoteSeasons);
           setSeasons(sorted);
-          localStorage.setItem('pantos_seasons_cache', JSON.stringify(sorted));
+          safeSetItem('pantos_seasons_cache', JSON.stringify(sorted));
           setLastSyncedAt(new Date());
           setIsSupabaseConnected(true);
         }
@@ -434,7 +490,7 @@ export default function App() {
         if (Array.isArray(remoteMatches)) {
           const { sanitized, remapped } = sanitizeMatches(remoteMatches);
           setMatches(sanitized);
-          localStorage.setItem('pantos_matches_cache', JSON.stringify(sanitized));
+          safeSetItem('pantos_matches_cache', JSON.stringify(sanitized));
           setLastSyncedAt(new Date());
           setIsSupabaseConnected(true);
           if (remapped.length > 0) {
@@ -461,7 +517,7 @@ export default function App() {
       (remotePlayers) => {
         if (Array.isArray(remotePlayers) && remotePlayers.length > 0) {
           setPlayers((prev) => mergePlayerOverrides(prev, remotePlayers));
-          localStorage.setItem('pantos_players_cache', JSON.stringify(remotePlayers));
+          safeSetItem('pantos_players_cache', JSON.stringify(remotePlayers));
 
           // Cross-device sync: Update seasons state so when season re-renders or any formula runs,
           // the badge status ('Aktif' / 'Cabutan') and tier remain authoritative across all devices.
@@ -499,7 +555,7 @@ export default function App() {
               return { ...s, players: updatedPlayers };
             });
             if (changed) {
-              localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+              safeSetItem('pantos_seasons_cache', JSON.stringify(updated));
               return updated;
             }
             return prevSeasons;
@@ -532,9 +588,9 @@ export default function App() {
           activeButtonColor: remoteTheme.activeButtonColor || prev.activeButtonColor,
           activeButtonTextColor: remoteTheme.activeButtonTextColor || prev.activeButtonTextColor,
         };
-        localStorage.setItem('pantos_theme_settings', JSON.stringify(updated));
-        if (remoteTheme.bgUrl) localStorage.setItem('pantos_custom_bg', remoteTheme.bgUrl);
-        if (remoteTheme.bgOpacity !== undefined) localStorage.setItem('pantos_bg_opacity', String(remoteTheme.bgOpacity));
+        safeSetItem('pantos_theme_settings', JSON.stringify(updated));
+        if (remoteTheme.bgUrl) safeSetItem('pantos_custom_bg', remoteTheme.bgUrl);
+        if (remoteTheme.bgOpacity !== undefined) safeSetItem('pantos_bg_opacity', String(remoteTheme.bgOpacity));
         return updated;
       });
     });
@@ -543,7 +599,7 @@ export default function App() {
     const unsubActiveSeason = subscribeToActiveSeason((remoteActiveId) => {
       if (remoteActiveId) {
         setActiveSeasonId(remoteActiveId);
-        localStorage.setItem('pantos_active_season_id', remoteActiveId);
+        safeSetItem('pantos_active_season_id', remoteActiveId);
         setSelectedSeasonId((prev) => (!prev ? remoteActiveId : prev));
       }
     });
@@ -564,7 +620,7 @@ export default function App() {
 
     setActiveSeasonId(seasonId);
     setSelectedSeasonId(seasonId);
-    localStorage.setItem('pantos_active_season_id', seasonId);
+    safeSetItem('pantos_active_season_id', seasonId);
 
     // Update seasons list so only the activated season has isActive: true
     const updatedSeasons = seasons.map((s) => ({
@@ -572,7 +628,7 @@ export default function App() {
       isActive: s.id === seasonId,
     }));
     setSeasons(updatedSeasons);
-    localStorage.setItem('pantos_seasons_cache', JSON.stringify(updatedSeasons));
+    safeSetItem('pantos_seasons_cache', JSON.stringify(updatedSeasons));
 
     try {
       await syncActiveSeasonToSupabase(seasonId);
@@ -598,7 +654,7 @@ export default function App() {
       } else {
         next.unshift(recalc);
       }
-      localStorage.setItem('pantos_seasons_cache', JSON.stringify(next));
+      safeSetItem('pantos_seasons_cache', JSON.stringify(next));
       return next;
     });
 
@@ -663,7 +719,7 @@ export default function App() {
       // Update local matches
       setMatches((prev) => {
         const next = [savedMatch, ...prev.filter((m) => m.id !== savedMatch.id)];
-        localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
+        safeSetItem('pantos_matches_cache', JSON.stringify(next));
         return next;
       });
     } catch (err: any) {
@@ -818,7 +874,7 @@ export default function App() {
       // 4. Update local matches state
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
-        localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
+        safeSetItem('pantos_matches_cache', JSON.stringify(next));
         return next;
       });
       if (selectedMatch && selectedMatch.id === matchId) {
@@ -850,7 +906,7 @@ export default function App() {
             }
             return s;
           });
-          localStorage.setItem('pantos_seasons_cache', JSON.stringify(nextSeasons));
+          safeSetItem('pantos_seasons_cache', JSON.stringify(nextSeasons));
           return nextSeasons;
         });
       }
@@ -861,7 +917,7 @@ export default function App() {
       );
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
-        localStorage.setItem('pantos_matches_cache', JSON.stringify(next));
+        safeSetItem('pantos_matches_cache', JSON.stringify(next));
         return next;
       });
       if (selectedMatch && selectedMatch.id === matchId) {
@@ -977,7 +1033,7 @@ export default function App() {
           }
         }
 
-        localStorage.setItem('pantos_seasons_cache', JSON.stringify(next));
+        safeSetItem('pantos_seasons_cache', JSON.stringify(next));
         return next;
       });
 
@@ -1083,7 +1139,7 @@ export default function App() {
       // 5. Update local seasons state
       setSeasons((prev) => {
         const next = prev.filter((s) => s.id !== seasonId);
-        localStorage.setItem('pantos_seasons_cache', JSON.stringify(next));
+        safeSetItem('pantos_seasons_cache', JSON.stringify(next));
         if (selectedSeasonId === seasonId && next.length > 0) {
           setSelectedSeasonId(next[0].id);
         }
@@ -1131,7 +1187,7 @@ export default function App() {
             p.nickname.toLowerCase() === pName.toLowerCase() ? { ...p, avatar_url: cleanUrl } : p
           ),
         }));
-        localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+        safeSetItem('pantos_seasons_cache', JSON.stringify(updated));
         return updated;
       });
 
@@ -1215,12 +1271,12 @@ export default function App() {
               : p
           ),
         }));
-        localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+        safeSetItem('pantos_seasons_cache', JSON.stringify(updated));
         return updated;
       });
 
       // Update localStorage players cache
-      const cached = localStorage.getItem('pantos_players_cache');
+      const cached = safeGetItem('pantos_players_cache');
       let updatedCacheList: Player[] = [];
       if (cached) {
         try {
@@ -1235,7 +1291,7 @@ export default function App() {
       if (!updatedCacheList.some((p) => p.name.toLowerCase() === targetPlayer.name.toLowerCase())) {
         updatedCacheList.push(updatedPlayer);
       }
-      localStorage.setItem('pantos_players_cache', JSON.stringify(updatedCacheList));
+      safeSetItem('pantos_players_cache', JSON.stringify(updatedCacheList));
 
       // 3. Persist to server API
       try {
@@ -1310,12 +1366,12 @@ export default function App() {
             activePlayersCount: filtered.length,
           };
         });
-        localStorage.setItem('pantos_seasons_cache', JSON.stringify(updated));
+        safeSetItem('pantos_seasons_cache', JSON.stringify(updated));
         return updated;
       });
 
       // 3. Update localStorage players cache
-      const cached = localStorage.getItem('pantos_players_cache');
+      const cached = safeGetItem('pantos_players_cache');
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
@@ -1325,7 +1381,7 @@ export default function App() {
                 String(p.id) !== String(playerId) &&
                 String(p.name || '').toLowerCase() !== pName.toLowerCase()
             );
-            localStorage.setItem('pantos_players_cache', JSON.stringify(updatedCache));
+            safeSetItem('pantos_players_cache', JSON.stringify(updatedCache));
           }
         } catch {}
       }
@@ -1571,7 +1627,7 @@ export default function App() {
               <button
                 id="btn-admin-logout"
                 onClick={() => {
-                  localStorage.removeItem('pantos_admin_token');
+                  safeRemoveItem('pantos_admin_token');
                   setIsAdmin(false);
                 }}
                 className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/40 px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-900/50 transition-colors cursor-pointer min-h-[38px]"

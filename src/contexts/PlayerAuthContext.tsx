@@ -3,6 +3,7 @@ import { KeyRound, X, Eye, EyeOff, Check, AlertCircle } from 'lucide-react';
 import { Player, PlayerAuthSession } from '../types';
 import { SearchablePlayerSelect } from '../components/SearchablePlayerSelect';
 import { verifyOrSetPlayerPin, changePlayerPin, checkHasPin } from '../services/chatService';
+import { safeSetItem, safeGetItem, safeRemoveItem } from '../utils/storage';
 
 // Session is intentionally kept under the same storage key it always used
 // (originally chat-only) so players who are already logged in don't get
@@ -38,7 +39,7 @@ export const PlayerAuthProvider: React.FC<PlayerAuthProviderProps> = ({ players,
   const [session, setSession] = useState<PlayerAuthSession | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+      const stored = safeGetItem(AUTH_STORAGE_KEY);
       return stored ? JSON.parse(stored) : null;
     } catch (e) {
       return null;
@@ -66,7 +67,7 @@ export const PlayerAuthProvider: React.FC<PlayerAuthProviderProps> = ({ players,
         session.julukan !== updatedSession.julukan
       ) {
         setSession(updatedSession);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedSession));
+        safeSetItem(AUTH_STORAGE_KEY, JSON.stringify(updatedSession));
       }
     }
   }, [players, session]);
@@ -121,7 +122,7 @@ export const PlayerAuthProvider: React.FC<PlayerAuthProviderProps> = ({ players,
 
   const logout = useCallback(() => {
     setSession(null);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    safeRemoveItem(AUTH_STORAGE_KEY);
   }, []);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -160,7 +161,7 @@ export const PlayerAuthProvider: React.FC<PlayerAuthProviderProps> = ({ players,
       };
 
       setSession(newSession);
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newSession));
+      safeSetItem(AUTH_STORAGE_KEY, JSON.stringify(newSession));
       closeLogin();
       setEnteredPin('');
       setLoginError(null);

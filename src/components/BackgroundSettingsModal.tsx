@@ -26,7 +26,7 @@ export interface ThemeConfig {
   slogan: string;
   logoSize?: number;
   logoFit?: 'contain' | 'cover';
-  logoShape?: 'rounded' | 'circle' | 'none';
+  logoShape?: 'rounded' | 'circle' | 'square' | 'none';
   headerBgColor: string;
   activeButtonColor: string;
   activeButtonTextColor: string;

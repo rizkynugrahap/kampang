@@ -1,4 +1,5 @@
 // Player Avatars Management, Normalization, and Cache
+import { safeSetItem, safeGetItem } from '../utils/storage';
 
 export interface AvatarPreset {
   name: string;
@@ -69,7 +70,7 @@ export function normalizeImageUrl(url: string): string {
 function getStoredAvatars(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_AVATAR_KEY);
+    const raw = safeGetItem(LOCAL_STORAGE_AVATAR_KEY);
     if (storedAvatarsCache.hasRead && raw === storedAvatarsCache.raw) {
       return storedAvatarsCache.parsed;
     }
@@ -116,7 +117,7 @@ export function registerKnownPlayerAvatars(players: Array<{ name?: string; nickn
   if (hasChanges && typeof window !== 'undefined') {
     try {
       const raw = JSON.stringify(stored);
-      localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, raw);
+      safeSetItem(LOCAL_STORAGE_AVATAR_KEY, raw);
       storedAvatarsCache = { hasRead: true, raw, parsed: stored };
     } catch (e) {
       // ignore
@@ -144,7 +145,7 @@ export function saveCustomPlayerAvatar(playerName: string, url: string): void {
       delete current[playerName.trim()];
     }
     const raw = JSON.stringify(current);
-    localStorage.setItem(LOCAL_STORAGE_AVATAR_KEY, raw);
+    safeSetItem(LOCAL_STORAGE_AVATAR_KEY, raw);
     storedAvatarsCache = { hasRead: true, raw, parsed: current };
   } catch (e) {
     console.error('Failed to save avatar to localStorage:', e);
@@ -210,7 +211,7 @@ export function getPlayerAvatarUrl(name?: string, explicitUrl?: string): string 
   // 4. Cached players in localStorage (pantos_players_cache or pantos_seasons_cache)
   if (typeof window !== 'undefined') {
     try {
-      const playersJson = localStorage.getItem('pantos_players_cache');
+      const playersJson = safeGetItem('pantos_players_cache');
       let parsed: any[];
       if (playersCacheCache.hasRead && playersJson === playersCacheCache.raw) {
         parsed = playersCacheCache.parsed;

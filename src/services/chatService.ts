@@ -15,6 +15,7 @@ import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { ChatMessage, ChatReaction, Match } from '../types';
 import { getPlayerDocId } from '../utils/playerId';
+import { safeSetItem, safeGetItem } from '../utils/storage';
 
 const LOCAL_STORAGE_CHAT_KEY = 'pantos_community_chat_messages';
 const LOCAL_STORAGE_PINS_KEY = 'pantos_player_pins_cache';
@@ -23,7 +24,7 @@ const LOCAL_STORAGE_PINS_KEY = 'pantos_player_pins_cache';
 function getLocalMessages(): ChatMessage[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_CHAT_KEY);
+    const raw = safeGetItem(LOCAL_STORAGE_CHAT_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
@@ -33,7 +34,7 @@ function getLocalMessages(): ChatMessage[] {
 function saveLocalMessages(messages: ChatMessage[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LOCAL_STORAGE_CHAT_KEY, JSON.stringify(messages));
+    safeSetItem(LOCAL_STORAGE_CHAT_KEY, JSON.stringify(messages));
   } catch (e) {
     // ignore
   }
@@ -42,7 +43,7 @@ function saveLocalMessages(messages: ChatMessage[]): void {
 function getLocalPins(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_PINS_KEY);
+    const raw = safeGetItem(LOCAL_STORAGE_PINS_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch (e) {
     return {};
@@ -54,7 +55,7 @@ function saveLocalPin(docId: string, pin: string): void {
   try {
     const current = getLocalPins();
     current[docId] = pin;
-    localStorage.setItem(LOCAL_STORAGE_PINS_KEY, JSON.stringify(current));
+    safeSetItem(LOCAL_STORAGE_PINS_KEY, JSON.stringify(current));
   } catch (e) {
     // ignore
   }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Lock, KeyRound, ShieldAlert, Check } from 'lucide-react';
 import { verifyAdminLogin } from '../services/supabaseSync';
+import { safeSetItem } from '../utils/storage';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     try {
       const result = await verifyAdminLogin(email, password);
       if (result.success) {
-        localStorage.setItem('pantos_admin_token', 'admin-pantos-token-' + Date.now());
+        safeSetItem('pantos_admin_token', 'admin-pantos-token-' + Date.now());
         onLoginSuccess();
         onClose();
       } else {
