@@ -805,17 +805,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
 
         {/* Topbar Actions: Git Sync, Notifications & Player Session Controls */}
         <div className="flex items-center gap-2">
-          <button
-            id="chat-git-sync-btn"
-            type="button"
-            onClick={() => setIsGitModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D]/50 text-xs font-bold text-[#F2EDE4] transition-all cursor-pointer shadow-sm"
-            title="Fitur Git & Sinkronisasi Repositori GitHub"
-          >
-            <GitBranch size={14} className="text-[#E8B33D]" />
-            <span className="hidden sm:inline font-mono text-[11px]">Git Sync</span>
-          </button>
-
           {/* Notification Bell for Player Mentions */}
           {session && (
             <div className="relative">
