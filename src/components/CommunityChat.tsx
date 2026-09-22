@@ -1933,22 +1933,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-2 mt-4 w-full">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoomedImagePlayer({
-                      name: floatingPlayer.name,
-                      url: floatingPlayer.avatar_url || getPlayerAvatarUrl(floatingPlayer.name),
-                      tier: floatingPlayer.tier,
-                      status: floatingPlayer.status,
-                      julukan: floatingPlayer.julukan,
-                    });
-                  }}
-                  className="flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-bold bg-[#241F1B] hover:bg-[#2D2520] text-[#E8B33D] border border-[#E8B33D]/30 transition-all cursor-pointer"
-                >
-                  <ZoomIn size={14} />
-                  <span>Perbesar Foto Profil</span>
-                </button>
 
                 {onViewPlayerProfile && (
                   <button

@@ -157,7 +157,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   // Pie chart data
   const pieData = [
     { name: 'MVP', value: mvpCount, color: '#E8B33D' },
-    { name: 'Antam (Gold)', value: goldCount, color: '#D8A93A' },
+    { name: 'Antam (Gold)', value: goldCount, color: '#D97706' },
     { name: 'Silver', value: silverCount, color: '#B9B2A8' },
     { name: 'Coklat', value: coklatCount, color: '#6B4226' },
   ].filter((d) => d.value > 0);
@@ -711,7 +711,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                         const payload = item.payload;
                         return [
                           <div key="tooltip-rating" className="space-y-1">
-                            <p className="font-bold text-[#E8B33D] text-sm">{val} / 10.0</p>
+                            <p className="font-bold text-[#E8B33D] text-sm">{val}</p>
                             <p className="text-[11px] text-[#9C948A]">
                               {payload.fullLabel || payload.label} &bull; {payload.date}
                             </p>
