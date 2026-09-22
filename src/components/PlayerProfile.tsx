@@ -41,6 +41,9 @@ interface PlayerProfileProps {
   selectedPlayerId?: number | string;
   onSelectPlayer?: (id: number | string) => void;
   activeSeason?: LagaAmalSeasonData;
+  seasons?: LagaAmalSeasonData[];
+  selectedSeasonId?: string;
+  onSelectSeason?: (seasonId: string) => void;
   matches?: Match[];
   isAdmin?: boolean;
   onUpdatePlayerAvatar?: (playerId: number | string, newAvatarUrl: string) => Promise<boolean> | boolean;
@@ -53,6 +56,9 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   selectedPlayerId,
   onSelectPlayer,
   activeSeason,
+  seasons = [],
+  selectedSeasonId,
+  onSelectSeason,
   matches = [],
   isAdmin = false,
   onUpdatePlayerAvatar,
@@ -96,27 +102,55 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
     );
   }
 
-  // Find season-specific stat from activeSeason
-  const seasonPlayerStat = activeSeason?.players.find(
-    (p) => p.nickname.toLowerCase() === player.name.toLowerCase()
+  // 1. Season-specific player statistics from activeSeason
+  const seasonPlayerStat = activeSeason?.players?.find(
+    (p) => p.nickname.trim().toLowerCase() === player.name.trim().toLowerCase()
   );
 
-  // Find rank in active season
-  const seasonRank = activeSeason?.players
-    ? activeSeason.players.findIndex(
-        (p) => p.nickname.toLowerCase() === player.name.toLowerCase()
-      ) + 1
-    : 0;
+  // 2. Rank in active season:
+  // Standings are ordered strictly by the active season's official rules:
+  // (1) Total score desc, (2) MVP desc, (3) Lowest Coklat asc, (4) Antam desc, (5) Win rate desc
+  const rankedSeasonPlayers = React.useMemo(() => {
+    if (!activeSeason?.players || activeSeason.players.length === 0) return [];
+    return [...activeSeason.players].sort((a, b) => {
+      const scoreA = Number(a.score) || 0;
+      const scoreB = Number(b.score) || 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
 
-  // Medals calculation (prefer season stat if available)
-  const mvpCount = seasonPlayerStat ? seasonPlayerStat.mvp : player.medals.MVP;
-  const goldCount = seasonPlayerStat ? seasonPlayerStat.antam : player.medals.Gold;
-  const silverCount = seasonPlayerStat ? seasonPlayerStat.silver : player.medals.Silver;
-  const coklatCount = seasonPlayerStat ? seasonPlayerStat.coklat : player.medals.Coklat;
-  const totalMatches = seasonPlayerStat ? seasonPlayerStat.matches : player.total_match;
-  const totalScore = seasonPlayerStat ? seasonPlayerStat.score : player.score || 0;
-  const avgScore = seasonPlayerStat ? seasonPlayerStat.avgScore : player.avgScore || 0;
-  const winRate = seasonPlayerStat ? seasonPlayerStat.winRate : player.winRate || 0;
+      const mvpA = Number(a.mvp) || 0;
+      const mvpB = Number(b.mvp) || 0;
+      if (mvpB !== mvpA) return mvpB - mvpA;
+
+      const coklatA = Number(a.coklat) || 0;
+      const coklatB = Number(b.coklat) || 0;
+      if (coklatA !== coklatB) return coklatA - coklatB;
+
+      const antamA = Number(a.antam) || 0;
+      const antamB = Number(b.antam) || 0;
+      if (antamB !== antamA) return antamB - antamA;
+
+      return (Number(b.winRate) || 0) - (Number(a.winRate) || 0);
+    });
+  }, [activeSeason]);
+
+  const seasonPlayerIndex = rankedSeasonPlayers.findIndex(
+    (p) => p.nickname.trim().toLowerCase() === player.name.trim().toLowerCase()
+  );
+  const seasonRank = seasonPlayerIndex >= 0 ? seasonPlayerIndex + 1 : 0;
+  const hasSeasonMatches = seasonPlayerStat ? (seasonPlayerStat.matches || 0) > 0 : false;
+
+  // Medals and metrics: follow the active season
+  // If player played in the season, use season data.
+  // If player hasn't played in this season, show 0 for the active season so ranking & stats are per-season.
+  const isSeasonSelected = Boolean(activeSeason && activeSeason.id);
+  const mvpCount = isSeasonSelected ? (seasonPlayerStat?.mvp ?? 0) : player.medals.MVP;
+  const goldCount = isSeasonSelected ? (seasonPlayerStat?.antam ?? 0) : player.medals.Gold;
+  const silverCount = isSeasonSelected ? (seasonPlayerStat?.silver ?? 0) : player.medals.Silver;
+  const coklatCount = isSeasonSelected ? (seasonPlayerStat?.coklat ?? 0) : player.medals.Coklat;
+  const totalMatches = isSeasonSelected ? (seasonPlayerStat?.matches ?? 0) : player.total_match;
+  const totalScore = isSeasonSelected ? (seasonPlayerStat?.score ?? 0) : (player.score || 0);
+  const avgScore = isSeasonSelected ? (seasonPlayerStat?.avgScore ?? 0) : (player.avgScore || 0);
+  const winRate = isSeasonSelected ? (seasonPlayerStat?.winRate ?? 0) : (player.winRate || 0);
 
   const totalMedals = mvpCount + goldCount + silverCount + coklatCount;
 
@@ -222,27 +256,66 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             <UserRound size={18} />
           </div>
           <div>
-            <h2 className="font-bold text-base text-[#F2EDE4] sm:text-lg flex items-center gap-2">
-              Profil & Statistik Pemain
-              {activeSeason && (
-                <span className="rounded-full bg-[#E8B33D]/15 border border-[#E8B33D]/30 px-2.5 py-0.5 text-[11px] font-semibold text-[#E8B33D]">
-                  {activeSeason.title}
-                </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-bold text-base text-[#F2EDE4] sm:text-lg">
+                Profil & Statistik Pemain
+              </h2>
+              {seasons && seasons.length > 0 && onSelectSeason ? (
+                <div className="flex items-center gap-1.5 bg-[#241F1B] px-2 py-0.5 rounded-lg border border-[#E8B33D]/30">
+                  <span className="text-[10px] text-[#9C948A] font-medium">Season:</span>
+                  <select
+                    value={selectedSeasonId || activeSeason?.id}
+                    onChange={(e) => onSelectSeason(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-[#E8B33D] focus:outline-none cursor-pointer"
+                    title="Pilih season untuk melihat peringkat klasemen dan statistik season tersebut"
+                  >
+                    {seasons.map((s) => (
+                      <option key={s.id} value={s.id} className="bg-[#1D1916] text-[#F2EDE4]">
+                        {s.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                activeSeason && (
+                  <span className="rounded-full bg-[#E8B33D]/15 border border-[#E8B33D]/30 px-2.5 py-0.5 text-[11px] font-semibold text-[#E8B33D]">
+                    {activeSeason.title}
+                  </span>
+                )
               )}
-            </h2>
+            </div>
             <p className="text-xs text-[#9C948A]">
-              Data tersinkronisasi langsung dengan Papan Klasemen Laga Amal
+              Peringkat &amp; statistik mengikuti perolehan skor season yang aktif (bukan global)
             </p>
           </div>
         </div>
 
-        {seasonRank > 0 && (
-          <div className="flex items-center gap-2 rounded-xl border border-[#332C25] bg-[#1D1916] px-3.5 py-1.5 self-start sm:self-auto">
-            <Trophy size={14} className="text-[#E8B33D]" />
-            <span className="text-xs text-[#9C948A]">Peringkat Klasemen:</span>
-            <span className="font-black text-sm text-[#E8B33D]">#{seasonRank}</span>
+        {/* Season Ranking Banner */}
+        <div className="flex items-center gap-2.5 rounded-xl border border-[#332C25] bg-[#1D1916] px-3.5 py-2 self-start sm:self-auto shadow-sm">
+          <Trophy size={16} className={hasSeasonMatches ? 'text-[#E8B33D]' : 'text-[#6E655C]'} />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-[#9C948A]">
+                Klasemen {activeSeason?.title || 'Season'}:
+              </span>
+              {hasSeasonMatches && seasonRank > 0 ? (
+                <span className="font-black text-sm text-[#E8B33D]">
+                  #{seasonRank}{' '}
+                  <span className="text-[10px] font-normal text-[#9C948A]">
+                    / {rankedSeasonPlayers.length} Pemain
+                  </span>
+                </span>
+              ) : (
+                <span className="text-xs font-medium text-[#9C948A] italic">
+                  Belum Ada Match
+                </span>
+              )}
+            </div>
+            <span className="text-[9px] text-[#6E655C]">
+              *Mengikuti peringkat resmi season yang dipilih
+            </span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Player selector chips */}

@@ -1835,6 +1835,10 @@ export default function App() {
               const found = seasonMatches.find((m) => String(m.id) === String(matchId));
               if (found) setSelectedMatch(found);
             }}
+            onViewPlayerProfile={(nicknameOrId) => {
+              handleViewPlayerProfile(nicknameOrId);
+            }}
+            activeSeason={activeSeason}
           />
         )}
 
@@ -1845,6 +1849,9 @@ export default function App() {
             selectedPlayerId={profilePlayerId}
             onSelectPlayer={(id) => setProfilePlayerId(id)}
             activeSeason={activeSeason}
+            seasons={seasons}
+            selectedSeasonId={selectedSeasonId}
+            onSelectSeason={(seasonId) => setSelectedSeasonId(seasonId)}
             matches={seasonMatches}
             isAdmin={isAdmin}
             onUpdatePlayerAvatar={handleUpdatePlayerAvatar}

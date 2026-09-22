@@ -17,12 +17,19 @@ import {
   Flame,
   Laugh,
   Crown,
+  Reply,
+  X,
+  ExternalLink,
+  ZoomIn,
+  UserRound,
 } from 'lucide-react';
-import { Player, Match, ChatMessage, ChatReaction } from '../types';
+import { Player, Match, ChatMessage, ChatReaction, LagaAmalSeasonData } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { usePlayerAuth } from '../contexts/PlayerAuthContext';
 import { PlayerAccountMenu } from './PlayerAccountMenu';
+import { ImagePreviewModal } from './ImagePreviewModal';
+import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 import {
   subscribeToChatMessages,
   sendChatMessage,
@@ -35,15 +42,88 @@ interface CommunityChatProps {
   players: Player[];
   isAdmin?: boolean;
   onOpenMatchDetail?: (matchId: string | number) => void;
+  onViewPlayerProfile?: (nicknameOrId: string | number) => void;
+  activeSeason?: LagaAmalSeasonData;
   className?: string;
 }
 
-const QUICK_EMOJIS = ['🔥', '😂', '👑', '💀', '👏', '🗿', '🤡', '❤️'];
+const QUICK_EMOJIS = ['🔥', '😂', '👑', '💀', '🗿', '🤡', '🍷', '🤫', '🥶', '👏', '❤️', '🍫'];
+
+interface MemeEmoticonItem {
+  label: string;
+  value: string;
+  category: 'meme' | 'emoji' | 'gaming';
+}
+
+const MEME_EMOTICONS: MemeEmoticonItem[] = [
+  // Trending memes
+  { label: '🗿 Mewing Chad', value: '🗿', category: 'meme' },
+  { label: '🍷🗿 Sigma', value: '🍷🗿', category: 'meme' },
+  { label: '💀 Kena Mental', value: '💀', category: 'meme' },
+  { label: '🤡 Badut Lord', value: '🤡', category: 'meme' },
+  { label: '🤫🧏‍♂️ Bye Bye', value: '🤫🧏‍♂️', category: 'meme' },
+  { label: '🦅 Gak Bahaya Ta?', value: '🦅', category: 'meme' },
+  { label: '🥶 Dingin Banget', value: '🥶', category: 'meme' },
+  { label: '🐒 Monke Beban', value: '🐒', category: 'meme' },
+  { label: '😭 Nangis Dipojokan', value: '😭', category: 'meme' },
+  { label: '🫡 Siap Komandan', value: '🫡', category: 'meme' },
+  { label: '🍗 Winner Chicken', value: '🍗', category: 'meme' },
+  { label: '🍫 Coklat Moment', value: '🍫', category: 'meme' },
+  { label: '👑 Gendong Tim', value: '👑', category: 'meme' },
+  { label: '🥱 Ez Game Dek', value: '🥱', category: 'meme' },
+  { label: '👏 GGWP King', value: '👏', category: 'meme' },
+  { label: '👀 Liat Aja Dulu', value: '👀', category: 'meme' },
+  { label: '🔥 Menyala Abangkuh', value: '🔥', category: 'meme' },
+  { label: '🚀 Meluncur Cepat', value: '🚀', category: 'meme' },
+  // Classic Expressions
+  { label: 'Tertawa', value: '😂', category: 'emoji' },
+  { label: 'Ngakak', value: '🤣', category: 'emoji' },
+  { label: 'Keren', value: '😎', category: 'emoji' },
+  { label: 'Love', value: '😍', category: 'emoji' },
+  { label: 'Star Eyes', value: '🤩', category: 'emoji' },
+  { label: 'Party', value: '🥳', category: 'emoji' },
+  { label: 'Smirk', value: '😏', category: 'emoji' },
+  { label: 'Mikir', value: '🤔', category: 'emoji' },
+  { label: 'Kaget', value: '😱', category: 'emoji' },
+  { label: 'Marah', value: '😡', category: 'emoji' },
+  { label: 'Toxic', value: '🤬', category: 'emoji' },
+  { label: 'Turu', value: '😴', category: 'emoji' },
+  { label: 'Muntah', value: '🤮', category: 'emoji' },
+  { label: 'Malaikat', value: '😇', category: 'emoji' },
+  { label: 'Iblis', value: '😈', category: 'emoji' },
+  { label: 'Hantu', value: '👻', category: 'emoji' },
+  { label: 'Poop', value: '💩', category: 'emoji' },
+  { label: 'Love Heart', value: '❤️', category: 'emoji' },
+  // Gaming & Gestures
+  { label: 'Jempol', value: '👍', category: 'gaming' },
+  { label: 'Dislike', value: '👎', category: 'gaming' },
+  { label: 'Tinju', value: '👊', category: 'gaming' },
+  { label: 'Peace', value: '✌️', category: 'gaming' },
+  { label: 'Salaman', value: '🤝', category: 'gaming' },
+  { label: 'Tepuk Tangan', value: '👏', category: 'gaming' },
+  { label: 'Sungkem', value: '🙏', category: 'gaming' },
+  { label: 'Otot Kuat', value: '💪', category: 'gaming' },
+  { label: 'Pedang By 1', value: '⚔️', category: 'gaming' },
+  { label: 'Perisai Tank', value: '🛡️', category: 'gaming' },
+  { label: 'Panah Marksman', value: '🏹', category: 'gaming' },
+  { label: 'Tongkat Mage', value: '🪄', category: 'gaming' },
+  { label: 'Mahkota MVP', value: '👑', category: 'gaming' },
+  { label: 'Medali Antam', value: '🥇', category: 'gaming' },
+  { label: 'Medali Silver', value: '🥈', category: 'gaming' },
+  { label: 'Medali Coklat', value: '🍫', category: 'gaming' },
+  { label: 'Piala Juara', value: '🏆', category: 'gaming' },
+  { label: 'Api Semangat', value: '🔥', category: 'gaming' },
+  { label: 'Ledakan', value: '💥', category: 'gaming' },
+  { label: 'Bintang', value: '✨', category: 'gaming' },
+  { label: 'Target Sasaran', value: '🎯', category: 'gaming' },
+];
 
 export const CommunityChat: React.FC<CommunityChatProps> = ({
   players,
   isAdmin = false,
   onOpenMatchDetail,
+  onViewPlayerProfile,
+  activeSeason,
   className = '',
 }) => {
   const { session, isLoggedIn, openLogin } = usePlayerAuth();
@@ -53,6 +133,20 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
 
   // Modals & UI States
   const [showEmojiPickerFor, setShowEmojiPickerFor] = useState<string | null>(null);
+  const [isInputEmojiPickerOpen, setIsInputEmojiPickerOpen] = useState(false);
+  const [emojiCategoryTab, setEmojiCategoryTab] = useState<'meme' | 'emoji' | 'gaming'>('meme');
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+
+  // Floating Player Profile & Zoom Modal States
+  const [floatingPlayerName, setFloatingPlayerName] = useState<string | null>(null);
+  const [zoomedImagePlayer, setZoomedImagePlayer] = useState<{
+    name: string;
+    url: string;
+    tier?: string;
+    status?: string;
+    julukan?: string;
+  } | null>(null);
+
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionCursorPos, setMentionCursorPos] = useState<number>(0);
   const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
@@ -60,6 +154,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
   // Subscribe to real-time chat messages
@@ -69,6 +164,18 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     });
     return () => unsub();
   }, []);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!isInputEmojiPickerOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setIsInputEmojiPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isInputEmojiPickerOpen]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -99,6 +206,116 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
       .filter((p) => p.name.toLowerCase().includes(q))
       .slice(0, 6);
   }, [mentionQuery, players]);
+
+  // Floating player detail
+  const floatingPlayer = useMemo(() => {
+    if (!floatingPlayerName) return null;
+    const found = players.find(
+      (p) => p.name.trim().toLowerCase() === floatingPlayerName.trim().toLowerCase()
+    );
+    if (found) return found;
+    return {
+      id: 0,
+      name: floatingPlayerName,
+      avatar_url: getPlayerAvatarUrl(floatingPlayerName),
+      tier: 'Peserta',
+      status: 'Aktif' as const,
+      medals: { MVP: 0, Gold: 0, Silver: 0, Coklat: 0 },
+      winRate: 0,
+      total_match: 0,
+      score: 0,
+    };
+  }, [floatingPlayerName, players]);
+
+  // Floating player's active season stats & rank
+  const floatingPlayerSeasonStat = useMemo(() => {
+    if (!floatingPlayer || !activeSeason?.players) return null;
+    return activeSeason.players.find(
+      (p) => p.nickname.trim().toLowerCase() === floatingPlayer.name.trim().toLowerCase()
+    );
+  }, [floatingPlayer, activeSeason]);
+
+  const floatingPlayerSeasonRank = useMemo(() => {
+    if (!floatingPlayer || !activeSeason?.players || activeSeason.players.length === 0) return 0;
+    const sorted = [...activeSeason.players].sort((a, b) => {
+      const scoreA = Number(a.score) || 0;
+      const scoreB = Number(b.score) || 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      const mvpA = Number(a.mvp) || 0;
+      const mvpB = Number(b.mvp) || 0;
+      if (mvpB !== mvpA) return mvpB - mvpA;
+      const coklatA = Number(a.coklat) || 0;
+      const coklatB = Number(b.coklat) || 0;
+      if (coklatA !== coklatB) return coklatA - coklatB;
+      return (Number(b.winRate) || 0) - (Number(a.winRate) || 0);
+    });
+    const idx = sorted.findIndex(
+      (p) => p.nickname.trim().toLowerCase() === floatingPlayer.name.trim().toLowerCase()
+    );
+    return idx >= 0 ? idx + 1 : 0;
+  }, [floatingPlayer, activeSeason]);
+
+  // Handle clicking avatar in chat:
+  // 1st click: shows floating profile
+  // 2nd click (or clicking photo in floating profile): enlarges the photo
+  const handleAvatarClick = (
+    playerName: string,
+    playerAvatar?: string,
+    playerTier?: string,
+    playerJulukan?: string
+  ) => {
+    if (floatingPlayerName && floatingPlayerName.trim().toLowerCase() === playerName.trim().toLowerCase()) {
+      setZoomedImagePlayer({
+        name: playerName,
+        url: playerAvatar || getPlayerAvatarUrl(playerName),
+        tier: playerTier,
+        julukan: playerJulukan,
+      });
+      return;
+    }
+    setFloatingPlayerName(playerName);
+  };
+
+  // Reply handlers
+  const handleStartReply = (msg: ChatMessage) => {
+    setReplyingTo(msg);
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 50);
+  };
+
+  const scrollToMessage = (msgId: string) => {
+    const el = document.getElementById(`chat-msg-${msgId}`) || document.getElementById(`chat-system-msg-${msgId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-[#E8B33D]', 'ring-offset-2', 'ring-offset-[#161311]', 'transition-all');
+      setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-[#E8B33D]', 'ring-offset-2', 'ring-offset-[#161311]', 'transition-all');
+      }, 2000);
+    }
+  };
+
+  // Insert emoticon or meme into input
+  const handleInsertEmoticon = (emoticon: string) => {
+    if (!inputRef.current) {
+      setInputText((prev) => prev + emoticon + ' ');
+      return;
+    }
+    const cursorPos = inputRef.current.selectionStart || inputText.length;
+    const before = inputText.slice(0, cursorPos);
+    const after = inputText.slice(cursorPos);
+    const updated = `${before}${emoticon} ${after}`;
+    setInputText(updated);
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        const nextPos = cursorPos + emoticon.length + 1;
+        inputRef.current.setSelectionRange(nextPos, nextPos);
+      }
+    }, 20);
+  };
 
   // Handle text input change & mention trigger
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -207,7 +424,17 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
       senderJulukan: session.julukan,
       content,
       mentions: foundMentions.length > 0 ? foundMentions : undefined,
+      ...(replyingTo && {
+        replyTo: {
+          id: replyingTo.id,
+          senderName: replyingTo.senderName,
+          content: replyingTo.content.slice(0, 150),
+        },
+      }),
     });
+
+    setReplyingTo(null);
+    setIsInputEmojiPickerOpen(false);
   };
 
   // Toggle reaction
@@ -468,23 +695,46 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                 id={`chat-msg-${msg.id}`}
                 className={`group relative flex gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
               >
-                {/* Avatar */}
-                <div className="shrink-0 pt-0.5">
+                {/* Avatar with click to floating profile / zoom */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAvatarClick(
+                      msg.senderName,
+                      msg.senderAvatar,
+                      msg.senderTier,
+                      msg.senderJulukan
+                    )
+                  }
+                  className="shrink-0 pt-0.5 cursor-pointer hover:opacity-80 transition-transform active:scale-95 focus:outline-none"
+                  title="Klik untuk lihat profil ringkas & foto pemain"
+                >
                   <PlayerAvatar
                     name={msg.senderName}
                     avatarUrl={msg.senderAvatar}
                     size="md"
-                    className="shadow-sm"
+                    className="shadow-sm hover:ring-2 hover:ring-[#E8B33D]/60 rounded-full transition-all"
                   />
-                </div>
+                </button>
 
                 {/* Message Bubble Container */}
-                <div className={`flex flex-col max-w-[80%] sm:max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
+                <div className={`flex flex-col max-w-[85%] sm:max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
                   {/* Sender Name, Tier, Julukan & Timestamp */}
                   <div className={`flex flex-wrap items-center gap-1.5 mb-1 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <span className="text-xs font-black text-[#F2EDE4]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAvatarClick(
+                          msg.senderName,
+                          msg.senderAvatar,
+                          msg.senderTier,
+                          msg.senderJulukan
+                        )
+                      }
+                      className="text-xs font-black text-[#F2EDE4] hover:text-[#E8B33D] transition-colors cursor-pointer"
+                    >
                       {msg.senderName}
-                    </span>
+                    </button>
 
                     {msg.senderTier && (
                       <span
@@ -519,12 +769,35 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                         : 'bg-[#241F1B] text-[#F2EDE4] border border-[#332C25] rounded-tl-none'
                     }`}
                   >
+                    {/* Replying quote preview if this message is a reply */}
+                    {msg.replyTo && (
+                      <div
+                        onClick={() => scrollToMessage(msg.replyTo!.id)}
+                        className={`mb-2 flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-all cursor-pointer ${
+                          isMe
+                            ? 'bg-black/15 border-l-2 border-[#161311] text-[#161311] hover:bg-black/20'
+                            : 'bg-[#191513] border-l-2 border-[#E8B33D] text-[#9C948A] hover:bg-[#1f1a17] hover:text-[#F2EDE4]'
+                        }`}
+                        title="Klik untuk melihat pesan yang dibalas"
+                      >
+                        <Reply size={12} className="shrink-0 mt-0.5 opacity-80" />
+                        <div className="min-w-0 flex-1 truncate">
+                          <span className="font-bold text-[11px] block truncate text-current">
+                            {msg.replyTo.senderName}
+                          </span>
+                          <span className="italic text-[10px] block truncate opacity-85">
+                            {msg.replyTo.content}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="whitespace-pre-wrap break-words">
                       {renderMessageContent(msg.content)}
                     </div>
                   </div>
 
-                  {/* Reaction Badges */}
+                  {/* Reaction & Action Badges */}
                   <div className={`mt-1 flex flex-wrap items-center gap-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                     {reactionsList.map((reaction) => {
                       const userHasReacted = session ? reaction.users.includes(session.playerName) : false;
@@ -544,6 +817,17 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                         </button>
                       );
                     })}
+
+                    {/* Reply Action Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleStartReply(msg)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-full bg-[#1D1916] border border-[#332C25] hover:border-[#E8B33D]/50 text-[#9C948A] hover:text-[#E8B33D] px-2 py-0.5 text-[10px] font-semibold cursor-pointer"
+                      title="Balas pesan ini"
+                    >
+                      <Reply size={10} />
+                      <span>Balas</span>
+                    </button>
 
                     {/* Quick Reaction Button on Hover */}
                     <button
@@ -580,7 +864,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
 
                   {/* Popover Emoji Picker for this message */}
                   {showEmojiPickerFor === msg.id && (
-                    <div className="mt-1 flex items-center gap-1 p-1 rounded-xl bg-[#1D1916] border border-[#332C25] shadow-lg z-10">
+                    <div className="mt-1 flex items-center gap-1 p-1 rounded-xl bg-[#1D1916] border border-[#332C25] shadow-lg z-10 flex-wrap max-w-xs">
                       {QUICK_EMOJIS.map((emoji) => (
                         <button
                           key={emoji}
@@ -669,40 +953,379 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
         </div>
       )}
 
-      {/* 5. CHAT INPUT BAR */}
+      {/* 5. EMOTICON & TRENDING MEME PICKER DRAWER */}
+      {isInputEmojiPickerOpen && (
+        <div
+          ref={emojiPickerRef}
+          id="chat-emoticon-picker-popup"
+          className="absolute bottom-20 right-3 sm:right-6 left-3 sm:left-auto sm:w-96 bg-[#1D1916] border border-[#3D352E] rounded-2xl shadow-2xl overflow-hidden z-30 animate-fadeIn"
+        >
+          {/* Header & Tabs */}
+          <div className="flex items-center justify-between px-3 py-2 bg-[#241F1B] border-b border-[#332C25]">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setEmojiCategoryTab('meme')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  emojiCategoryTab === 'meme'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🔥 Meme Trend
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmojiCategoryTab('emoji')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  emojiCategoryTab === 'emoji'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                😀 Emoticon
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmojiCategoryTab('gaming')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                  emojiCategoryTab === 'gaming'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🎮 MLBB
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsInputEmojiPickerOpen(false)}
+              className="text-[#9C948A] hover:text-[#F2EDE4] p-1 rounded-lg cursor-pointer"
+              title="Tutup"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Grid of Emoticons */}
+          <div className="p-3 max-h-56 overflow-y-auto">
+            {emojiCategoryTab === 'meme' ? (
+              <div className="grid grid-cols-2 gap-1.5">
+                {MEME_EMOTICONS.filter((item) => item.category === 'meme').map((item, idx) => (
+                  <button
+                    key={`meme-item-${idx}`}
+                    type="button"
+                    onClick={() => handleInsertEmoticon(item.value)}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D]/50 text-left text-xs text-[#F2EDE4] transition-all hover:scale-[1.02] cursor-pointer"
+                  >
+                    <span className="text-base">{item.value.split(' ')[0]}</span>
+                    <span className="text-[11px] font-semibold text-[#F2EDE4] truncate">
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5">
+                {MEME_EMOTICONS.filter((item) => item.category === emojiCategoryTab).map((item, idx) => (
+                  <button
+                    key={`emoji-item-${idx}`}
+                    type="button"
+                    onClick={() => handleInsertEmoticon(item.value)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D] text-lg hover:scale-125 transition-all cursor-pointer"
+                    title={item.label}
+                  >
+                    {item.value}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 6. FLOATING PLAYER PROFILE MODAL */}
+      {floatingPlayer && (
+        <div
+          id="floating-player-profile-backdrop"
+          className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setFloatingPlayerName(null)}
+        >
+          <div
+            id="floating-player-profile-card"
+            className="relative w-full max-w-sm rounded-2xl border border-[#3D352E] bg-[#1D1916] p-5 shadow-[0_20px_50px_rgba(0,0,0,0.8)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setFloatingPlayerName(null)}
+              className="absolute top-3.5 right-3.5 flex h-7 w-7 items-center justify-center rounded-lg bg-[#241F1B] text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2F2823] transition-colors cursor-pointer"
+              title="Tutup"
+            >
+              <X size={16} />
+            </button>
+
+            {/* Avatar & Photo Click Hint */}
+            <div className="flex flex-col items-center text-center">
+              <div
+                onClick={() => {
+                  setZoomedImagePlayer({
+                    name: floatingPlayer.name,
+                    url: floatingPlayer.avatar_url || getPlayerAvatarUrl(floatingPlayer.name),
+                    tier: floatingPlayer.tier,
+                    status: floatingPlayer.status,
+                    julukan: floatingPlayer.julukan,
+                  });
+                }}
+                className="relative group cursor-pointer rounded-2xl p-1 bg-gradient-to-b from-[#E8B33D]/40 to-transparent border border-[#E8B33D]/40 hover:border-[#E8B33D] transition-all hover:scale-105 shadow-lg"
+                title="Klik foto untuk memperbesar tampilan"
+              >
+                <PlayerAvatar
+                  name={floatingPlayer.name}
+                  avatarUrl={floatingPlayer.avatar_url}
+                  size="xl"
+                  className="rounded-xl shadow-md"
+                />
+                <div className="absolute inset-0 rounded-xl bg-black/55 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[#F2EDE4] transition-opacity">
+                  <ZoomIn size={22} className="text-[#E8B33D] mb-1" />
+                  <span className="text-[10px] font-bold text-white px-2 py-0.5 rounded bg-black/70">Perbesar</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setZoomedImagePlayer({
+                    name: floatingPlayer.name,
+                    url: floatingPlayer.avatar_url || getPlayerAvatarUrl(floatingPlayer.name),
+                    tier: floatingPlayer.tier,
+                    status: floatingPlayer.status,
+                    julukan: floatingPlayer.julukan,
+                  });
+                }}
+                className="text-[11px] text-[#E8B33D] hover:underline mt-1.5 flex items-center gap-1 font-semibold cursor-pointer"
+              >
+                <ZoomIn size={12} /> Klik foto untuk perbesar
+              </button>
+
+              {/* Name & Badges */}
+              <h4 className="text-lg font-black text-[#F2EDE4] mt-2">
+                {floatingPlayer.name}
+              </h4>
+
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
+                {floatingPlayer.tier && (
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getTierColor(
+                      floatingPlayer.tier
+                    )}`}
+                  >
+                    {floatingPlayer.tier}
+                  </span>
+                )}
+                {floatingPlayer.status && (
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                      floatingPlayer.status === 'Cabutan'
+                        ? 'bg-purple-950/40 text-purple-300 border-purple-500/40'
+                        : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40'
+                    }`}
+                  >
+                    {floatingPlayer.status}
+                  </span>
+                )}
+              </div>
+
+              {floatingPlayer.julukan && (
+                <p className="text-xs text-[#E8B33D] italic mt-1 font-medium">
+                  "{floatingPlayer.julukan}"
+                </p>
+              )}
+
+              {/* Season Rank Badge */}
+              <div className="mt-3.5 flex items-center justify-center gap-2 rounded-xl bg-[#241F1B] border border-[#332C25] px-3.5 py-2 w-full">
+                <Trophy size={15} className="text-[#E8B33D] shrink-0" />
+                <span className="text-xs text-[#9C948A]">
+                  Peringkat ({activeSeason?.title || 'Season Aktif'}):
+                </span>
+                {floatingPlayerSeasonRank > 0 ? (
+                  <span className="text-xs font-black text-[#E8B33D]">
+                    #{floatingPlayerSeasonRank}
+                  </span>
+                ) : (
+                  <span className="text-xs font-medium text-[#9C948A] italic">
+                    Belum bertanding
+                  </span>
+                )}
+              </div>
+
+              {/* Quick Season / Career Stats */}
+              <div className="grid grid-cols-4 gap-2 mt-2.5 w-full">
+                <div className="rounded-lg bg-[#161311] border border-[#332C25] p-2 text-center">
+                  <span className="block text-xs font-bold text-[#E8B33D]">
+                    {floatingPlayerSeasonStat?.matches ?? floatingPlayer.total_match ?? 0}
+                  </span>
+                  <span className="text-[9px] text-[#9C948A] uppercase">Match</span>
+                </div>
+                <div className="rounded-lg bg-[#161311] border border-[#332C25] p-2 text-center">
+                  <span className="block text-xs font-bold text-emerald-400">
+                    {floatingPlayerSeasonStat?.winRate ?? floatingPlayer.winRate ?? 0}%
+                  </span>
+                  <span className="text-[9px] text-[#9C948A] uppercase">WR</span>
+                </div>
+                <div className="rounded-lg bg-[#161311] border border-[#332C25] p-2 text-center">
+                  <span className="block text-xs font-bold text-amber-300">
+                    👑 {floatingPlayerSeasonStat?.mvp ?? floatingPlayer.medals?.MVP ?? 0}
+                  </span>
+                  <span className="text-[9px] text-[#9C948A] uppercase">MVP</span>
+                </div>
+                <div className="rounded-lg bg-[#161311] border border-[#332C25] p-2 text-center">
+                  <span className="block text-xs font-bold text-[#8C6D58]">
+                    🍫 {floatingPlayerSeasonStat?.coklat ?? floatingPlayer.medals?.Coklat ?? 0}
+                  </span>
+                  <span className="text-[9px] text-[#9C948A] uppercase">Coklat</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2 mt-4 w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoomedImagePlayer({
+                      name: floatingPlayer.name,
+                      url: floatingPlayer.avatar_url || getPlayerAvatarUrl(floatingPlayer.name),
+                      tier: floatingPlayer.tier,
+                      status: floatingPlayer.status,
+                      julukan: floatingPlayer.julukan,
+                    });
+                  }}
+                  className="flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-bold bg-[#241F1B] hover:bg-[#2D2520] text-[#E8B33D] border border-[#E8B33D]/30 transition-all cursor-pointer"
+                >
+                  <ZoomIn size={14} />
+                  <span>Perbesar Foto Profil</span>
+                </button>
+
+                {onViewPlayerProfile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFloatingPlayerName(null);
+                      onViewPlayerProfile(floatingPlayer.id || floatingPlayer.name);
+                    }}
+                    className="flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] transition-all cursor-pointer shadow-md"
+                  >
+                    <UserRound size={14} />
+                    <span>Buka Profil Lengkap →</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSelectMention(floatingPlayer.name);
+                    setFloatingPlayerName(null);
+                  }}
+                  className="text-[11px] text-[#9C948A] hover:text-[#F2EDE4] transition-colors py-1 cursor-pointer"
+                >
+                  Sebut @{floatingPlayer.name} di chat
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. ENLARGED PHOTO PREVIEW MODAL */}
+      {zoomedImagePlayer && (
+        <ImagePreviewModal
+          isOpen={Boolean(zoomedImagePlayer)}
+          onClose={() => setZoomedImagePlayer(null)}
+          imageUrl={zoomedImagePlayer.url}
+          playerName={zoomedImagePlayer.name}
+          tier={zoomedImagePlayer.tier}
+          status={zoomedImagePlayer.status}
+          julukan={zoomedImagePlayer.julukan}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {/* 8. CHAT INPUT BAR */}
       <div className="p-3 bg-[#1D1916] border-t border-[#332C25] shrink-0">
         {session && session.isLoggedIn ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="flex items-end gap-2"
-          >
-            <div className="relative flex-1">
-              <textarea
-                ref={inputRef}
-                id="chat-input-textarea"
-                rows={1}
-                value={inputText}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Tulis pesan ke Lobby... (ketik @ untuk mention)"
-                className="w-full resize-none rounded-xl bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] placeholder-[#6E655C] focus:border-[#E8B33D] focus:outline-none focus:ring-1 focus:ring-[#E8B33D] max-h-28 overflow-y-auto leading-normal"
-              />
-            </div>
+          <div>
+            {/* Replying banner */}
+            {replyingTo && (
+              <div className="flex items-center justify-between px-3.5 py-2 bg-[#241F1B] border-t border-x border-[#332C25] rounded-t-xl text-xs text-[#F2EDE4] mb-0 animate-fadeIn">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Reply size={13} className="text-[#E8B33D] shrink-0" />
+                  <div className="truncate">
+                    <span className="text-[#9C948A] text-[11px]">Membalas </span>
+                    <strong className="text-[#E8B33D]">{replyingTo.senderName}</strong>
+                    <span className="text-[#9C948A] mx-1">:</span>
+                    <span className="text-[#F2EDE4]/80 italic truncate">{replyingTo.content}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(null)}
+                  className="text-[#9C948A] hover:text-[#F2EDE4] p-1 rounded-md transition-colors cursor-pointer"
+                  title="Batal membalas"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
-            {/* Send Button */}
-            <button
-              id="chat-send-btn"
-              type="submit"
-              disabled={!inputText.trim()}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 shadow-md cursor-pointer"
-              title="Kirim Pesan (Enter)"
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="flex items-end gap-2"
             >
-              <Send size={18} />
-            </button>
-          </form>
+              <div className="relative flex-1">
+                <textarea
+                  ref={inputRef}
+                  id="chat-input-textarea"
+                  rows={1}
+                  value={inputText}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Tulis pesan ke Lobby... (ketik @ mention, klik icon smile untuk meme)"
+                  className={`w-full resize-none bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] placeholder-[#6E655C] focus:border-[#E8B33D] focus:outline-none focus:ring-1 focus:ring-[#E8B33D] max-h-28 overflow-y-auto leading-normal ${
+                    replyingTo ? 'rounded-b-xl rounded-t-none' : 'rounded-xl'
+                  }`}
+                />
+              </div>
+
+              {/* Emoticon & Meme Button */}
+              <button
+                id="chat-emoticon-btn"
+                type="button"
+                onClick={() => setIsInputEmojiPickerOpen(!isInputEmojiPickerOpen)}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all active:scale-95 cursor-pointer ${
+                  isInputEmojiPickerOpen
+                    ? 'bg-[#E8B33D] text-[#161311] border-[#E8B33D]'
+                    : 'bg-[#241F1B] hover:bg-[#2D2520] text-[#E8B33D] border-[#332C25]'
+                }`}
+                title="Buka Emoticon & Tren Meme"
+              >
+                <Smile size={19} />
+              </button>
+
+              {/* Send Button */}
+              <button
+                id="chat-send-btn"
+                type="submit"
+                disabled={!inputText.trim()}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 shadow-md cursor-pointer"
+                title="Kirim Pesan (Enter)"
+              >
+                <Send size={18} />
+              </button>
+            </form>
+          </div>
         ) : (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#241F1B]/70 border border-[#332C25] rounded-xl p-3">
             <div className="flex items-center gap-2.5">

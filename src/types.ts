@@ -221,6 +221,11 @@ export interface ChatMessage {
   isPinned?: boolean;
   pinnedAt?: string;
   pinnedBy?: string;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    content: string;
+  };
 }
 
 export interface PlayerAuthSession {
