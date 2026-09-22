@@ -1830,6 +1830,8 @@ export default function App() {
         {tab === 'chat' && (
           <CommunityChat
             players={players}
+            matches={matches}
+            seasons={seasons}
             isAdmin={isAdmin}
             onOpenMatchDetail={(matchId) => {
               const found = seasonMatches.find((m) => String(m.id) === String(matchId));

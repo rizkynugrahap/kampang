@@ -22,14 +22,38 @@ import {
   ExternalLink,
   ZoomIn,
   UserRound,
+  Film,
+  Search,
+  GitBranch,
+  Loader2,
+  Plus,
+  Bell,
+  BellRing,
+  Volume2,
+  VolumeX,
+  CheckCheck,
 } from 'lucide-react';
-import { Player, Match, ChatMessage, ChatReaction, LagaAmalSeasonData } from '../types';
+import { Player, Match, Season, ChatMessage, ChatReaction, LagaAmalSeasonData } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { usePlayerAuth } from '../contexts/PlayerAuthContext';
 import { PlayerAccountMenu } from './PlayerAccountMenu';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { GitSyncModal } from './GitSyncModal';
+import { MentionNotificationToast } from './MentionNotificationToast';
 import { getPlayerAvatarUrl } from '../constants/playerAvatars';
+import {
+  CURATED_CHAT_EMOTES,
+  EMOTE_NAME_MAP,
+  TOP_EMOTE_REACTIONS,
+  search7tvLiveEmotes,
+  ChatEmote,
+} from '../constants/chatEmotes';
+import {
+  CURATED_CHAT_GIFS,
+  searchChatGifs,
+  ChatGifItem,
+} from '../constants/chatGifs';
 import {
   subscribeToChatMessages,
   sendChatMessage,
@@ -37,93 +61,38 @@ import {
   pinChatMessage,
   deleteChatMessage,
 } from '../services/chatService';
+import {
+  playMentionChime,
+  isNotificationSoundEnabled,
+  setNotificationSoundEnabled,
+  requestBrowserNotificationPermission,
+  showBrowserNotification,
+  getReadMentionIds,
+  markMentionAsRead,
+  markAllMentionsAsRead,
+} from '../services/notificationService';
 
 interface CommunityChatProps {
   players: Player[];
+  matches?: Match[];
+  seasons?: Season[];
   isAdmin?: boolean;
   onOpenMatchDetail?: (matchId: string | number) => void;
   onViewPlayerProfile?: (nicknameOrId: string | number) => void;
   activeSeason?: LagaAmalSeasonData;
+  targetMessageId?: string;
   className?: string;
 }
 
-const QUICK_EMOJIS = ['🔥', '😂', '👑', '💀', '🗿', '🤡', '🍷', '🤫', '🥶', '👏', '❤️', '🍫'];
-
-interface MemeEmoticonItem {
-  label: string;
-  value: string;
-  category: 'meme' | 'emoji' | 'gaming';
-}
-
-const MEME_EMOTICONS: MemeEmoticonItem[] = [
-  // Trending memes
-  { label: '🗿 Mewing Chad', value: '🗿', category: 'meme' },
-  { label: '🍷🗿 Sigma', value: '🍷🗿', category: 'meme' },
-  { label: '💀 Kena Mental', value: '💀', category: 'meme' },
-  { label: '🤡 Badut Lord', value: '🤡', category: 'meme' },
-  { label: '🤫🧏‍♂️ Bye Bye', value: '🤫🧏‍♂️', category: 'meme' },
-  { label: '🦅 Gak Bahaya Ta?', value: '🦅', category: 'meme' },
-  { label: '🥶 Dingin Banget', value: '🥶', category: 'meme' },
-  { label: '🐒 Monke Beban', value: '🐒', category: 'meme' },
-  { label: '😭 Nangis Dipojokan', value: '😭', category: 'meme' },
-  { label: '🫡 Siap Komandan', value: '🫡', category: 'meme' },
-  { label: '🍗 Winner Chicken', value: '🍗', category: 'meme' },
-  { label: '🍫 Coklat Moment', value: '🍫', category: 'meme' },
-  { label: '👑 Gendong Tim', value: '👑', category: 'meme' },
-  { label: '🥱 Ez Game Dek', value: '🥱', category: 'meme' },
-  { label: '👏 GGWP King', value: '👏', category: 'meme' },
-  { label: '👀 Liat Aja Dulu', value: '👀', category: 'meme' },
-  { label: '🔥 Menyala Abangkuh', value: '🔥', category: 'meme' },
-  { label: '🚀 Meluncur Cepat', value: '🚀', category: 'meme' },
-  // Classic Expressions
-  { label: 'Tertawa', value: '😂', category: 'emoji' },
-  { label: 'Ngakak', value: '🤣', category: 'emoji' },
-  { label: 'Keren', value: '😎', category: 'emoji' },
-  { label: 'Love', value: '😍', category: 'emoji' },
-  { label: 'Star Eyes', value: '🤩', category: 'emoji' },
-  { label: 'Party', value: '🥳', category: 'emoji' },
-  { label: 'Smirk', value: '😏', category: 'emoji' },
-  { label: 'Mikir', value: '🤔', category: 'emoji' },
-  { label: 'Kaget', value: '😱', category: 'emoji' },
-  { label: 'Marah', value: '😡', category: 'emoji' },
-  { label: 'Toxic', value: '🤬', category: 'emoji' },
-  { label: 'Turu', value: '😴', category: 'emoji' },
-  { label: 'Muntah', value: '🤮', category: 'emoji' },
-  { label: 'Malaikat', value: '😇', category: 'emoji' },
-  { label: 'Iblis', value: '😈', category: 'emoji' },
-  { label: 'Hantu', value: '👻', category: 'emoji' },
-  { label: 'Poop', value: '💩', category: 'emoji' },
-  { label: 'Love Heart', value: '❤️', category: 'emoji' },
-  // Gaming & Gestures
-  { label: 'Jempol', value: '👍', category: 'gaming' },
-  { label: 'Dislike', value: '👎', category: 'gaming' },
-  { label: 'Tinju', value: '👊', category: 'gaming' },
-  { label: 'Peace', value: '✌️', category: 'gaming' },
-  { label: 'Salaman', value: '🤝', category: 'gaming' },
-  { label: 'Tepuk Tangan', value: '👏', category: 'gaming' },
-  { label: 'Sungkem', value: '🙏', category: 'gaming' },
-  { label: 'Otot Kuat', value: '💪', category: 'gaming' },
-  { label: 'Pedang By 1', value: '⚔️', category: 'gaming' },
-  { label: 'Perisai Tank', value: '🛡️', category: 'gaming' },
-  { label: 'Panah Marksman', value: '🏹', category: 'gaming' },
-  { label: 'Tongkat Mage', value: '🪄', category: 'gaming' },
-  { label: 'Mahkota MVP', value: '👑', category: 'gaming' },
-  { label: 'Medali Antam', value: '🥇', category: 'gaming' },
-  { label: 'Medali Silver', value: '🥈', category: 'gaming' },
-  { label: 'Medali Coklat', value: '🍫', category: 'gaming' },
-  { label: 'Piala Juara', value: '🏆', category: 'gaming' },
-  { label: 'Api Semangat', value: '🔥', category: 'gaming' },
-  { label: 'Ledakan', value: '💥', category: 'gaming' },
-  { label: 'Bintang', value: '✨', category: 'gaming' },
-  { label: 'Target Sasaran', value: '🎯', category: 'gaming' },
-];
-
 export const CommunityChat: React.FC<CommunityChatProps> = ({
   players,
+  matches = [],
+  seasons = [],
   isAdmin = false,
   onOpenMatchDetail,
   onViewPlayerProfile,
   activeSeason,
+  targetMessageId,
   className = '',
 }) => {
   const { session, isLoggedIn, openLogin } = usePlayerAuth();
@@ -134,7 +103,37 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   // Modals & UI States
   const [showEmojiPickerFor, setShowEmojiPickerFor] = useState<string | null>(null);
   const [isInputEmojiPickerOpen, setIsInputEmojiPickerOpen] = useState(false);
-  const [emojiCategoryTab, setEmojiCategoryTab] = useState<'meme' | 'emoji' | 'gaming'>('meme');
+  const [emoteCategoryTab, setEmoteCategoryTab] = useState<'chad' | 'troll' | 'beban' | 'dance' | 'all'>('chad');
+  const [emoteSearchQuery, setEmoteSearchQuery] = useState('');
+  const [live7tvEmotes, setLive7tvEmotes] = useState<ChatEmote[]>([]);
+  const [isSearching7tv, setIsSearching7tv] = useState(false);
+
+  // GIF Drawer states
+  const [isGifPickerOpen, setIsGifPickerOpen] = useState(false);
+  const [gifCategoryTab, setGifCategoryTab] = useState<'all' | 'mlbb' | 'meme' | 'victory' | 'sad'>('all');
+  const [gifSearchQuery, setGifSearchQuery] = useState('');
+  const [customGifUrl, setCustomGifUrl] = useState('');
+
+  // Git Modal state
+  const [isGitModalOpen, setIsGitModalOpen] = useState(false);
+
+  // Notification states for @mentions
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [readMentionIds, setReadMentionIds] = useState<Set<string>>(() => {
+    return session?.playerName ? getReadMentionIds(session.playerName) : new Set();
+  });
+  const [isSoundEnabled, setIsSoundEnabledState] = useState<boolean>(() => isNotificationSoundEnabled());
+  const [activeToast, setActiveToast] = useState<{
+    message: ChatMessage;
+    senderName: string;
+    senderAvatar?: string;
+    senderTier?: string;
+  } | null>(null);
+
+  const notificationDrawerRef = useRef<HTMLDivElement>(null);
+  const lastProcessedMsgIdRef = useRef<string | null>(null);
+  const initialLoadCompleteRef = useRef<boolean>(false);
+
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
 
   // Floating Player Profile & Zoom Modal States
@@ -155,6 +154,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const gifPickerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
   // Subscribe to real-time chat messages
@@ -165,17 +165,114 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     return () => unsub();
   }, []);
 
-  // Close emoji picker on outside click
+  // Update read mention IDs whenever session changes
   useEffect(() => {
-    if (!isInputEmojiPickerOpen) return;
+    if (!session?.playerName) return;
+    setReadMentionIds(getReadMentionIds(session.playerName));
+  }, [session?.playerName]);
+
+  // Target message navigation effect
+  useEffect(() => {
+    if (targetMessageId && messages.length > 0) {
+      setTimeout(() => {
+        scrollToMessage(targetMessageId);
+      }, 350);
+    }
+  }, [targetMessageId, messages.length]);
+
+  // Real-time mention detection & alerting for the logged-in player
+  useEffect(() => {
+    if (!session?.playerName || messages.length === 0) {
+      if (messages.length > 0) initialLoadCompleteRef.current = true;
+      return;
+    }
+
+    const latestMsg = messages[messages.length - 1];
+    if (!latestMsg || latestMsg.id === lastProcessedMsgIdRef.current) {
+      return;
+    }
+
+    lastProcessedMsgIdRef.current = latestMsg.id;
+
+    // Skip playing chime on initial first fetch of history
+    if (!initialLoadCompleteRef.current) {
+      initialLoadCompleteRef.current = true;
+      return;
+    }
+
+    const myName = session.playerName.trim().toLowerCase();
+    const isSenderMe = latestMsg.senderName?.trim().toLowerCase() === myName;
+    if (isSenderMe) return;
+
+    const isMentioned =
+      latestMsg.mentions?.some((name) => name.trim().toLowerCase() === myName) ||
+      latestMsg.content.toLowerCase().includes(`@${myName}`);
+
+    if (isMentioned) {
+      // 1. Play crisp audio chime
+      playMentionChime();
+
+      // 2. Show native browser notification
+      showBrowserNotification(
+        latestMsg.senderName,
+        latestMsg.content,
+        latestMsg.senderAvatar
+      );
+
+      // 3. Show interactive in-app toast
+      setActiveToast({
+        message: latestMsg,
+        senderName: latestMsg.senderName,
+        senderAvatar: latestMsg.senderAvatar,
+        senderTier: latestMsg.senderTier,
+      });
+    }
+  }, [messages, session?.playerName]);
+
+  // Close pickers on outside click
+  useEffect(() => {
+    if (!isInputEmojiPickerOpen && !isGifPickerOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        isInputEmojiPickerOpen &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(target) &&
+        !(e.target as HTMLElement).closest('#chat-emoticon-btn')
+      ) {
         setIsInputEmojiPickerOpen(false);
+      }
+      if (
+        isGifPickerOpen &&
+        gifPickerRef.current &&
+        !gifPickerRef.current.contains(target) &&
+        !(e.target as HTMLElement).closest('#chat-gif-btn')
+      ) {
+        setIsGifPickerOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isInputEmojiPickerOpen]);
+  }, [isInputEmojiPickerOpen, isGifPickerOpen]);
+
+  // Live search 7TV emotes when query is entered
+  useEffect(() => {
+    if (!emoteSearchQuery.trim() || emoteSearchQuery.trim().length < 2) {
+      setLive7tvEmotes([]);
+      setIsSearching7tv(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching7tv(true);
+      try {
+        const results = await search7tvLiveEmotes(emoteSearchQuery, 14);
+        setLive7tvEmotes(results);
+      } finally {
+        setIsSearching7tv(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [emoteSearchQuery]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -297,24 +394,136 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     }
   };
 
-  // Insert emoticon or meme into input
-  const handleInsertEmoticon = (emoticon: string) => {
+  // Mentions for the logged-in player
+  const userMentions = useMemo(() => {
+    if (!session?.playerName) return [];
+    const myName = session.playerName.trim().toLowerCase();
+    return messages
+      .filter((m) => {
+        if (!m || !m.content) return false;
+        if (m.senderName?.trim().toLowerCase() === myName) return false;
+        const inMentionsArray = m.mentions?.some((name) => name.trim().toLowerCase() === myName);
+        const inContent = m.content.toLowerCase().includes(`@${myName}`);
+        return inMentionsArray || inContent;
+      })
+      .reverse(); // newest first
+  }, [messages, session?.playerName]);
+
+  const unreadMentionsCount = useMemo(() => {
+    return userMentions.filter((m) => !readMentionIds.has(m.id)).length;
+  }, [userMentions, readMentionIds]);
+
+  const handleMarkMentionRead = (msgId: string) => {
+    if (!session?.playerName) return;
+    markMentionAsRead(session.playerName, msgId);
+    setReadMentionIds((prev) => new Set(prev).add(msgId));
+  };
+
+  const handleMarkAllMentionsRead = () => {
+    if (!session?.playerName || userMentions.length === 0) return;
+    const allIds = userMentions.map((m) => m.id);
+    markAllMentionsAsRead(session.playerName, allIds);
+    setReadMentionIds((prev) => {
+      const next = new Set(prev);
+      allIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const handleJumpToMention = (msgId: string) => {
+    handleMarkMentionRead(msgId);
+    setIsNotificationDrawerOpen(false);
+    scrollToMessage(msgId);
+  };
+
+  const handleToggleSound = () => {
+    const next = !isSoundEnabled;
+    setIsSoundEnabledState(next);
+    setNotificationSoundEnabled(next);
+    if (next) playMentionChime();
+  };
+
+  const handleRequestBrowserPerm = async () => {
+    const perm = await requestBrowserNotificationPermission();
+    if (perm === 'granted') {
+      showBrowserNotification('Laga Amal Pantos', 'Notifikasi desktop aktif! Anda akan menerima notifikasi saat di-tag.');
+    }
+  };
+
+  // Filtered animated emotes
+  const filteredEmotes = useMemo(() => {
+    let list = CURATED_CHAT_EMOTES;
+    if (emoteCategoryTab !== 'all') {
+      list = list.filter((e) => e.category === emoteCategoryTab);
+    }
+    if (emoteSearchQuery.trim()) {
+      const q = emoteSearchQuery.toLowerCase().trim();
+      list = list.filter(
+        (e) =>
+          e.name.toLowerCase().includes(q) ||
+          e.label.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [emoteCategoryTab, emoteSearchQuery]);
+
+  // Filtered curated GIFs
+  const filteredGifs = useMemo(() => {
+    return searchChatGifs(gifSearchQuery, gifCategoryTab);
+  }, [gifSearchQuery, gifCategoryTab]);
+
+  // Insert animated emote code (e.g. :GIGACHAD:) into input
+  const handleInsertEmote = (emoteName: string) => {
+    const emoteTag = `:${emoteName}:`;
     if (!inputRef.current) {
-      setInputText((prev) => prev + emoticon + ' ');
+      setInputText((prev) => (prev ? `${prev} ${emoteTag} ` : `${emoteTag} `));
       return;
     }
     const cursorPos = inputRef.current.selectionStart || inputText.length;
     const before = inputText.slice(0, cursorPos);
     const after = inputText.slice(cursorPos);
-    const updated = `${before}${emoticon} ${after}`;
+    const updated = `${before}${before.endsWith(' ') || !before ? '' : ' '}${emoteTag} ${after}`;
     setInputText(updated);
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus();
-        const nextPos = cursorPos + emoticon.length + 1;
+        const nextPos = cursorPos + emoteTag.length + 2;
         inputRef.current.setSelectionRange(nextPos, nextPos);
       }
     }, 20);
+  };
+
+  // Send GIF directly
+  const handleSendGif = async (gifUrlToSend: string) => {
+    if (!session || !session.isLoggedIn) {
+      openLogin();
+      return;
+    }
+    if (!gifUrlToSend.trim()) return;
+
+    const caption = inputText.trim();
+    setInputText('');
+    setCustomGifUrl('');
+    setShouldAutoScroll(true);
+    setIsGifPickerOpen(false);
+
+    await sendChatMessage({
+      senderName: session.playerName,
+      senderAvatar: session.avatar_url,
+      senderTier: session.tier,
+      senderJulukan: session.julukan,
+      content: caption || '',
+      gifUrl: gifUrlToSend.trim(),
+      ...(replyingTo && {
+        replyTo: {
+          id: replyingTo.id,
+          senderName: replyingTo.senderName,
+          content: replyingTo.content.slice(0, 150),
+        },
+      }),
+    });
+
+    setReplyingTo(null);
   };
 
   // Handle text input change & mention trigger
@@ -477,28 +686,94 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     return 'text-[#9C948A] bg-[#241F1B] border-[#332C25]';
   };
 
-  // Render message text with highlighted @mentions
-  const renderMessageContent = (content: string) => {
-    const parts = content.split(/(@[a-zA-Z0-9_.-]+)/g);
-    return parts.map((part, idx) => {
-      if (part.startsWith('@')) {
-        const mentioned = part.slice(1);
-        const isMe = session?.playerName.toLowerCase() === mentioned.toLowerCase();
+  // Detect if message contains only animated emotes (for enlarged display)
+  const isMessageOnlyEmotes = (content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return false;
+    const tokens = trimmed.split(/\s+/);
+    if (tokens.length > 4) return false;
+    return tokens.every((token) => {
+      const clean = token.startsWith(':') && token.endsWith(':') && token.length > 2
+        ? token.slice(1, -1)
+        : token;
+      return EMOTE_NAME_MAP.has(clean.toUpperCase());
+    });
+  };
+
+  // Render message text with highlighted @mentions AND animated 7TV/BTTV emotes + GIF support
+  const renderMessageContent = (content: string, gifUrl?: string) => {
+    const onlyEmotes = isMessageOnlyEmotes(content);
+
+    // Split content by whitespace or @mentions or :emote_code:
+    const tokens = content.split(/(\s+|@[a-zA-Z0-9_.-]+|:[a-zA-Z0-9_.-]+:)/g);
+
+    const renderedTokens = tokens.map((token, idx) => {
+      if (!token) return null;
+
+      // Mentions
+      if (token.startsWith('@') && token.length > 1) {
+        const mentioned = token.slice(1);
+        const isMentioningMe = session?.playerName.toLowerCase() === mentioned.toLowerCase();
         return (
           <span
             key={`mention-${idx}`}
-            className={`inline-flex items-center px-1.5 py-0.2 mx-0.5 rounded-md text-xs font-bold ${
-              isMe
-                ? 'bg-[#E8B33D] text-[#161311] ring-1 ring-[#F3C256]'
-                : 'bg-[#E8B33D]/20 text-[#E8B33D] border border-[#E8B33D]/30'
+            className={`inline-flex items-center px-2 py-0.5 mx-0.5 rounded-md text-xs font-bold transition-all shadow-sm ${
+              isMentioningMe
+                ? 'bg-[#E8B33D] text-[#161311] font-black ring-2 ring-[#F3C256] shadow-md'
+                : 'bg-[#E8B33D]/25 text-[#FFD666] border border-[#E8B33D]/60 font-semibold'
             }`}
           >
             @{mentioned}
           </span>
         );
       }
-      return <span key={`text-${idx}`}>{part}</span>;
+
+      // Check if token is an emote code (e.g. :GIGACHAD: or GIGACHAD)
+      const cleanToken = token.startsWith(':') && token.endsWith(':') && token.length > 2
+        ? token.slice(1, -1)
+        : token.trim();
+      const emote = EMOTE_NAME_MAP.get(cleanToken.toUpperCase());
+
+      if (emote) {
+        return (
+          <span
+            key={`emote-${idx}`}
+            className="inline-flex items-center align-middle mx-0.5"
+            title={`${emote.name} (${emote.label})`}
+          >
+            <img
+              src={emote.url}
+              alt={emote.name}
+              className={`${
+                onlyEmotes ? 'h-12 w-12 sm:h-14 sm:w-14 my-1' : 'h-7 w-7 sm:h-8 sm:w-8'
+              } object-contain transition-transform hover:scale-125 inline-block`}
+              loading="lazy"
+            />
+          </span>
+        );
+      }
+
+      return <span key={`text-${idx}`}>{token}</span>;
     });
+
+    return (
+      <div className="flex flex-col gap-2">
+        {content && <div className="whitespace-pre-wrap break-words">{renderedTokens}</div>}
+        {gifUrl && (
+          <div className="relative group/gif overflow-hidden rounded-xl border border-[#3D352E] bg-black/40 max-w-sm mt-1 shadow-md">
+            <img
+              src={gifUrl}
+              alt="GIF animation"
+              className="w-full max-h-64 object-cover sm:object-contain rounded-xl transition-transform duration-300 group-hover/gif:scale-[1.02]"
+              loading="lazy"
+            />
+            <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/75 text-[9px] font-black text-[#E8B33D] tracking-wider border border-[#E8B33D]/30 backdrop-blur-xs">
+              GIF
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -528,9 +803,191 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
           </div>
         </div>
 
-        {/* Player Session Controls — satu tombol/menu akun yang sama dipakai di seluruh app */}
-        <PlayerAccountMenu />
+        {/* Topbar Actions: Git Sync, Notifications & Player Session Controls */}
+        <div className="flex items-center gap-2">
+          <button
+            id="chat-git-sync-btn"
+            type="button"
+            onClick={() => setIsGitModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D]/50 text-xs font-bold text-[#F2EDE4] transition-all cursor-pointer shadow-sm"
+            title="Fitur Git & Sinkronisasi Repositori GitHub"
+          >
+            <GitBranch size={14} className="text-[#E8B33D]" />
+            <span className="hidden sm:inline font-mono text-[11px]">Git Sync</span>
+          </button>
+
+          {/* Notification Bell for Player Mentions */}
+          {session && (
+            <div className="relative">
+              <button
+                id="chat-notification-bell-btn"
+                type="button"
+                onClick={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
+                className={`relative flex items-center justify-center h-8 w-8 rounded-xl border transition-all cursor-pointer ${
+                  isNotificationDrawerOpen
+                    ? 'bg-[#E8B33D] text-[#161311] border-[#E8B33D]'
+                    : unreadMentionsCount > 0
+                    ? 'bg-[#E8B33D]/15 text-[#E8B33D] border-[#E8B33D]/40 hover:bg-[#E8B33D]/25'
+                    : 'bg-[#241F1B] hover:bg-[#2D2520] text-[#9C948A] hover:text-[#F2EDE4] border-[#332C25]'
+                }`}
+                title={`Notifikasi Sebutan (@) - ${unreadMentionsCount} belum dibaca`}
+              >
+                {unreadMentionsCount > 0 ? (
+                  <BellRing size={15} className="animate-bounce" />
+                ) : (
+                  <Bell size={15} />
+                )}
+
+                {/* Badge Count */}
+                {unreadMentionsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white shadow-sm ring-1 ring-[#161311]">
+                    {unreadMentionsCount > 9 ? '9+' : unreadMentionsCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
+
+          <PlayerAccountMenu />
+        </div>
       </div>
+
+      {/* 1.1 NOTIFICATION DRAWER / POPOVER FOR @MENTIONS */}
+      {isNotificationDrawerOpen && session && (
+        <div
+          ref={notificationDrawerRef}
+          className="absolute top-14 right-3 sm:right-4 z-40 w-80 sm:w-96 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-[#1C1714] border-2 border-[#E8B33D]/60 shadow-2xl backdrop-blur-md overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-[#241F1B] border-b border-[#332C25]">
+            <div className="flex items-center gap-2">
+              <Bell size={16} className="text-[#E8B33D]" />
+              <h4 className="font-bold text-sm text-[#F2EDE4]">Notifikasi Tag & Sebutan</h4>
+              {unreadMentionsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-500 text-white shadow-sm">
+                  {unreadMentionsCount} baru
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {/* Sound Toggle */}
+              <button
+                type="button"
+                onClick={handleToggleSound}
+                className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                  isSoundEnabled
+                    ? 'bg-[#E8B33D]/15 text-[#E8B33D] border-[#E8B33D]/30'
+                    : 'bg-[#191513] text-[#7A7268] border-[#332C25]'
+                }`}
+                title={isSoundEnabled ? 'Suara Notifikasi: Aktif' : 'Suara Notifikasi: Nonaktif'}
+              >
+                {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              </button>
+
+              {/* Close */}
+              <button
+                type="button"
+                onClick={() => setIsNotificationDrawerOpen(false)}
+                className="p-1.5 rounded-lg text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2D241E] transition-colors cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick actions bar */}
+          <div className="flex items-center justify-between px-4 py-2 bg-[#191513] border-b border-[#332C25]/60 text-[11px]">
+            <button
+              type="button"
+              onClick={handleRequestBrowserPerm}
+              className="flex items-center gap-1.5 text-[#E8B33D] hover:underline cursor-pointer font-medium"
+            >
+              <BellRing size={12} />
+              <span>Aktifkan Notifikasi Desktop</span>
+            </button>
+
+            {userMentions.length > 0 && unreadMentionsCount > 0 && (
+              <button
+                type="button"
+                onClick={handleMarkAllMentionsRead}
+                className="flex items-center gap-1 text-[#9C948A] hover:text-[#F2EDE4] cursor-pointer"
+              >
+                <CheckCheck size={13} className="text-[#E8B33D]" />
+                <span>Tandai Semua Dibaca</span>
+              </button>
+            )}
+          </div>
+
+          {/* Mentions list */}
+          <div className="max-h-72 overflow-y-auto divide-y divide-[#332C25]/40 p-1">
+            {userMentions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#241F1B] border border-[#332C25] text-[#9C948A] mb-2">
+                  <AtSign size={18} />
+                </div>
+                <p className="text-xs font-bold text-[#F2EDE4]">Belum Ada Sebutan</p>
+                <p className="text-[11px] text-[#7A7268] mt-1 leading-relaxed">
+                  Saat pemain lain mengetik <span className="text-[#E8B33D] font-mono">@{session.playerName}</span> di chat, Anda akan menerima peringatan suara dan tersimpan di sini.
+                </p>
+              </div>
+            ) : (
+              userMentions.map((msg) => {
+                const isUnread = !readMentionIds.has(msg.id);
+                return (
+                  <div
+                    key={`notif-${msg.id}`}
+                    onClick={() => handleJumpToMention(msg.id)}
+                    className={`flex items-start gap-2.5 p-2.5 rounded-xl transition-all cursor-pointer ${
+                      isUnread
+                        ? 'bg-[#282019] hover:bg-[#33281E] border-l-2 border-[#E8B33D]'
+                        : 'hover:bg-[#241F1B]'
+                    }`}
+                  >
+                    {/* Avatar */}
+                    {msg.senderAvatar ? (
+                      <img
+                        src={msg.senderAvatar}
+                        alt={msg.senderName}
+                        className="h-8 w-8 rounded-lg object-cover border border-[#332C25] shrink-0 mt-0.5"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2D241C] border border-[#332C25] text-[#E8B33D] font-bold text-xs shrink-0 mt-0.5">
+                        {msg.senderName.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="text-xs font-bold text-[#F2EDE4] truncate">
+                            {msg.senderName}
+                          </span>
+                          {msg.senderTier && (
+                            <span className="text-[9px] px-1 rounded bg-[#161311] text-[#E8B33D] border border-[#332C25]">
+                              {msg.senderTier}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[#6E655C] shrink-0">
+                          {formatTime(msg.createdAt, msg.timestamp)}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-xs text-[#C7BEB3] line-clamp-2 leading-relaxed">
+                        {msg.content}
+                      </p>
+                    </div>
+
+                    {isUnread && (
+                      <span className="h-2 w-2 rounded-full bg-[#E8B33D] shrink-0 mt-2 ring-2 ring-[#E8B33D]/30" />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 2 & 3. CHAT CONTENT AREA (BLURRED WHEN USER NOT LOGGED IN) */}
       <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -670,16 +1127,17 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                     </button>
                   </div>
 
-                  {/* Emoji Quick Picker */}
+                  {/* Emote Quick Picker */}
                   {showEmojiPickerFor === msg.id && (
-                    <div className="mt-2 flex items-center gap-1 p-1 rounded-xl bg-[#1D1916] border border-[#332C25] w-fit">
-                      {QUICK_EMOJIS.map((emoji) => (
+                    <div className="mt-2 flex items-center gap-1.5 p-1.5 rounded-xl bg-[#1D1916] border border-[#3D352E] shadow-xl w-fit">
+                      {TOP_EMOTE_REACTIONS.map((emote) => (
                         <button
-                          key={emoji}
-                          onClick={() => handleToggleReaction(msg.id, emoji)}
-                          className="p-1 hover:bg-[#241F1B] rounded text-sm transition-transform hover:scale-125 cursor-pointer"
+                          key={`sys-react-${emote.id}`}
+                          onClick={() => handleToggleReaction(msg.id, emote.name)}
+                          className="p-1 hover:bg-[#241F1B] rounded-lg transition-transform hover:scale-125 cursor-pointer"
+                          title={`${emote.name} (${emote.label})`}
                         >
-                          {emoji}
+                          <img src={emote.url} alt={emote.name} className="h-5 w-5 object-contain" />
                         </button>
                       ))}
                     </div>
@@ -765,8 +1223,8 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                   <div
                     className={`relative rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-md ${
                       isMe
-                        ? 'bg-[#E8B33D] text-[#161311] rounded-tr-none font-medium'
-                        : 'bg-[#241F1B] text-[#F2EDE4] border border-[#332C25] rounded-tl-none'
+                        ? 'bg-[#2E241C] text-[#F5EFE6] border-2 border-[#E8B33D]/60 rounded-tr-none shadow-lg'
+                        : 'bg-[#211C18] text-[#F2EDE4] border border-[#332C25] rounded-tl-none'
                     }`}
                   >
                     {/* Replying quote preview if this message is a reply */}
@@ -775,7 +1233,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                         onClick={() => scrollToMessage(msg.replyTo!.id)}
                         className={`mb-2 flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-all cursor-pointer ${
                           isMe
-                            ? 'bg-black/15 border-l-2 border-[#161311] text-[#161311] hover:bg-black/20'
+                            ? 'bg-black/35 border-l-2 border-[#E8B33D] text-[#E8E2D9] hover:bg-black/45'
                             : 'bg-[#191513] border-l-2 border-[#E8B33D] text-[#9C948A] hover:bg-[#1f1a17] hover:text-[#F2EDE4]'
                         }`}
                         title="Klik untuk melihat pesan yang dibalas"
@@ -793,7 +1251,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                     )}
 
                     <div className="whitespace-pre-wrap break-words">
-                      {renderMessageContent(msg.content)}
+                      {renderMessageContent(msg.content, msg.gifUrl)}
                     </div>
                   </div>
 
@@ -801,18 +1259,29 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                   <div className={`mt-1 flex flex-wrap items-center gap-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                     {reactionsList.map((reaction) => {
                       const userHasReacted = session ? reaction.users.includes(session.playerName) : false;
+                      const emoteMatch =
+                        EMOTE_NAME_MAP.get(reaction.emoji.toUpperCase()) ||
+                        EMOTE_NAME_MAP.get(reaction.emoji.replace(/:/g, '').toUpperCase());
                       return (
                         <button
                           key={`react-${msg.id}-${reaction.emoji}`}
                           onClick={() => handleToggleReaction(msg.id, reaction.emoji)}
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors cursor-pointer ${
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs transition-colors cursor-pointer ${
                             userHasReacted
                               ? 'bg-[#E8B33D]/25 text-[#E8B33D] border border-[#E8B33D]'
                               : 'bg-[#1D1916] text-[#9C948A] border border-[#332C25] hover:border-[#9C948A]'
                           }`}
                           title={`Bereaksi: ${reaction.users.join(', ')}`}
                         >
-                          <span>{reaction.emoji}</span>
+                          {emoteMatch ? (
+                            <img
+                              src={emoteMatch.url}
+                              alt={emoteMatch.name}
+                              className="h-4 w-4 object-contain inline-block"
+                            />
+                          ) : (
+                            <span>{reaction.emoji}</span>
+                          )}
                           <span className="text-[10px] font-bold">{reaction.count}</span>
                         </button>
                       );
@@ -833,7 +1302,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                     <button
                       onClick={() => setShowEmojiPickerFor(showEmojiPickerFor === msg.id ? null : msg.id)}
                       className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center justify-center h-5 w-5 rounded-full bg-[#1D1916] border border-[#332C25] text-[#9C948A] hover:text-[#E8B33D] text-[10px] cursor-pointer"
-                      title="Beri Reaksi"
+                      title="Beri Reaksi Emote Bergerak"
                     >
                       <Smile size={11} />
                     </button>
@@ -862,16 +1331,21 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                     )}
                   </div>
 
-                  {/* Popover Emoji Picker for this message */}
+                  {/* Popover Animated Emote Picker for this message */}
                   {showEmojiPickerFor === msg.id && (
-                    <div className="mt-1 flex items-center gap-1 p-1 rounded-xl bg-[#1D1916] border border-[#332C25] shadow-lg z-10 flex-wrap max-w-xs">
-                      {QUICK_EMOJIS.map((emoji) => (
+                    <div className="mt-1 flex items-center gap-1.5 p-1.5 rounded-xl bg-[#1D1916] border border-[#3D352E] shadow-2xl z-10 flex-wrap max-w-xs animate-fadeIn">
+                      {TOP_EMOTE_REACTIONS.map((emote) => (
                         <button
-                          key={emoji}
-                          onClick={() => handleToggleReaction(msg.id, emoji)}
-                          className="p-1 hover:bg-[#241F1B] rounded text-sm transition-transform hover:scale-125 cursor-pointer"
+                          key={`quick-react-${emote.id}`}
+                          onClick={() => handleToggleReaction(msg.id, emote.name)}
+                          className="p-1 hover:bg-[#241F1B] rounded-lg transition-transform hover:scale-125 cursor-pointer"
+                          title={`${emote.name} (${emote.label})`}
                         >
-                          {emoji}
+                          <img
+                            src={emote.url}
+                            alt={emote.name}
+                            className="h-6 w-6 object-contain"
+                          />
                         </button>
                       ))}
                     </div>
@@ -953,93 +1427,374 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
         </div>
       )}
 
-      {/* 5. EMOTICON & TRENDING MEME PICKER DRAWER */}
+      {/* 5. ANIMATED 7TV & BETTERTTV EMOTE PICKER DRAWER */}
       {isInputEmojiPickerOpen && (
         <div
           ref={emojiPickerRef}
           id="chat-emoticon-picker-popup"
-          className="absolute bottom-20 right-3 sm:right-6 left-3 sm:left-auto sm:w-96 bg-[#1D1916] border border-[#3D352E] rounded-2xl shadow-2xl overflow-hidden z-30 animate-fadeIn"
+          className="absolute bottom-20 right-3 sm:right-6 left-3 sm:left-auto sm:w-[420px] bg-[#1D1916] border border-[#3D352E] rounded-2xl shadow-2xl overflow-hidden z-30 animate-fadeIn flex flex-col max-h-[440px]"
         >
-          {/* Header & Tabs */}
-          <div className="flex items-center justify-between px-3 py-2 bg-[#241F1B] border-b border-[#332C25]">
-            <div className="flex items-center gap-1">
+          {/* Header & Categories */}
+          <div className="p-3 bg-[#241F1B] border-b border-[#332C25] space-y-2 shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-[#F2EDE4] flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-[#E8B33D]" />
+                  Emotes Bergerak (7TV &amp; BTTV)
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#E8B33D]/20 text-[#E8B33D] font-bold">
+                  {filteredEmotes.length + live7tvEmotes.length}
+                </span>
+              </div>
               <button
                 type="button"
-                onClick={() => setEmojiCategoryTab('meme')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  emojiCategoryTab === 'meme'
-                    ? 'bg-[#E8B33D] text-[#161311]'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
-                }`}
+                onClick={() => setIsInputEmojiPickerOpen(false)}
+                className="text-[#9C948A] hover:text-[#F2EDE4] p-1 rounded-lg cursor-pointer"
+                title="Tutup"
               >
-                🔥 Meme Trend
-              </button>
-              <button
-                type="button"
-                onClick={() => setEmojiCategoryTab('emoji')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  emojiCategoryTab === 'emoji'
-                    ? 'bg-[#E8B33D] text-[#161311]'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
-                }`}
-              >
-                😀 Emoticon
-              </button>
-              <button
-                type="button"
-                onClick={() => setEmojiCategoryTab('gaming')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  emojiCategoryTab === 'gaming'
-                    ? 'bg-[#E8B33D] text-[#161311]'
-                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
-                }`}
-              >
-                🎮 MLBB
+                <X size={15} />
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsInputEmojiPickerOpen(false)}
-              className="text-[#9C948A] hover:text-[#F2EDE4] p-1 rounded-lg cursor-pointer"
-              title="Tutup"
-            >
-              <X size={15} />
-            </button>
+
+            {/* Category Tabs */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+              <button
+                type="button"
+                onClick={() => setEmoteCategoryTab('chad')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  emoteCategoryTab === 'chad'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                👑 Chad &amp; MVP
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmoteCategoryTab('troll')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  emoteCategoryTab === 'troll'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🤡 Troll &amp; KEKW
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmoteCategoryTab('beban')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  emoteCategoryTab === 'beban'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                😭 Beban &amp; Turu
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmoteCategoryTab('dance')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  emoteCategoryTab === 'dance'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🎵 Joget &amp; Vibe
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmoteCategoryTab('all')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  emoteCategoryTab === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🌐 Semua
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
+              <input
+                type="text"
+                value={emoteSearchQuery}
+                onChange={(e) => setEmoteSearchQuery(e.target.value)}
+                placeholder="Cari emote (cth: gigachad, kekw, copium, turu)..."
+                className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-[#161311] border border-[#332C25] text-xs text-[#F2EDE4] placeholder-[#6E655C] focus:outline-none focus:border-[#E8B33D]"
+              />
+              {emoteSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setEmoteSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9C948A] hover:text-[#F2EDE4]"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Grid of Emoticons */}
-          <div className="p-3 max-h-56 overflow-y-auto">
-            {emojiCategoryTab === 'meme' ? (
-              <div className="grid grid-cols-2 gap-1.5">
-                {MEME_EMOTICONS.filter((item) => item.category === 'meme').map((item, idx) => (
-                  <button
-                    key={`meme-item-${idx}`}
-                    type="button"
-                    onClick={() => handleInsertEmoticon(item.value)}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D]/50 text-left text-xs text-[#F2EDE4] transition-all hover:scale-[1.02] cursor-pointer"
-                  >
-                    <span className="text-base">{item.value.split(' ')[0]}</span>
-                    <span className="text-[11px] font-semibold text-[#F2EDE4] truncate">
-                      {item.label}
-                    </span>
-                  </button>
-                ))}
+          {/* Emote Grid */}
+          <div className="p-3 overflow-y-auto flex-1 space-y-3">
+            {/* Curated list */}
+            <div>
+              <div className="text-[10px] font-bold text-[#9C948A] uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>Emote Pilihan Komunitas</span>
+                <span className="text-[9px] text-[#6E655C]">Klik untuk masukkan</span>
+              </div>
+              {filteredEmotes.length === 0 ? (
+                <div className="text-center py-4 text-xs text-[#9C948A]">
+                  Tidak ada emote pilihan yang cocok dengan pencarian.
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                  {filteredEmotes.map((emote) => (
+                    <button
+                      key={emote.id}
+                      type="button"
+                      onClick={() => handleInsertEmote(emote.name)}
+                      className="group flex flex-col items-center justify-center p-2 rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D] transition-all hover:scale-105 cursor-pointer text-center"
+                      title={`${emote.name} - ${emote.label}`}
+                    >
+                      <div className="h-9 w-9 flex items-center justify-center">
+                        <img
+                          src={emote.url}
+                          alt={emote.name}
+                          className="h-8 w-8 object-contain transition-transform group-hover:scale-125"
+                          loading="lazy"
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-[#F2EDE4] truncate max-w-full mt-1">
+                        {emote.name}
+                      </span>
+                      <span className="text-[8px] text-[#9C948A] truncate max-w-full">
+                        {emote.source.toUpperCase()}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Live 7TV Search Results (if user searched) */}
+            {emoteSearchQuery.trim().length >= 2 && (
+              <div className="pt-2 border-t border-[#332C25]">
+                <div className="text-[10px] font-bold text-[#E8B33D] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  {isSearching7tv ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  <span>Hasil Langsung dari 7TV.app ({live7tvEmotes.length})</span>
+                </div>
+                {isSearching7tv ? (
+                  <div className="text-center py-3 text-xs text-[#9C948A] flex items-center justify-center gap-2">
+                    <Loader2 size={13} className="animate-spin text-[#E8B33D]" />
+                    <span>Mencari di 7TV...</span>
+                  </div>
+                ) : live7tvEmotes.length > 0 ? (
+                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                    {live7tvEmotes.map((emote) => (
+                      <button
+                        key={`live-${emote.id}`}
+                        type="button"
+                        onClick={() => handleInsertEmote(emote.name)}
+                        className="group flex flex-col items-center justify-center p-2 rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D] transition-all hover:scale-105 cursor-pointer text-center"
+                        title={emote.name}
+                      >
+                        <div className="h-9 w-9 flex items-center justify-center">
+                          <img
+                            src={emote.url}
+                            alt={emote.name}
+                            className="h-8 w-8 object-contain transition-transform group-hover:scale-125"
+                            loading="lazy"
+                          />
+                        </div>
+                        <span className="text-[10px] font-bold text-[#F2EDE4] truncate max-w-full mt-1">
+                          {emote.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-2 text-[11px] text-[#6E655C]">
+                    Tidak ada emote tambahan di 7TV.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer Info */}
+          <div className="px-3 py-2 bg-[#161311] border-t border-[#332C25] text-[10px] text-[#9C948A] flex items-center justify-between shrink-0">
+            <span>⚡ Emote bergerak resmi 7tv.app &amp; betterttv.com</span>
+            <span className="text-[#E8B33D] font-mono">Animated WebP</span>
+          </div>
+        </div>
+      )}
+
+      {/* 5B. GIF DRAWER (MOBILE LEGENDS & MEME GIFS) */}
+      {isGifPickerOpen && (
+        <div
+          ref={gifPickerRef}
+          id="chat-gif-picker-popup"
+          className="absolute bottom-20 right-3 sm:right-6 left-3 sm:left-auto sm:w-[440px] bg-[#1D1916] border border-[#3D352E] rounded-2xl shadow-2xl overflow-hidden z-30 animate-fadeIn flex flex-col max-h-[460px]"
+        >
+          {/* Header */}
+          <div className="p-3 bg-[#241F1B] border-b border-[#332C25] space-y-2 shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#E8B33D]/20 text-[#E8B33D]">
+                  <Film size={13} />
+                </div>
+                <span className="text-xs font-black text-[#F2EDE4]">
+                  Kirim GIF MLBB &amp; Meme
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#E8B33D]/20 text-[#E8B33D] font-bold">
+                  {filteredGifs.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsGifPickerOpen(false)}
+                className="text-[#9C948A] hover:text-[#F2EDE4] p-1 rounded-lg cursor-pointer"
+                title="Tutup"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* GIF Category Tabs */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+              <button
+                type="button"
+                onClick={() => setGifCategoryTab('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  gifCategoryTab === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🌟 Semua
+              </button>
+              <button
+                type="button"
+                onClick={() => setGifCategoryTab('mlbb')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  gifCategoryTab === 'mlbb'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🎮 MLBB &amp; Game
+              </button>
+              <button
+                type="button"
+                onClick={() => setGifCategoryTab('meme')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  gifCategoryTab === 'meme'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                🔥 Meme Keren
+              </button>
+              <button
+                type="button"
+                onClick={() => setGifCategoryTab('victory')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  gifCategoryTab === 'victory'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                👑 Selebrasi
+              </button>
+              <button
+                type="button"
+                onClick={() => setGifCategoryTab('sad')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                  gifCategoryTab === 'sad'
+                    ? 'bg-[#E8B33D] text-[#161311]'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#2A241E]'
+                }`}
+              >
+                😭 Pasrah &amp; Turu
+              </button>
+            </div>
+
+            {/* GIF Search Bar */}
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
+              <input
+                type="text"
+                value={gifSearchQuery}
+                onChange={(e) => setGifSearchQuery(e.target.value)}
+                placeholder="Cari GIF MLBB, Chou, Savage, Rage, Mewing..."
+                className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-[#161311] border border-[#332C25] text-xs text-[#F2EDE4] placeholder-[#6E655C] focus:outline-none focus:border-[#E8B33D]"
+              />
+              {gifSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setGifSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9C948A] hover:text-[#F2EDE4]"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* GIF Grid */}
+          <div className="p-3 overflow-y-auto flex-1 max-h-60">
+            {filteredGifs.length === 0 ? (
+              <div className="text-center py-6 text-xs text-[#9C948A]">
+                Tidak ada GIF yang cocok. Silakan coba kata kunci lain atau tempel link URL di bawah.
               </div>
             ) : (
-              <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5">
-                {MEME_EMOTICONS.filter((item) => item.category === emojiCategoryTab).map((item, idx) => (
+              <div className="grid grid-cols-2 gap-2">
+                {filteredGifs.map((gif) => (
                   <button
-                    key={`emoji-item-${idx}`}
+                    key={gif.id}
                     type="button"
-                    onClick={() => handleInsertEmoticon(item.value)}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#241F1B] hover:bg-[#2D2520] border border-[#332C25] hover:border-[#E8B33D] text-lg hover:scale-125 transition-all cursor-pointer"
-                    title={item.label}
+                    onClick={() => handleSendGif(gif.url)}
+                    className="group relative overflow-hidden rounded-xl border border-[#332C25] hover:border-[#E8B33D] bg-black/50 text-left transition-all hover:scale-[1.02] cursor-pointer"
                   >
-                    {item.value}
+                    <img
+                      src={gif.url}
+                      alt={gif.title}
+                      className="h-28 w-full object-cover rounded-xl"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2 opacity-90 group-hover:opacity-100">
+                      <span className="text-[10px] font-bold text-white truncate">
+                        {gif.title}
+                      </span>
+                    </div>
                   </button>
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Custom GIF URL Input */}
+          <div className="p-2.5 bg-[#161311] border-t border-[#332C25] shrink-0">
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                value={customGifUrl}
+                onChange={(e) => setCustomGifUrl(e.target.value)}
+                placeholder="Atau tempel link URL GIF langsung..."
+                className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#241F1B] border border-[#332C25] text-xs text-[#F2EDE4] placeholder-[#6E655C] focus:outline-none focus:border-[#E8B33D]"
+              />
+              <button
+                type="button"
+                disabled={!customGifUrl.trim()}
+                onClick={() => handleSendGif(customGifUrl)}
+                className="px-3 py-1.5 rounded-lg bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
+              >
+                Kirim
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1299,19 +2054,40 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                 />
               </div>
 
-              {/* Emoticon & Meme Button */}
+              {/* Emoticon 7TV/BTTV Button */}
               <button
                 id="chat-emoticon-btn"
                 type="button"
-                onClick={() => setIsInputEmojiPickerOpen(!isInputEmojiPickerOpen)}
+                onClick={() => {
+                  setIsInputEmojiPickerOpen(!isInputEmojiPickerOpen);
+                  setIsGifPickerOpen(false);
+                }}
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all active:scale-95 cursor-pointer ${
                   isInputEmojiPickerOpen
                     ? 'bg-[#E8B33D] text-[#161311] border-[#E8B33D]'
                     : 'bg-[#241F1B] hover:bg-[#2D2520] text-[#E8B33D] border-[#332C25]'
                 }`}
-                title="Buka Emoticon & Tren Meme"
+                title="Buka Emote Bergerak (7TV / BTTV)"
               >
                 <Smile size={19} />
+              </button>
+
+              {/* GIF Button */}
+              <button
+                id="chat-gif-btn"
+                type="button"
+                onClick={() => {
+                  setIsGifPickerOpen(!isGifPickerOpen);
+                  setIsInputEmojiPickerOpen(false);
+                }}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all active:scale-95 cursor-pointer ${
+                  isGifPickerOpen
+                    ? 'bg-[#E8B33D] text-[#161311] border-[#E8B33D]'
+                    : 'bg-[#241F1B] hover:bg-[#2D2520] text-[#E8B33D] border-[#332C25]'
+                }`}
+                title="Kirim GIF MLBB & Meme"
+              >
+                <Film size={18} />
               </button>
 
               {/* Send Button */}
@@ -1351,6 +2127,26 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
           </div>
         )}
       </div>
+
+      {/* 9. GIT SYNC / GITHUB REPO MODAL */}
+      <GitSyncModal
+        isOpen={isGitModalOpen}
+        onClose={() => setIsGitModalOpen(false)}
+        players={players}
+        matches={matches}
+        seasons={seasons}
+        activeSeason={activeSeason || null}
+      />
+
+      {/* 10. FLOATING IN-APP MENTION NOTIFICATION TOAST */}
+      <MentionNotificationToast
+        notification={activeToast}
+        onClose={() => setActiveToast(null)}
+        onOpenChat={(msgId) => {
+          scrollToMessage(msgId);
+          handleMarkMentionRead(msgId);
+        }}
+      />
     </div>
   );
 };

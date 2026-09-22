@@ -190,6 +190,8 @@ export interface LagaAmalSeasonData {
   matchLogs?: LagaAmalMatchLog[];
 }
 
+export type Season = LagaAmalSeasonData;
+
 export interface ChatReaction {
   emoji: string;
   count: number;
@@ -226,6 +228,7 @@ export interface ChatMessage {
     senderName: string;
     content: string;
   };
+  gifUrl?: string;
 }
 
 export interface PlayerAuthSession {
