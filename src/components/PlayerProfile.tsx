@@ -34,6 +34,7 @@ import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
 import { UpdateAvatarModal } from './UpdateAvatarModal';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { getPlayerAvatarUrl } from '../constants/playerAvatars';
+import { usePlayerAuth } from '../contexts/PlayerAuthContext';
 
 interface PlayerProfileProps {
   players: Player[];
@@ -71,6 +72,14 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   const player =
     players.find((p) => String(p.id) === String(activeId) || p.name.toLowerCase() === String(activeId).toLowerCase()) ||
     players[0];
+
+  const { session, isLoggedIn, openLogin } = usePlayerAuth();
+  const isOwnProfile = Boolean(
+    isLoggedIn && player && session?.playerName.trim().toLowerCase() === player.name.trim().toLowerCase()
+  );
+  // Foto & data pribadi hanya boleh diubah oleh admin, atau oleh pemain
+  // yang bersangkutan setelah login ke akun pemainnya sendiri.
+  const canEditOwnData = isAdmin || isOwnProfile;
 
   const handleSelect = (id: number | string) => {
     setInternalSelectedId(id);
@@ -334,11 +343,22 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                 )}
 
                 <button
-                  onClick={() => setIsAvatarModalOpen(true)}
+                  onClick={() => {
+                    if (canEditOwnData) {
+                      setIsAvatarModalOpen(true);
+                    } else {
+                      openLogin(player.name);
+                    }
+                  }}
                   className="inline-flex items-center gap-1 rounded-lg border border-[#332C25] bg-[#241F1B] hover:bg-[#2A241E] hover:border-[#E8B33D]/50 px-2.5 py-1 text-[11px] font-bold text-[#9C948A] hover:text-[#F2EDE4] transition-colors cursor-pointer"
+                  title={
+                    canEditOwnData
+                      ? 'Update foto profil'
+                      : `Login sebagai ${player.name} untuk mengubah foto profil ini`
+                  }
                 >
                   <Camera size={12} />
-                  <span>Update Foto</span>
+                  <span>{canEditOwnData ? 'Update Foto' : 'Login untuk Ubah Foto'}</span>
                 </button>
               </div>
 
@@ -351,7 +371,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                   </span>
                 </p>
 
-                {isAdmin && (
+                {canEditOwnData && (
                   <button
                     id="btn-generate-julukan"
                     onClick={handleManualGenerateTitle}
@@ -768,7 +788,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
           tier={player.tier}
           status={player.status}
           julukan={getPlayerTitle()}
-          isAdmin={isAdmin}
+          isAdmin={canEditOwnData}
           onEditPhoto={() => setIsAvatarModalOpen(true)}
         />
       )}

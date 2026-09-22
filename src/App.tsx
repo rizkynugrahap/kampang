@@ -27,6 +27,7 @@ import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { SupabaseStatusBadge } from './components/SupabaseStatusBadge';
 import { CommunityChat } from './components/CommunityChat';
+import { PlayerAuthProvider } from './contexts/PlayerAuthContext';
 import { sendMatchResultSystemMessage } from './services/chatService';
 import {
   BackgroundSettingsModal,
@@ -1462,6 +1463,7 @@ export default function App() {
   };
 
   return (
+    <PlayerAuthProvider players={players}>
     <div className="relative min-h-screen bg-[#161311] text-[#F2EDE4] flex flex-col font-sans selection:bg-[#E8B33D]/30 selection:text-[#E8B33D]">
       {/* Background Image Layer (Git raw / Custom Upload / URL) */}
       <div
@@ -2144,5 +2146,6 @@ export default function App() {
         />
       )}
     </div>
+    </PlayerAuthProvider>
   );
 }

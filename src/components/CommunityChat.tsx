@@ -8,36 +8,27 @@ import {
   Shield,
   KeyRound,
   LogOut,
-  UserCheck,
   Trophy,
   Swords,
   Sparkles,
   AtSign,
   ChevronDown,
-  X,
   Lock,
-  Eye,
-  EyeOff,
-  Check,
-  AlertCircle,
   Clock,
   Flame,
   Laugh,
   Crown,
 } from 'lucide-react';
-import { Player, Match, ChatMessage, ChatReaction, PlayerAuthSession } from '../types';
+import { Player, Match, ChatMessage, ChatReaction } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
-import { SearchablePlayerSelect } from './SearchablePlayerSelect';
+import { usePlayerAuth } from '../contexts/PlayerAuthContext';
 import {
   subscribeToChatMessages,
   sendChatMessage,
   toggleEmojiReaction,
   pinChatMessage,
   deleteChatMessage,
-  verifyOrSetPlayerPin,
-  changePlayerPin,
-  checkHasPin,
 } from '../services/chatService';
 
 interface CommunityChatProps {
@@ -49,50 +40,22 @@ interface CommunityChatProps {
 
 const QUICK_EMOJIS = ['🔥', '😂', '👑', '💀', '👏', '🗿', '🤡', '❤️'];
 
-const AUTH_STORAGE_KEY = 'pantos_chat_active_session';
-
 export const CommunityChat: React.FC<CommunityChatProps> = ({
   players,
   isAdmin = false,
   onOpenMatchDetail,
   className = '',
 }) => {
+  const { session, isLoggedIn, openLogin, openChangePin, logout } = usePlayerAuth();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
-  const [session, setSession] = useState<PlayerAuthSession | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      return null;
-    }
-  });
-
-  const isLoggedIn = Boolean(session && session.isLoggedIn);
 
   // Modals & UI States
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
   const [showEmojiPickerFor, setShowEmojiPickerFor] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionCursorPos, setMentionCursorPos] = useState<number>(0);
   const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
-
-  // Login form states
-  const [selectedPlayerName, setSelectedPlayerName] = useState<string>('');
-  const [enteredPin, setEnteredPin] = useState('');
-  const [showPinText, setShowPinText] = useState(false);
-  const [isNewPinUser, setIsNewPinUser] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
-
-  // Change PIN states
-  const [oldPin, setOldPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmNewPin, setConfirmNewPin] = useState('');
-  const [changePinError, setChangePinError] = useState<string | null>(null);
-  const [changePinSuccess, setChangePinSuccess] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -106,30 +69,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     });
     return () => unsub();
   }, []);
-
-  // Update session identity if player's avatar or julukan changed in roster
-  useEffect(() => {
-    if (!session || !players.length) return;
-    const currentInRoster = players.find(
-      (p) => p.name.trim().toLowerCase() === session.playerName.trim().toLowerCase()
-    );
-    if (currentInRoster) {
-      const updatedSession: PlayerAuthSession = {
-        ...session,
-        avatar_url: currentInRoster.avatar_url,
-        tier: currentInRoster.tier,
-        julukan: currentInRoster.julukan,
-      };
-      if (
-        session.avatar_url !== updatedSession.avatar_url ||
-        session.tier !== updatedSession.tier ||
-        session.julukan !== updatedSession.julukan
-      ) {
-        setSession(updatedSession);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedSession));
-      }
-    }
-  }, [players, session]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -160,17 +99,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
       .filter((p) => p.name.toLowerCase().includes(q))
       .slice(0, 6);
   }, [mentionQuery, players]);
-
-  // Check whether selected player has PIN when player name changes in login form
-  useEffect(() => {
-    if (!selectedPlayerName) {
-      setIsNewPinUser(false);
-      return;
-    }
-    checkHasPin(selectedPlayerName).then((hasPin) => {
-      setIsNewPinUser(!hasPin);
-    });
-  }, [selectedPlayerName]);
 
   // Handle text input change & mention trigger
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -255,7 +183,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     if (!inputText.trim()) return;
 
     if (!session || !session.isLoggedIn) {
-      setIsLoginModalOpen(true);
+      openLogin();
       return;
     }
 
@@ -285,7 +213,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   // Toggle reaction
   const handleToggleReaction = async (messageId: string, emoji: string) => {
     if (!session || !session.isLoggedIn) {
-      setIsLoginModalOpen(true);
+      openLogin();
       return;
     }
     await toggleEmojiReaction(messageId, emoji, session.playerName);
@@ -302,102 +230,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   // Delete message
   const handleDeleteMessage = async (messageId: string) => {
     await deleteChatMessage(messageId);
-  };
-
-  // Login handler
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPlayerName) {
-      setLoginError('Pilih nama pemain terlebih dahulu.');
-      return;
-    }
-    if (!enteredPin.trim()) {
-      setLoginError('Masukkan PIN Anda (4-8 karakter/angka).');
-      return;
-    }
-
-    setIsSubmittingAuth(true);
-    setLoginError(null);
-
-    try {
-      const res = await verifyOrSetPlayerPin(selectedPlayerName, enteredPin);
-      if (!res.success) {
-        setLoginError(res.error || 'PIN tidak valid.');
-        setIsSubmittingAuth(false);
-        return;
-      }
-
-      const playerObj = players.find(
-        (p) => p.name.trim().toLowerCase() === selectedPlayerName.trim().toLowerCase()
-      );
-
-      const newSession: PlayerAuthSession = {
-        playerId: playerObj ? playerObj.id : selectedPlayerName,
-        playerName: selectedPlayerName,
-        avatar_url: playerObj?.avatar_url,
-        tier: playerObj?.tier || 'Warrior',
-        julukan: playerObj?.julukan || 'Pemain Laga Amal Pantos',
-        isLoggedIn: true,
-      };
-
-      setSession(newSession);
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newSession));
-      setIsLoginModalOpen(false);
-      setEnteredPin('');
-      setLoginError(null);
-    } catch (err: any) {
-      setLoginError('Terjadi kesalahan saat verifikasi PIN.');
-    } finally {
-      setIsSubmittingAuth(false);
-    }
-  };
-
-  // Change PIN handler
-  const handleChangePinSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session) return;
-    if (!oldPin) {
-      setChangePinError('Masukkan PIN lama.');
-      return;
-    }
-    if (newPin.length < 4 || newPin.length > 8) {
-      setChangePinError('PIN baru harus 4-8 digit.');
-      return;
-    }
-    if (newPin !== confirmNewPin) {
-      setChangePinError('Konfirmasi PIN baru tidak cocok.');
-      return;
-    }
-
-    setIsSubmittingAuth(true);
-    setChangePinError(null);
-    setChangePinSuccess(null);
-
-    try {
-      const res = await changePlayerPin(session.playerName, oldPin, newPin);
-      if (!res.success) {
-        setChangePinError(res.error || 'Gagal mengubah PIN.');
-      } else {
-        setChangePinSuccess('PIN berhasil diubah!');
-        setOldPin('');
-        setNewPin('');
-        setConfirmNewPin('');
-        setTimeout(() => {
-          setIsChangePinModalOpen(false);
-          setChangePinSuccess(null);
-        }, 1500);
-      }
-    } catch (err) {
-      setChangePinError('Terjadi kesalahan saat mengubah PIN.');
-    } finally {
-      setIsSubmittingAuth(false);
-    }
-  };
-
-  // Logout
-  const handleLogout = () => {
-    setSession(null);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
   // Format timestamp
@@ -484,7 +316,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
               </div>
               <button
                 id="btn-change-pin"
-                onClick={() => setIsChangePinModalOpen(true)}
+                onClick={() => openChangePin()}
                 className="p-1 rounded-lg hover:bg-[#2A241E] text-[#9C948A] hover:text-[#E8B33D] transition-colors cursor-pointer"
                 title="Ubah PIN Pemain"
               >
@@ -492,7 +324,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
               </button>
               <button
                 id="btn-logout-player"
-                onClick={handleLogout}
+                onClick={logout}
                 className="p-1 rounded-lg hover:bg-[#2A241E] text-[#9C948A] hover:text-red-400 transition-colors cursor-pointer"
                 title="Ganti Pemain / Keluar"
               >
@@ -503,7 +335,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
             <button
               id="btn-login-player-header"
               onClick={() => {
-                setIsLoginModalOpen(true);
+                openLogin();
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-md transition-all active:scale-95 cursor-pointer"
             >
@@ -828,7 +660,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
             <button
               id="btn-login-overlay"
               onClick={() => {
-                setIsLoginModalOpen(true);
+                openLogin();
               }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-lg shadow-[#E8B33D]/15 transition-all active:scale-95 cursor-pointer"
             >
@@ -928,7 +760,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
             <button
               id="btn-login-to-chat"
               onClick={() => {
-                setIsLoginModalOpen(true);
+                openLogin();
               }}
               className="px-4 py-2 rounded-xl text-xs font-black bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
             >
@@ -937,238 +769,6 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
           </div>
         )}
       </div>
-
-      {/* 6. MODAL: PLAYER LOGIN / FIRST TIME PIN */}
-      {isLoginModalOpen && (
-        <div
-          id="chat-login-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4"
-        >
-          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] shadow-2xl overflow-visible animate-in fade-in zoom-in-95 duration-150">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#332C25] px-6 py-4 bg-[#241F1B]/60 rounded-t-2xl">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E8B33D]/20 text-[#E8B33D] border border-[#E8B33D]/30">
-                  <KeyRound size={18} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-[#F2EDE4]">Login Pemain Chat</h3>
-                  <p className="text-xs text-[#9C948A]">Lobby Komunitas Laga Amal</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsLoginModalOpen(false)}
-                className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleLoginSubmit} className="p-6 space-y-4">
-              {loginError && (
-                <div className="rounded-xl bg-red-950/50 border border-red-500/50 p-3 text-xs text-red-300 flex items-center gap-2">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{loginError}</span>
-                </div>
-              )}
-
-              {/* Player Selector with Search */}
-              <div>
-                <label className="block text-xs font-bold text-[#F2EDE4] mb-1.5">
-                  Pilih Nama Anda dari Roster
-                </label>
-                <SearchablePlayerSelect
-                  id="login-player-select"
-                  players={players}
-                  selectedPlayerName={selectedPlayerName}
-                  onSelectPlayer={(name) => {
-                    setSelectedPlayerName(name);
-                    setLoginError(null);
-                  }}
-                  placeholder="-- Cari & Pilih Nama Anda --"
-                />
-              </div>
-
-              {/* PIN Input */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-[#F2EDE4]">
-                    PIN Akun (4-8 karakter)
-                  </label>
-                  {isNewPinUser && selectedPlayerName && (
-                    <span className="text-[10px] text-[#E8B33D] font-semibold bg-[#E8B33D]/10 px-2 py-0.5 rounded-full border border-[#E8B33D]/30">
-                      Baru! Buat PIN pertama Anda
-                    </span>
-                  )}
-                </div>
-
-                <div className="relative">
-                  <input
-                    id="login-pin-input"
-                    type={showPinText ? 'text' : 'password'}
-                    maxLength={8}
-                    value={enteredPin}
-                    onChange={(e) => setEnteredPin(e.target.value)}
-                    placeholder={
-                      isNewPinUser
-                        ? 'Buat PIN baru (misal: 1234)'
-                        : 'Masukkan PIN rahasia Anda'
-                    }
-                    className="w-full rounded-xl bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none focus:ring-1 focus:ring-[#E8B33D]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPinText(!showPinText)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9C948A] hover:text-[#F2EDE4] cursor-pointer"
-                  >
-                    {showPinText ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                <p className="text-[11px] text-[#9C948A] mt-1.5 leading-normal">
-                  {isNewPinUser
-                    ? 'Pemain ini belum memiliki PIN. PIN yang Anda masukkan akan disimpan sebagai PIN akun Anda.'
-                    : 'Pemain dapat merubah PIN kapan saja setelah login melalui menu pengaturan chat.'}
-                </p>
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-2 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsLoginModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#9C948A] hover:bg-[#241F1B] hover:text-[#F2EDE4] transition-colors cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  id="submit-login-pin-btn"
-                  type="submit"
-                  disabled={isSubmittingAuth || !selectedPlayerName || !enteredPin}
-                  className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-                >
-                  {isSubmittingAuth ? (
-                    <span>Memproses...</span>
-                  ) : (
-                    <>
-                      <Check size={14} />
-                      <span>{isNewPinUser ? 'Simpan PIN & Masuk' : 'Masuk ke Chat'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 7. MODAL: CHANGE PIN */}
-      {isChangePinModalOpen && session && (
-        <div
-          id="chat-change-pin-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4"
-        >
-          <div className="w-full max-w-md rounded-2xl border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#332C25] px-6 py-4 bg-[#241F1B]/60">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E8B33D]/20 text-[#E8B33D] border border-[#E8B33D]/30">
-                  <KeyRound size={18} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-[#F2EDE4]">Ubah PIN Akun</h3>
-                  <p className="text-xs text-[#9C948A]">{session.playerName}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsChangePinModalOpen(false)}
-                className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241E] hover:text-[#F2EDE4] transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleChangePinSubmit} className="p-6 space-y-4">
-              {changePinError && (
-                <div className="rounded-xl bg-red-950/50 border border-red-500/50 p-3 text-xs text-red-300 flex items-center gap-2">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{changePinError}</span>
-                </div>
-              )}
-              {changePinSuccess && (
-                <div className="rounded-xl bg-emerald-950/50 border border-emerald-500/50 p-3 text-xs text-emerald-300 flex items-center gap-2">
-                  <Check size={14} className="shrink-0" />
-                  <span>{changePinSuccess}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-[#F2EDE4] mb-1.5">
-                  PIN Lama
-                </label>
-                <input
-                  id="change-pin-old-input"
-                  type="password"
-                  maxLength={8}
-                  value={oldPin}
-                  onChange={(e) => setOldPin(e.target.value)}
-                  placeholder="Masukkan PIN lama"
-                  className="w-full rounded-xl bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#F2EDE4] mb-1.5">
-                  PIN Baru (4-8 karakter)
-                </label>
-                <input
-                  id="change-pin-new-input"
-                  type="password"
-                  maxLength={8}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  placeholder="Masukkan PIN baru"
-                  className="w-full rounded-xl bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#F2EDE4] mb-1.5">
-                  Konfirmasi PIN Baru
-                </label>
-                <input
-                  id="change-pin-confirm-input"
-                  type="password"
-                  maxLength={8}
-                  value={confirmNewPin}
-                  onChange={(e) => setConfirmNewPin(e.target.value)}
-                  placeholder="Ulangi PIN baru"
-                  className="w-full rounded-xl bg-[#161311] border border-[#332C25] px-3.5 py-2.5 text-sm text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsChangePinModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#9C948A] hover:bg-[#241F1B] hover:text-[#F2EDE4] transition-colors cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  id="submit-change-pin-btn"
-                  type="submit"
-                  disabled={isSubmittingAuth || !oldPin || !newPin || !confirmNewPin}
-                  className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#E8B33D] hover:bg-[#F3C256] text-[#161311] disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all active:scale-95 cursor-pointer"
-                >
-                  {isSubmittingAuth ? 'Menyimpan...' : 'Simpan PIN Baru'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
