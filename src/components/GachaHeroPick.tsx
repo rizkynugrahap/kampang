@@ -413,12 +413,12 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
   const handleCopyDraft = () => {
     let text = `🎮 *HASIL GACHA TEAM & HERO - LAGA AMAL PANTOS* 🎮\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `🛋️ *TIM LOBBY:*\n`;
-    lobbyTeam.forEach((slot, i) => {
+    text += `⬅️ *TIM KIRI:*\n`;
+    pohonTeam.forEach((slot, i) => {
       text += `${i + 1}. *${slot.playerName}* ➜ [${slot.role || 'Random'}] ${slot.hero || 'Belum Gacha'}\n`;
     });
-    text += `\n🌳 *TIM POHON:*\n`;
-    pohonTeam.forEach((slot, i) => {
+    text += `\n➡️ *TIM KANAN:*\n`;
+    lobbyTeam.forEach((slot, i) => {
       text += `${i + 1}. *${slot.playerName}* ➜ [${slot.role || 'Random'}] ${slot.hero || 'Belum Gacha'}\n`;
     });
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
