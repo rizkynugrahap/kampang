@@ -66,7 +66,7 @@ export const EditMatchModal: React.FC<EditMatchModalProps> = ({
   );
 
   const [date, setDate] = useState(match.date);
-  const [type, setType] = useState<MatchType>(match.type);
+  const type: MatchType = 'Laga Amal';
   const [winner, setWinner] = useState<Match['winner']>(match.winner);
   const [selectedSeasonId, setSelectedSeasonId] = useState(originalSeasonId);
   const [matchNumber, setMatchNumber] = useState(match.matchNumber || match.id);
@@ -389,14 +389,10 @@ export const EditMatchModal: React.FC<EditMatchModalProps> = ({
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-[#9C948A] mb-1">Tipe Match:</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as MatchType)}
-              className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-xs font-medium text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
-            >
-              <option value="Laga Amal">Laga Amal</option>
-              <option value="Ranked">Ranked</option>
-            </select>
+            <div className="w-full rounded-xl border border-[#332C25] bg-[#161311] px-3 py-2 text-xs font-semibold text-[#E8B33D] flex items-center justify-between">
+              <span>Laga Amal</span>
+              <span className="text-[10px] text-[#9C948A] font-normal">Klasemen & Riwayat</span>
+            </div>
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-[#9C948A] mb-1">Season:</label>

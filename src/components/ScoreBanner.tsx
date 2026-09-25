@@ -8,7 +8,8 @@ interface ScoreBannerProps {
 
 const BALANCED_MIN_PCT = 18;
 const SLIVER_PCT = 8;
-const BAR_TRANSITION = 'width 800ms cubic-bezier(0.22, 1, 0.36, 1)';
+const BAR_TRANSITION =
+  'flex-basis 1300ms cubic-bezier(0.4, 0, 0.2, 1), width 1300ms cubic-bezier(0.4, 0, 0.2, 1), max-width 1300ms cubic-bezier(0.4, 0, 0.2, 1)';
 
 export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle = 'Season 41' }) => {
   const pohonWins = matches.filter((m) => m.winner === 'Tim Pohon').length;
@@ -55,7 +56,9 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
           className="relative flex flex-col items-start justify-center overflow-hidden py-5 pl-4 pr-7 sm:py-10 sm:pl-8 sm:pr-12"
           style={{
             flex: `0 0 ${pohonWidth}%`,
+            flexBasis: `${pohonWidth}%`,
             width: `${pohonWidth}%`,
+            maxWidth: `${pohonWidth}%`,
             minWidth: 0,
             background: 'linear-gradient(135deg, #4F7942 0%, #35532c 100%)',
             clipPath: 'polygon(0 0, 100% 0, calc(100% - 24px) 100%, 0% 100%)',
@@ -64,7 +67,7 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
           }}
         >
           <div
-            className={`relative z-10 flex flex-col overflow-hidden transition-opacity duration-500 ${
+            className={`relative z-10 flex flex-col overflow-hidden whitespace-nowrap transition-opacity duration-700 ${
               pohonWidth < 16 ? 'opacity-0 pointer-events-none' : 'opacity-100'
             }`}
           >
@@ -88,7 +91,9 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
           className="relative flex flex-col items-end justify-center overflow-hidden py-5 pr-4 pl-7 text-right sm:py-10 sm:pr-8 sm:pl-12"
           style={{
             flex: `0 0 ${lobbyWidth}%`,
+            flexBasis: `${lobbyWidth}%`,
             width: `${lobbyWidth}%`,
+            maxWidth: `${lobbyWidth}%`,
             minWidth: 0,
             background: 'linear-gradient(315deg, #C97A3D 0%, #8c4e20 100%)',
             clipPath: 'polygon(24px 0, 100% 0, 100% 100%, 0% 100%)',
@@ -97,7 +102,7 @@ export const ScoreBanner: React.FC<ScoreBannerProps> = ({ matches, seasonTitle =
           }}
         >
           <div
-            className={`relative z-10 flex flex-col items-end overflow-hidden transition-opacity duration-500 ${
+            className={`relative z-10 flex flex-col items-end overflow-hidden whitespace-nowrap transition-opacity duration-700 ${
               lobbyWidth < 16 ? 'opacity-0 pointer-events-none' : 'opacity-100'
             }`}
           >

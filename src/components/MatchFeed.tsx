@@ -69,8 +69,8 @@ export const MatchFeed: React.FC<MatchFeedProps> = ({
                       Match #{getMatchDisplayNumber(match, matches)}
                     </span>
                     <span className="text-xs text-[#9C948A]">· {match.date}</span>
-                    <span className="rounded bg-[#241F1B] px-1.5 py-0.5 text-[10px] text-[#9C948A]">
-                      {match.type}
+                    <span className="rounded bg-[#241F1B] px-1.5 py-0.5 text-[10px] text-[#E8B33D] font-medium">
+                      Laga Amal
                     </span>
                   </div>
                   <span

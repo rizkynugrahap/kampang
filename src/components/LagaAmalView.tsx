@@ -206,16 +206,33 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
   // Seasons sorted in descending order (highest season first)
   const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
-  // Sort and filter players for standings
+  // Sort and filter players for standings:
+  // Aturan: Jika ada pemain cabutan dan pemain cabutan itu tidak bermain di season tersebut (0 match),
+  // maka tidak akan dimunculkan di data season yang dipilih.
+  // Pemain cabutan hanya akan muncul jika sudah ada kontribusi bermain minimal 1 match pada season tersebut.
   const filteredPlayers = useMemo(() => {
     return (currentSeason.players || [])
-      .filter((p) => p.nickname.toLowerCase().includes(searchQuery.toLowerCase()))
+      .filter((p) => {
+        const isCabutan = p.status === 'Cabutan';
+        const matchesCount = Number(p.matches) || 0;
+        if (isCabutan && matchesCount < 1) return false;
+        return p.nickname.toLowerCase().includes(searchQuery.toLowerCase());
+      })
       .sort((a, b) => {
         let diff = 0;
         switch (sortField) {
-          case 'score':
+          case 'score': {
             diff = a.score - b.score;
+            if (diff === 0) {
+              if (b.mvp !== a.mvp) return sortAsc ? a.mvp - b.mvp : b.mvp - a.mvp;
+              if (b.antam !== a.antam) return sortAsc ? a.antam - b.antam : b.antam - a.antam;
+              if (a.coklat !== b.coklat) return sortAsc ? b.coklat - a.coklat : a.coklat - b.coklat;
+              if (b.winRate !== a.winRate) return sortAsc ? a.winRate - b.winRate : b.winRate - a.winRate;
+              if (b.avgScore !== a.avgScore) return sortAsc ? a.avgScore - b.avgScore : b.avgScore - a.avgScore;
+              return a.nickname.localeCompare(b.nickname);
+            }
             break;
+          }
           case 'mvp':
             diff = a.mvp - b.mvp;
             break;

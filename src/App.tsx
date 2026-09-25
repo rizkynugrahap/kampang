@@ -693,6 +693,7 @@ export default function App() {
       ...matchPayload,
       id: targetId,
       matchNumber: targetId,
+      recentMatches: matches.slice(0, 10),
     };
 
     try {
@@ -729,7 +730,7 @@ export default function App() {
         id: targetId,
         matchNumber: targetId,
         ...matchPayload,
-        ai_analysis: generateHeuristicMatchAnalysis(matchPayload),
+        ai_analysis: generateHeuristicMatchAnalysis(matchPayload, matches.slice(0, 10)),
       };
       setMatches((prev) => [savedMatch, ...prev.filter((m) => m.id !== savedMatch.id)]);
     }
@@ -934,11 +935,12 @@ export default function App() {
   // server's own local store.
   const handleAnalyzeMatch = async (matchId: number) => {
     const targetMatch = matches.find((m) => m.id === matchId);
+    const recentMatches = matches.filter((m) => m.id !== matchId).slice(0, 10);
     try {
       const res = await fetch(`/api/matches/${matchId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(targetMatch || {}),
+        body: JSON.stringify({ ...(targetMatch || {}), recentMatches }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -963,7 +965,7 @@ export default function App() {
     } catch (err) {
       console.warn('Error analyzing match via backend, using local fallback:', err);
       if (!targetMatch) return;
-      const fallbackAnalysis = generateHeuristicMatchAnalysis(targetMatch);
+      const fallbackAnalysis = generateHeuristicMatchAnalysis(targetMatch, recentMatches);
       const updatedMatch: Match = { ...targetMatch, ai_analysis: fallbackAnalysis, is_generating_analysis: false };
       setMatches((prev) => prev.map((m) => (m.id === matchId ? updatedMatch : m)));
       if (selectedMatch && selectedMatch.id === matchId) {
@@ -1805,6 +1807,7 @@ export default function App() {
             onSelectMatch={(m) => setSelectedMatch(m)}
             onDeleteMatch={handleDeleteMatch}
             onEditMatch={handleEditMatch}
+            onReanalyzeMatch={handleAnalyzeMatch}
             heroes={heroes}
             players={players}
             isAdmin={isAdmin}

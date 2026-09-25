@@ -99,7 +99,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
               <span className="rounded bg-[#241F1B] px-2 py-0.5 font-bold text-xs text-[#E8B33D]">
                 Match #{getMatchDisplayNumber(match)}
               </span>
-              <span className="text-xs text-[#9C948A]">{match.type}</span>
+              <span className="text-xs text-[#9C948A]">Laga Amal</span>
               <span className="text-xs text-[#9C948A]">· {match.season}</span>
             </div>
             <h3 className="mt-1 flex items-center gap-2 font-bold text-lg text-[#F2EDE4]">

@@ -15,6 +15,8 @@ import {
   ChevronDown,
   Check,
   ZoomIn,
+  Search,
+  Filter,
 } from 'lucide-react';
 import {
   PieChart,
@@ -74,10 +76,134 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   const [isGeneratingTitle, setIsGeneratingTitle] = useState<boolean>(false);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
+  // Selector filters
+  const [selectorFilterTab, setSelectorFilterTab] = useState<'all' | 'cabutan'>('all');
+  const [selectorSearch, setSelectorSearch] = useState<string>('');
+
   const activeId = selectedPlayerId !== undefined ? selectedPlayerId : internalSelectedId;
-  const player =
-    players.find((p) => String(p.id) === String(activeId) || p.name.toLowerCase() === String(activeId).toLowerCase()) ||
-    players[0];
+
+  // 1. Filter eligible players for the selected season:
+  // ATURAN: Jika ada pemain cabutan dan pemain cabutan itu TIDAK bermain di season tersebut (0 match),
+  // maka pemain cabutan tersebut TIDAK AKAN dimunculkan di data season yang dipilih.
+  // Pemain cabutan HANYA akan muncul jika sudah ada kontribusi bermain minimal 1 match pada season tersebut.
+  // Pemain tetap/aktif tetap disimpan di roster.
+  const visiblePlayers = React.useMemo(() => {
+    return players.filter((p) => {
+      const pNameLower = p.name.trim().toLowerCase();
+      const seasonStat = activeSeason?.players?.find(
+        (sp) => sp.nickname.trim().toLowerCase() === pNameLower
+      );
+      const isCabutan = p.status === 'Cabutan' || seasonStat?.status === 'Cabutan';
+      const seasonMatchesCount = seasonStat ? Number(seasonStat.matches) || 0 : 0;
+
+      if (isCabutan && seasonMatchesCount < 1) {
+        return false;
+      }
+      return true;
+    });
+  }, [players, activeSeason]);
+
+  // 2. Rank in active season:
+  // Standings are ordered strictly and sequentially by the official tournament rules:
+  // (1) Total score desc, (2) MVP desc, (3) Antam desc, (4) Lowest Coklat asc, (5) Win rate desc, (6) AVG score desc, (7) Nickname asc
+  // Cabutan dengan 0 match TIDAK masuk ke data season.
+  // Hanya pemain dengan minimal 1 match yang memperoleh nomor urut peringkat resmi season.
+  const rankedSeasonPlayers = React.useMemo(() => {
+    if (!activeSeason?.players || activeSeason.players.length === 0) return [];
+
+    const eligibleRoster = activeSeason.players.filter((p) => {
+      const pNameLower = p.nickname.trim().toLowerCase();
+      const meta = players.find((pl) => pl.name.trim().toLowerCase() === pNameLower);
+      const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
+      const matchesCount = Number(p.matches) || 0;
+
+      if (isCabutan && matchesCount < 1) return false;
+      return matchesCount > 0;
+    });
+
+    return [...eligibleRoster].sort((a, b) => {
+      const scoreA = Number(a.score) || 0;
+      const scoreB = Number(b.score) || 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+
+      const mvpA = Number(a.mvp) || 0;
+      const mvpB = Number(b.mvp) || 0;
+      if (mvpB !== mvpA) return mvpB - mvpA;
+
+      const antamA = Number(a.antam) || 0;
+      const antamB = Number(b.antam) || 0;
+      if (antamB !== antamA) return antamB - antamA;
+
+      const coklatA = Number(a.coklat) || 0;
+      const coklatB = Number(b.coklat) || 0;
+      if (coklatA !== coklatB) return coklatA - coklatB;
+
+      const wrA = Number(b.winRate) || 0;
+      const wrB = Number(a.winRate) || 0;
+      if (wrA !== wrB) return wrA - wrB;
+
+      const avgA = Number(b.avgScore) || 0;
+      const avgB = Number(a.avgScore) || 0;
+      if (avgA !== avgB) return avgA - avgB;
+
+      return (a.nickname || '').localeCompare(b.nickname || '');
+    });
+  }, [activeSeason, players]);
+
+  // Lookup map untuk nomor urut rank (1-indexed, berurutan: #1, #2, #3, ...)
+  const playerRankMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    rankedSeasonPlayers.forEach((sp, idx) => {
+      map.set(sp.nickname.trim().toLowerCase(), idx + 1);
+    });
+    return map;
+  }, [rankedSeasonPlayers]);
+
+  // 3. Urutan rank disesuaikan agar berurutan (#1, #2, #3, ...) dan enak dilihat:
+  // Pemain yang memiliki rank di season ini diurutkan dari peringkat 1 ke bawah secara berurutan,
+  // lalu diikuti pemain yang belum bertanding di season ini.
+  const sortedVisiblePlayers = React.useMemo(() => {
+    return [...visiblePlayers].sort((a, b) => {
+      const aName = a.name.trim().toLowerCase();
+      const bName = b.name.trim().toLowerCase();
+      const rankA = playerRankMap.get(aName);
+      const rankB = playerRankMap.get(bName);
+
+      if (rankA !== undefined && rankB !== undefined) {
+        return rankA - rankB; // Berurutan: #1, #2, #3, ...
+      }
+      if (rankA !== undefined) return -1;
+      if (rankB !== undefined) return 1;
+
+      return a.name.localeCompare(b.name);
+    });
+  }, [visiblePlayers, playerRankMap]);
+
+  // Active player selection: jika pemain cabutan yang dipilih sebelumnya tidak bermain di season ini,
+  // secara otomatis dialihkan ke pemain peringkat #1 di season yang dipilih.
+  const player = React.useMemo(() => {
+    const found = sortedVisiblePlayers.find(
+      (p) => String(p.id) === String(activeId) || p.name.trim().toLowerCase() === String(activeId).trim().toLowerCase()
+    );
+    if (found) return found;
+    return sortedVisiblePlayers[0] || players[0];
+  }, [sortedVisiblePlayers, activeId, players]);
+
+  // Sinkronisasi id pemain saat berpindah season jika pemain sebelumnya tidak ada di season ini
+  React.useEffect(() => {
+    if (sortedVisiblePlayers.length > 0) {
+      const isCurrentVisible = sortedVisiblePlayers.some(
+        (p) => String(p.id) === String(activeId) || p.name.trim().toLowerCase() === String(activeId).trim().toLowerCase()
+      );
+      if (!isCurrentVisible && sortedVisiblePlayers[0]) {
+        const topPlayer = sortedVisiblePlayers[0];
+        setInternalSelectedId(topPlayer.id);
+        if (onSelectPlayer) {
+          onSelectPlayer(topPlayer.id);
+        }
+      }
+    }
+  }, [sortedVisiblePlayers, activeId, onSelectPlayer]);
 
   const { session, isLoggedIn, openLogin } = usePlayerAuth();
   const isOwnProfile = Boolean(
@@ -106,32 +232,6 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   const seasonPlayerStat = activeSeason?.players?.find(
     (p) => p.nickname.trim().toLowerCase() === player.name.trim().toLowerCase()
   );
-
-  // 2. Rank in active season:
-  // Standings are ordered strictly by the active season's official rules:
-  // (1) Total score desc, (2) MVP desc, (3) Lowest Coklat asc, (4) Antam desc, (5) Win rate desc
-  const rankedSeasonPlayers = React.useMemo(() => {
-    if (!activeSeason?.players || activeSeason.players.length === 0) return [];
-    return [...activeSeason.players].sort((a, b) => {
-      const scoreA = Number(a.score) || 0;
-      const scoreB = Number(b.score) || 0;
-      if (scoreB !== scoreA) return scoreB - scoreA;
-
-      const mvpA = Number(a.mvp) || 0;
-      const mvpB = Number(b.mvp) || 0;
-      if (mvpB !== mvpA) return mvpB - mvpA;
-
-      const coklatA = Number(a.coklat) || 0;
-      const coklatB = Number(b.coklat) || 0;
-      if (coklatA !== coklatB) return coklatA - coklatB;
-
-      const antamA = Number(a.antam) || 0;
-      const antamB = Number(b.antam) || 0;
-      if (antamB !== antamA) return antamB - antamA;
-
-      return (Number(b.winRate) || 0) - (Number(a.winRate) || 0);
-    });
-  }, [activeSeason]);
 
   const seasonPlayerIndex = rankedSeasonPlayers.findIndex(
     (p) => p.nickname.trim().toLowerCase() === player.name.trim().toLowerCase()
@@ -318,26 +418,176 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
         </div>
       </div>
 
-      {/* Player selector chips */}
-      <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto pr-1 pb-1">
-        {players.map((p, idx) => {
-          const isCurrent = String(p.id) === String(player.id) || p.name === player.name;
-          return (
-            <button
-              key={`profile-player-btn-${p.id ?? p.name}-${idx}`}
-              id={`profile-selector-${p.id}`}
-              onClick={() => handleSelect(p.id)}
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 font-medium text-xs transition-all cursor-pointer ${
-                isCurrent
-                  ? 'border border-[#E8B33D] bg-[#E8B33D] text-[#161311] shadow-md font-bold'
-                  : 'border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] hover:border-[#9C948A]'
-              }`}
-            >
-              <PlayerAvatar name={p.name} avatarUrl={p.avatar_url} size="xs" />
-              <span>{p.name}</span>
-            </button>
-          );
-        })}
+      {/* Player selector toolbar & chips */}
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-[#F2EDE4] flex items-center gap-1.5">
+              <Trophy size={13} className="text-[#E8B33D]" />
+              <span>Urutan Klasemen Pemain:</span>
+            </span>
+            <span className="text-[11px] text-[#9C948A]">
+              {rankedSeasonPlayers.length > 0
+                ? `Berurutan #1 s/d #${rankedSeasonPlayers.length}`
+                : 'Belum ada match'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Filter Tabs */}
+            <div className="flex items-center rounded-lg bg-[#241F1B] border border-[#332C25] p-0.5 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setSelectorFilterTab('all')}
+                className={`px-2.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                  selectorFilterTab === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                }`}
+              >
+                Semua ({sortedVisiblePlayers.length})
+              </button>
+              {sortedVisiblePlayers.some((p) => {
+                const pNameLower = p.name.trim().toLowerCase();
+                const seasonStat = activeSeason?.players?.find(
+                  (sp) => sp.nickname.trim().toLowerCase() === pNameLower
+                );
+                return p.status === 'Cabutan' || seasonStat?.status === 'Cabutan';
+              }) && (
+                <button
+                  type="button"
+                  onClick={() => setSelectorFilterTab('cabutan')}
+                  className={`px-2.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                    selectorFilterTab === 'cabutan'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-purple-300 hover:text-purple-200'
+                  }`}
+                  title="Pemain cabutan yang memiliki kontribusi minimal 1 match di season ini"
+                >
+                  Cabutan ({sortedVisiblePlayers.filter((p) => {
+                    const pNameLower = p.name.trim().toLowerCase();
+                    const seasonStat = activeSeason?.players?.find(
+                      (sp) => sp.nickname.trim().toLowerCase() === pNameLower
+                    );
+                    return p.status === 'Cabutan' || seasonStat?.status === 'Cabutan';
+                  }).length})
+                </button>
+              )}
+            </div>
+
+            {/* Quick search */}
+            {sortedVisiblePlayers.length > 8 && (
+              <div className="relative">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
+                <input
+                  type="text"
+                  value={selectorSearch}
+                  onChange={(e) => setSelectorSearch(e.target.value)}
+                  placeholder="Cari..."
+                  className="rounded-lg border border-[#332C25] bg-[#241F1B] pl-7 pr-2.5 py-0.5 text-[11px] text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none w-24 sm:w-28"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Chips list */}
+        <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1 pb-1">
+          {sortedVisiblePlayers
+            .filter((p) => {
+              const pNameLower = p.name.trim().toLowerCase();
+              const seasonStat = activeSeason?.players?.find(
+                (sp) => sp.nickname.trim().toLowerCase() === pNameLower
+              );
+              const isCabutan = p.status === 'Cabutan' || seasonStat?.status === 'Cabutan';
+
+              if (selectorFilterTab === 'cabutan' && !isCabutan) return false;
+
+              if (selectorSearch.trim()) {
+                const query = selectorSearch.trim().toLowerCase();
+                return pNameLower.includes(query);
+              }
+              return true;
+            })
+            .map((p, idx) => {
+              const isCurrent = String(p.id) === String(player.id) || p.name === player.name;
+              const pNameLower = p.name.trim().toLowerCase();
+              const rank = playerRankMap.get(pNameLower);
+              const seasonStat = activeSeason?.players?.find(
+                (sp) => sp.nickname.trim().toLowerCase() === pNameLower
+              );
+              const isCabutan = p.status === 'Cabutan' || seasonStat?.status === 'Cabutan';
+
+              return (
+                <button
+                  key={`profile-player-btn-${p.id ?? p.name}-${idx}`}
+                  id={`profile-selector-${p.id}`}
+                  onClick={() => handleSelect(p.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1 text-xs transition-all cursor-pointer ${
+                    isCurrent
+                      ? 'border border-[#E8B33D] bg-[#E8B33D] text-[#161311] shadow-md font-bold ring-2 ring-[#E8B33D]/30'
+                      : 'border border-[#332C25] bg-[#1D1916] text-[#F2EDE4] hover:border-[#E8B33D]/50 hover:bg-[#241F1B]'
+                  }`}
+                >
+                  {/* Rank badge */}
+                  {rank !== undefined ? (
+                    rank === 1 ? (
+                      <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.2 text-[10px] font-black ${
+                        isCurrent ? 'bg-black text-[#E8B33D]' : 'bg-[#E8B33D] text-[#161311]'
+                      }`}>
+                        👑 #1
+                      </span>
+                    ) : rank === 2 ? (
+                      <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.2 text-[10px] font-black ${
+                        isCurrent ? 'bg-black text-slate-200' : 'bg-slate-300 text-slate-900'
+                      }`}>
+                        🥈 #2
+                      </span>
+                    ) : rank === 3 ? (
+                      <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.2 text-[10px] font-black ${
+                        isCurrent ? 'bg-black text-amber-300' : 'bg-amber-700 text-amber-100'
+                      }`}>
+                        🥉 #3
+                      </span>
+                    ) : (
+                      <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                        isCurrent ? 'bg-black/20 text-[#161311]' : 'bg-[#2A241E] text-[#E8B33D] border border-[#332C25]'
+                      }`}>
+                        #{rank}
+                      </span>
+                    )
+                  ) : (
+                    <span className={`text-[10px] px-1 italic ${isCurrent ? 'text-black/60' : 'text-[#9C948A]'}`}>
+                      -
+                    </span>
+                  )}
+
+                  <PlayerAvatar name={p.name} avatarUrl={p.avatar_url} size="xs" />
+                  <span className="font-semibold">{p.name}</span>
+
+                  {/* Cabutan indicator */}
+                  {isCabutan && (
+                    <span className={`rounded px-1 text-[9px] font-bold ${
+                      isCurrent
+                        ? 'bg-purple-900 text-purple-100'
+                        : 'bg-purple-950/80 text-purple-300 border border-purple-500/40'
+                    }`}>
+                      Cabutan
+                    </span>
+                  )}
+
+                  {/* Season score pill */}
+                  {seasonStat && (seasonStat.matches || 0) > 0 && (
+                    <span className={`text-[10px] font-bold ${
+                      isCurrent ? 'text-black/80' : 'text-[#E8B33D]/90'
+                    }`}>
+                      {seasonStat.score}p
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+        </div>
       </div>
 
       {/* Status feedback toast if updated */}

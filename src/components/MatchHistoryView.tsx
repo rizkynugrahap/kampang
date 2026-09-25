@@ -10,6 +10,7 @@ import {
   Filter,
   Trash2,
   Pencil,
+  RotateCw,
 } from 'lucide-react';
 import { Match, LagaAmalSeasonData, Hero, Player } from '../types';
 import { HeroAvatar } from './HeroAvatar';
@@ -32,6 +33,7 @@ interface MatchHistoryViewProps {
   onSelectMatch: (match: Match) => void;
   onDeleteMatch?: (matchId: number) => void;
   onEditMatch?: (originalMatch: Match, updates: EditMatchSaveData) => Promise<boolean>;
+  onReanalyzeMatch?: (matchId: number) => Promise<void>;
   heroes?: Hero[];
   players?: Player[];
   isAdmin?: boolean;
@@ -48,6 +50,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
   onSelectMatch,
   onDeleteMatch,
   onEditMatch,
+  onReanalyzeMatch,
   heroes = [],
   players = [],
   isAdmin = false,
@@ -55,6 +58,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
   const [winnerFilter, setWinnerFilter] = useState<'all' | 'Tim Pohon' | 'Tim Lobby'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
 
   // Seasons sorted descending (highest season first)
   const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
@@ -321,6 +325,30 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 text-[11px]">
+                      {onReanalyzeMatch && (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (reanalyzingId) return;
+                            setReanalyzingId(match.id);
+                            try {
+                              await onReanalyzeMatch(match.id);
+                            } finally {
+                              setReanalyzingId(null);
+                            }
+                          }}
+                          disabled={reanalyzingId === match.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-[#E8B33D]/40 bg-[#E8B33D]/10 hover:bg-[#E8B33D]/20 px-2 py-0.5 text-[10px] font-bold text-[#E8B33D] transition-all cursor-pointer disabled:opacity-50"
+                          title="Generate ulang analisis dengan AI (sarkas & membaca match sebelumnya)"
+                        >
+                          <RotateCw
+                            size={11}
+                            className={reanalyzingId === match.id ? 'animate-spin' : ''}
+                          />
+                          <span>{reanalyzingId === match.id ? 'Menganalisis...' : 'Re-analisis AI'}</span>
+                        </button>
+                      )}
                       {mvp && (
                         <span className="hidden sm:inline-flex items-center gap-1 rounded bg-[#E8B33D]/15 px-2 py-0.5 text-[#E8B33D] font-bold">
                           👑 MVP: {mvp.player_name}
@@ -334,7 +362,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                     </div>
                   </div>
 
-                  <p className="text-xs sm:text-sm text-[#F2EDE4] leading-relaxed italic font-medium">
+                  <p className="text-xs sm:text-sm text-[#F2EDE4] leading-relaxed italic font-medium whitespace-pre-line">
                     "{analysisText}"
                   </p>
                 </div>

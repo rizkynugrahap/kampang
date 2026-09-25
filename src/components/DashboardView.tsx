@@ -236,8 +236,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
 
     if (teamFilter === 'all') {
-      // Use the season's official aggregated roster
-      const list: PlayerStatsComputed[] = (activeSeason.players || []).map((p) => {
+      // Use the season's official aggregated roster (excluding cabutan with 0 matches)
+      const list: PlayerStatsComputed[] = (activeSeason.players || [])
+        .filter((p) => {
+          const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
+          const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
+          const matchesCount = Number(p.matches) || 0;
+          if (isCabutan && matchesCount < 1) return false;
+          return true;
+        })
+        .map((p) => {
         const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
         const julukan =
           meta?.julukan ||
@@ -372,7 +380,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
 
     // Fallback if season has no individual match records yet (split or estimated)
-    return (activeSeason.players || []).map((p) => {
+    return (activeSeason.players || [])
+      .filter((p) => {
+        const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
+        const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
+        const matchesCount = Number(p.matches) || 0;
+        if (isCabutan && matchesCount < 1) return false;
+        return true;
+      })
+      .map((p) => {
       const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
       const julukan =
         meta?.julukan ||

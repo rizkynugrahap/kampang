@@ -101,36 +101,106 @@ if (!process.env.PUTER_AUTH_TOKEN) {
   );
 }
 
-// Generate match commentary using Gemini
-async function generateMatchAnalysis(match: Match): Promise<string> {
+// Helper to build rich, contextual, and past-match aware analysis prompt
+function buildAnalysisPrompt(match: Match, previousMatches: Match[] = []): string {
   const winnerTeam = match.winner;
   const loserTeam = winnerTeam === 'Tim Pohon' ? 'Tim Lobby' : 'Tim Pohon';
 
   const winnerPlayers = (winnerTeam === 'Tim Pohon' ? match.pohon : match.lobby)
-    .map((p) => `${p.player_name} (${p.hero_name}/${p.medal} - Skor ${p.score || '-'})`)
+    .map((p) => `${p.player_name} (Hero: ${p.hero_name} | Medal: ${p.medal} | Skor: ${p.score ?? '-'})`)
     .join(', ');
 
   const loserPlayers = (loserTeam === 'Tim Pohon' ? match.pohon : match.lobby)
-    .map((p) => `${p.player_name} (${p.hero_name}/${p.medal} - Skor ${p.score || '-'})`)
+    .map((p) => `${p.player_name} (Hero: ${p.hero_name} | Medal: ${p.medal} | Skor: ${p.score ?? '-'})`)
     .join(', ');
 
-  const promptText = `Match ${match.date}. ${teamDisplayName(winnerTeam)} Menang. Tim Pemenang: ${winnerPlayers}. Tim Kalah (${teamDisplayName(loserTeam)}): ${loserPlayers}.`;
+  const allPlayers = [...match.pohon, ...match.lobby];
+  const mvp = allPlayers.find((p) => p.medal === 'MVP');
+  const coklat = allPlayers.find((p) => p.medal === 'Coklat');
+
+  let historyContext = '';
+  if (previousMatches.length > 0) {
+    const recent = previousMatches.slice(0, 5);
+    const historyLines = recent.map((m, idx) => {
+      const pmvp = [...m.pohon, ...m.lobby].find((p) => p.medal === 'MVP');
+      const pcoklat = [...m.pohon, ...m.lobby].find((p) => p.medal === 'Coklat');
+      return `  - Match ${m.date || `#${idx + 1}`}: ${teamDisplayName(m.winner)} Menang. MVP: ${
+        pmvp ? `${pmvp.player_name} (${pmvp.hero_name}, skor ${pmvp.score ?? '-'})` : '-'
+      }. Coklat: ${pcoklat ? `${pcoklat.player_name} (${pcoklat.hero_name}, skor ${pcoklat.score ?? '-'})` : '-'}.`;
+    });
+
+    const playerNotes: string[] = [];
+    for (const p of allPlayers) {
+      const pNorm = p.player_name.trim().toLowerCase();
+      let pastCoklats = 0;
+      let pastMvps = 0;
+      let lastMatchMedal: string | undefined;
+
+      for (let i = 0; i < recent.length; i++) {
+        const pastP = [...recent[i].pohon, ...recent[i].lobby].find(
+          (x) => x.player_name.trim().toLowerCase() === pNorm
+        );
+        if (pastP) {
+          if (!lastMatchMedal) lastMatchMedal = pastP.medal;
+          if (pastP.medal === 'Coklat') pastCoklats++;
+          if (pastP.medal === 'MVP') pastMvps++;
+        }
+      }
+
+      if (pastCoklats >= 2) {
+        playerNotes.push(`${p.player_name} sudah ${pastCoklats}x dapat Coklat di match-match sebelumnya (langganan beban/donatur tetap)`);
+      } else if (pastMvps >= 2) {
+        playerNotes.push(`${p.player_name} sudah ${pastMvps}x berturut-turut MVP di match sebelumnya (carry dewa konsisten)`);
+      } else if (lastMatchMedal === 'Coklat' && p.medal === 'MVP') {
+        playerNotes.push(`${p.player_name} di match kemarin sempat dapat Coklat (beban), tapi sekarang tobat dan menggila jadi MVP!`);
+      } else if (lastMatchMedal === 'MVP' && p.medal === 'Coklat') {
+        playerNotes.push(`${p.player_name} di match kemarin adalah MVP dewa, tapi di match ini blunder fatal terjun bebas dapat Coklat!`);
+      }
+    }
+
+    historyContext =
+      `\n\nRIWAYAT MATCH-MATCH SEBELUMNYA DI SEASON INI:\n` +
+      historyLines.join('\n') +
+      (playerNotes.length > 0
+        ? `\nCatatan Khusus Riwayat Pemain:\n- ` + playerNotes.join('\n- ')
+        : '');
+  }
+
+  return (
+    `DATA PERTANDINGAN SAAT INI:\n` +
+    `- Tanggal / Match: ${match.date || 'Terbaru'} (${match.season || 'Season Aktif'})\n` +
+    `- Pemenang: ${teamDisplayName(winnerTeam)}\n` +
+    `- Pecundang: ${teamDisplayName(loserTeam)}\n` +
+    `- Skuad Pemenang (${teamDisplayName(winnerTeam)}): ${winnerPlayers}\n` +
+    `- Skuad Pecundang (${teamDisplayName(loserTeam)}): ${loserPlayers}\n` +
+    `- MVP Laga: ${mvp ? `${mvp.player_name} (${mvp.hero_name} - skor ${mvp.score ?? '-'})` : '-'}\n` +
+    `- Coklat / Feeder Terburuk: ${coklat ? `${coklat.player_name} (${coklat.hero_name} - skor ${coklat.score ?? '-'})` : '-'}` +
+    historyContext
+  );
+}
+
+// Generate match commentary using Gemini with Puter AI fallback and deep history context
+async function generateMatchAnalysis(match: Match, previousMatches: Match[] = []): Promise<string> {
+  const promptText = buildAnalysisPrompt(match, previousMatches);
 
   const systemInstruction =
-    'Kamu adalah komentator e-sport Mobile Legends yang sarkastik, jenaka, namun analitis khas tongkrongan gamer Pantos. ' +
-    'Tugasmu menganalisis hasil pertandingan antara Tim Kiri dan Tim Kanan. ' +
-    'Bahas siapa pemain kunci/MVP yang tampil gemilang, siapa yang "makan Coklat" (jadi semen / beban tim), ' +
-    'serta dinamika hero yang dipakai. ' +
-    'Gunakan istilah khas MLBB (laning, teamfight, blunder, lord, rotasi, kena culik, solo kill). ' +
-    'Tulis dalam 2-3 paragraf ringkas, kocak tapi berbobot dalam bahasa Indonesia santai.';
+    'Kamu adalah komentator e-sport Mobile Legends komunitas Pantos yang paling pedas, sarkastik, nyeleneh, ' +
+    'dan tanpa sensor basa-basi (gaya khas tongkrongan gamer sejati yang suka roasting habis-habisan).\n\n' +
+    'INSTRUKSI KHUSUS:\n' +
+    '1. HILANGKAN SEMUA BATASAN BAHASA FORMAL & TEMPLATE KAKU. Dilarang keras memakai kalimat template klise koran seperti ' +
+    '"Tim X keluar sebagai pemenang dalam laga yang sengit... tampil gemilang membawa hero Y". Buat ulasan yang hidup, liar, sarkas, berani, dan mengalir natural layaknya streamer tongkrongan yang lagi roasting temannya!\n' +
+    '2. GAYA BICARA: Sarkastik, brutal, nyeleneh, dan penuh roasting pedas. Puji MVP setinggi langit yang menggendong tim sampai tulang punggung retak. ' +
+    'Roasting habis-habisan pemain yang "makan Coklat" atau feeder yang jadi ATM berjalan buat musuh. Gunakan istilah khas tongkrongan gamer MLBB ' +
+    '(misal: beban keluarga, donatur bintang, sedekah kill, cosplay minion, ATM berjalan, punggung patah, buta map, tangan rental, pensiun aja, buy 1 get 4, jagoan kandang, coklat anget, kena geprek, rotasi ngawur, dll).\n' +
+    '3. BACA DAN MANFAATKAN RIWAYAT MATCH SEBELUMNYA: Manfaatkan data riwayat match sebelumnya yang diberikan di prompt! Hubungkan performa match ini dengan riwayat mereka ' +
+    '(misal: apakah dia langganan MVP, atau kemarin sempat kena Coklat dan sekarang balas dendam/tobat, atau malah konsisten jadi donatur setia). ' +
+    'Sebut juga tren kemenangan tim (winstreak, patah telur, dominasi, dibantai) agar narasinya terasa hidup dan berkesinambungan!\n' +
+    '4. FORMAT: Tulis dalam 2 sampai 3 paragraf padat, pedas, menghibur, dan penuh sarkasme berbobot dalam bahasa Indonesia tongkrongan santai.';
 
+  // Layer 1: Google Gemini Models (trying modern, active models first)
   const ai = getGenAI();
   if (ai) {
-    // These model ids used to be 'gemini-3.8-flash' / 'gemini-flash-latest' /
-    // 'gemini-3.1-flash-lite' — none of which are real Gemini models, so
-    // every single call failed here too (same root cause as the match
-    // analysis bug). Using real, current model ids instead.
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -138,44 +208,39 @@ async function generateMatchAnalysis(match: Match): Promise<string> {
           contents: promptText,
           config: {
             systemInstruction,
-            temperature: 0.7,
+            temperature: 0.9,
             maxOutputTokens: 1024,
           },
         });
         if (response.text && response.text.trim()) {
+          console.info(`[Gemini] Match analysis generated via ${modelName}`);
           return response.text.trim();
         }
       } catch (err: any) {
         const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
-        const isQuota =
-          err?.status === 'RESOURCE_EXHAUSTED' ||
-          err?.code === 429 ||
-          errMsg.includes('429') ||
-          errMsg.includes('Quota exceeded') ||
-          errMsg.includes('RESOURCE_EXHAUSTED');
-
-        if (isQuota) {
-          console.info(`[Gemini] Match analysis quota reached on ${modelName}, switching to heuristic.`);
-          break;
-        } else {
-          console.info(`[Gemini] Model ${modelName} unavailable for match analysis, checking next candidate.`);
-        }
+        console.info(`[Gemini] Model ${modelName} unavailable (${errMsg.slice(0, 80)}), trying next alternative.`);
       }
     }
   }
 
-  // Gemini unavailable or its quota just got hit — try Puter.js as a second
-  // AI provider before giving up on real AI text entirely. Returns null
-  // (never throws) if Puter isn't configured or also fails.
-  const puterText = await generateTextViaPuter(promptText, systemInstruction);
-  if (puterText) {
-    console.info('[Puter.js] Match analysis generated via Puter.js fallback.');
-    return puterText;
+  // Layer 2: Alternative AI Provider (Puter.js)
+  // When Gemini limits or experiences high demand, use Puter.js models to keep AI alive!
+  const puterModels = ['gpt-4o-mini', 'claude-3-5-sonnet', undefined];
+  for (const pModel of puterModels) {
+    try {
+      const puterText = await generateTextViaPuter(promptText, systemInstruction, pModel);
+      if (puterText && puterText.trim()) {
+        console.info(`[Puter.js] Match analysis generated via Puter AI (${pModel || 'default'})`);
+        return puterText.trim();
+      }
+    } catch (puterErr) {
+      console.warn(`[Puter.js] Model ${pModel} failed, trying next Puter model:`, puterErr);
+    }
   }
 
-  // Last resort: static heuristic commentary if neither AI provider is
-  // available/configured or both calls failed.
-  return generateHeuristicMatchAnalysis(match);
+  // Layer 3: Ultra-sarcastic dynamic heuristic commentary with previous match context
+  console.info('[AI Cascade] Using dynamic context-aware sarcastic heuristic commentary.');
+  return generateHeuristicMatchAnalysis(match, previousMatches);
 }
 
 // Generate creative Pantos nickname using Gemini AI
@@ -215,7 +280,7 @@ Panduan julukan:
 
   const ai = getGenAI();
   if (ai) {
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -227,38 +292,30 @@ Panduan julukan:
           },
         });
         if (response.text && response.text.trim()) {
-          // Clean output from quotation marks or bullet points
           let cleanTitle = response.text.trim().replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
           if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
           return cleanTitle;
         }
       } catch (err: any) {
-        const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
-        const isQuota =
-          err?.status === 'RESOURCE_EXHAUSTED' ||
-          err?.code === 429 ||
-          errMsg.includes('429') ||
-          errMsg.includes('Quota exceeded') ||
-          errMsg.includes('RESOURCE_EXHAUSTED');
-
-        if (isQuota) {
-          console.info(`[Gemini] Julukan generation quota reached on ${modelName}; applying heuristic title.`);
-          break;
-        } else {
-          console.info(`[Gemini] Model ${modelName} unavailable for title generation, trying next candidate.`);
-        }
+        console.info(`[Gemini] Julukan model ${modelName} unavailable, trying next candidate.`);
       }
     }
   }
 
   // Gemini unavailable or quota reached — try Puter.js as a second AI
   // provider before falling back to the static heuristic title.
-  const puterTitle = await generateTextViaPuter(promptText);
-  if (puterTitle) {
-    let cleanTitle = puterTitle.replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
-    if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
-    console.info('[Puter.js] Julukan generated via Puter.js fallback.');
-    return cleanTitle;
+  for (const pModel of ['gpt-4o-mini', 'claude-3-5-sonnet', undefined]) {
+    try {
+      const puterTitle = await generateTextViaPuter(promptText, undefined, pModel);
+      if (puterTitle && puterTitle.trim()) {
+        let cleanTitle = puterTitle.trim().replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
+        if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
+        console.info(`[Puter.js] Julukan generated via Puter.js fallback (${pModel || 'default'}).`);
+        return cleanTitle;
+      }
+    } catch {
+      // try next
+    }
   }
 
   return generateHeuristicPlayerJulukan(player, seasonStat);
@@ -660,12 +717,17 @@ app.post('/api/matches', async (req, res) => {
       is_generating_analysis: false,
     };
 
+    const previousMatches =
+      Array.isArray(req.body.recentMatches) && req.body.recentMatches.length > 0
+        ? req.body.recentMatches
+        : store.matches.slice(0, 10);
+
     let analysisText: string;
     try {
-      analysisText = await generateMatchAnalysis(draftMatch);
+      analysisText = await generateMatchAnalysis(draftMatch, previousMatches);
     } catch (aiErr) {
       console.error('Error generating AI analysis:', aiErr);
-      analysisText = generateHeuristicMatchAnalysis(draftMatch);
+      analysisText = generateHeuristicMatchAnalysis(draftMatch, previousMatches);
     }
 
     const newMatch: Match = { ...draftMatch, ai_analysis: analysisText, is_generating_analysis: false };
@@ -754,7 +816,12 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
   }
 
   try {
-    const analysis = await generateMatchAnalysis(match);
+    const previousMatches =
+      Array.isArray(req.body.recentMatches) && req.body.recentMatches.length > 0
+        ? req.body.recentMatches
+        : store.matches.filter((m) => m.id !== matchId).slice(0, 10);
+
+    const analysis = await generateMatchAnalysis(match, previousMatches);
     match.ai_analysis = analysis;
     if (isKnownLocally) {
       saveStore(store);

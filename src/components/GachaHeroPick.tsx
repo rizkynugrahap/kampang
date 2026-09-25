@@ -19,6 +19,7 @@ import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { MLBB_HEROES } from '../constants/heroes';
 import { casinoSound } from '../utils/casinoSound';
+import { registerKnownPlayerAvatars } from '../constants/playerAvatars';
 
 export type MLBBHeroRole = 'Tank' | 'Fighter' | 'Assassin' | 'Mage' | 'Marksman' | 'Support';
 
@@ -33,6 +34,7 @@ export const MLBB_ROLES: { name: MLBBHeroRole; icon: string; badgeClass: string;
 
 export interface PlayerDraftSlot {
   playerName: string;
+  avatarUrl?: string;
   role?: MLBBHeroRole;
   hero?: string;
   heroAvatar?: string;
@@ -54,6 +56,23 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 }) => {
   // Sound mute state
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Sync and cache player avatars in global memory & storage
+  useEffect(() => {
+    if (players && players.length > 0) {
+      registerKnownPlayerAvatars(players);
+    }
+  }, [players]);
+
+  // Fast player lookup map (case-insensitive) for accurate profile photo & data access
+  const playerMap = useMemo(() => {
+    const map = new Map<string, Player>();
+    players.forEach((p) => {
+      if (p.name) map.set(p.name.trim().toLowerCase(), p);
+      if (p.julukan) map.set(p.julukan.trim().toLowerCase(), p);
+    });
+    return map;
+  }, [players]);
 
   // Selected 10 players
   const [selectedPlayerNames, setSelectedPlayerNames] = useState<string[]>(() => {
@@ -215,8 +234,20 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
 
-        const lobby = shuffled.slice(0, 5).map((playerName) => ({ playerName }));
-        const pohon = shuffled.slice(5, 10).map((playerName) => ({ playerName }));
+        const lobby = shuffled.slice(0, 5).map((playerName) => {
+          const pObj = playerMap.get(playerName.trim().toLowerCase());
+          return {
+            playerName,
+            avatarUrl: pObj?.avatar_url,
+          };
+        });
+        const pohon = shuffled.slice(5, 10).map((playerName) => {
+          const pObj = playerMap.get(playerName.trim().toLowerCase());
+          return {
+            playerName,
+            avatarUrl: pObj?.avatar_url,
+          };
+        });
 
         lobbyTeamRef.current = lobby;
         pohonTeamRef.current = pohon;
@@ -304,8 +335,10 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
           setDisplayHeroAvatar(targetHeroAvatar);
 
           // Update player slot in synchronous ref & React state
+          const targetPlayerObj = playerMap.get(targetPlayerName.trim().toLowerCase());
           const updatedSlot: PlayerDraftSlot = {
             playerName: targetPlayerName,
+            avatarUrl: targetPlayerObj?.avatar_url,
             role: chosenRole,
             hero: targetHeroName,
             heroAvatar: targetHeroAvatar,
@@ -600,14 +633,22 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
 
           {/* Top Controls Row matching screenshot */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Player dropdown selector */}
-            <div className="relative flex-1">
+            {/* Player dropdown selector with profile photo */}
+            <div className="relative flex-1 flex items-center">
+              <div className="pointer-events-none absolute left-3 z-10 flex items-center">
+                <PlayerAvatar
+                  name={activePlayerForSpin}
+                  avatarUrl={playerMap.get(activePlayerForSpin.trim().toLowerCase())?.avatar_url}
+                  player={playerMap.get(activePlayerForSpin.trim().toLowerCase())}
+                  size="xs"
+                />
+              </div>
               <select
                 id="gacha-player-select"
                 value={activePlayerForSpin}
                 onChange={(e) => setActivePlayerForSpin(e.target.value)}
                 disabled={isSpinning}
-                className="w-full appearance-none rounded-xl border border-[#332C25] bg-[#171412] px-4 py-3 pr-10 text-sm font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
+                className="w-full appearance-none rounded-xl border border-[#332C25] bg-[#171412] pl-10 pr-10 py-3 text-sm font-bold text-[#F2EDE4] focus:border-[#E8B33D] focus:outline-none cursor-pointer"
               >
                 <optgroup label="🛋️ TIM LOBBY">
                   {lobbyTeam.map((slot, index) => (
@@ -670,9 +711,20 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                   <ShieldAlert size={14} className="text-[#E8B33D]" />
                   <span>SISTEM ANTI-BENTROK 1 TIM</span>
                 </span>
-                <span className="text-xs font-bold text-[#F2EDE4]">
-                  {activeRoleStatus.teamName} — Giliran Spin:{' '}
-                  <strong className="text-[#E8B33D]">{activePlayerForSpin || '-'}</strong>
+                <span className="text-xs font-bold text-[#F2EDE4] flex items-center gap-1.5 flex-wrap">
+                  <span>{activeRoleStatus.teamName} — Giliran Spin:</span>
+                  {activePlayerForSpin && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[#251F1B] border border-[#E8B33D]/40 px-1.5 py-0.5">
+                      <PlayerAvatar
+                        name={activePlayerForSpin}
+                        avatarUrl={playerMap.get(activePlayerForSpin.trim().toLowerCase())?.avatar_url}
+                        player={playerMap.get(activePlayerForSpin.trim().toLowerCase())}
+                        size="xs"
+                      />
+                      <strong className="text-[#E8B33D]">{activePlayerForSpin}</strong>
+                    </span>
+                  )}
+                  {!activePlayerForSpin && <strong className="text-[#E8B33D]">-</strong>}
                 </span>
               </div>
               <div className="text-[11px] text-[#9C948A]">
@@ -774,134 +826,43 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
           </div>
 
           {/* ANNOUNCEMENT BANNER MATCHING SCREENSHOT */}
-          {latestAnnouncement && (
-            <div
-              id="gacha-announcement-banner"
-              className="rounded-2xl border-2 border-dashed border-[#E8B33D]/50 bg-gradient-to-r from-[#2A2218] via-[#1E1916] to-[#2A2218] p-4 text-center shadow-lg transition-all animate-fade-in"
-            >
-              <div className="text-sm sm:text-base font-bold text-[#F2EDE4] flex flex-wrap items-center justify-center gap-2">
-                <span>🎉</span>
-                <span className="text-[#E8B33D] font-black">{latestAnnouncement.player}</span>
-                <span>akan main</span>
-                <span
-                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold ${
-                    MLBB_ROLES.find((r) => r.name === latestAnnouncement.role)?.badgeClass ||
-                    'border-[#332C25] text-purple-400'
-                  }`}
-                >
-                  <span>{MLBB_ROLES.find((r) => r.name === latestAnnouncement.role)?.icon}</span>
-                  <span>{latestAnnouncement.role}</span>
-                </span>
-                <span>—</span>
-                <span className="text-[#E8B33D] font-black underline decoration-2 underline-offset-4">
-                  {latestAnnouncement.hero}!
-                </span>
+          {latestAnnouncement && (() => {
+            const annPlayer = playerMap.get(latestAnnouncement.player.trim().toLowerCase());
+            return (
+              <div
+                id="gacha-announcement-banner"
+                className="rounded-2xl border-2 border-dashed border-[#E8B33D]/50 bg-gradient-to-r from-[#2A2218] via-[#1E1916] to-[#2A2218] p-4 text-center shadow-lg transition-all animate-fade-in"
+              >
+                <div className="text-sm sm:text-base font-bold text-[#F2EDE4] flex flex-wrap items-center justify-center gap-2">
+                  <span>🎉</span>
+                  <PlayerAvatar
+                    name={latestAnnouncement.player}
+                    avatarUrl={annPlayer?.avatar_url}
+                    player={annPlayer}
+                    size="xs"
+                  />
+                  <span className="text-[#E8B33D] font-black">{latestAnnouncement.player}</span>
+                  <span>akan main</span>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold ${
+                      MLBB_ROLES.find((r) => r.name === latestAnnouncement.role)?.badgeClass ||
+                      'border-[#332C25] text-purple-400'
+                    }`}
+                  >
+                    <span>{MLBB_ROLES.find((r) => r.name === latestAnnouncement.role)?.icon}</span>
+                    <span>{latestAnnouncement.role}</span>
+                  </span>
+                  <span>—</span>
+                  <span className="text-[#E8B33D] font-black underline decoration-2 underline-offset-4">
+                    {latestAnnouncement.hero}!
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* DRAFT RESULTS DISPLAY (TIM LOBBY & TIM POHON) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-            {/* TIM KANAN */}
-            <div className="rounded-2xl border border-[#332C25] bg-[#161311] p-4 sm:p-5 space-y-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">➡️</span>
-                  <h3 className="font-black text-sm sm:text-base text-[#F2EDE4] tracking-wide">
-                    Tim Kanan
-                  </h3>
-                </div>
-                <span className="rounded-full bg-[#251F1B] border border-[#332C25] px-2.5 py-0.5 text-[11px] font-bold text-[#9C948A]">
-                  {lobbyTeam.filter((p) => !!p.hero).length} / 5 Picked
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {lobbyTeam.map((slot, index) => {
-                  const roleConfig = slot.role
-                    ? MLBB_ROLES.find((r) => r.name === slot.role)
-                    : null;
-                  const isCurrent = activePlayerForSpin === slot.playerName;
-
-                  return (
-                    <div
-                      key={`lobby-slot-${slot.playerName}-${index}`}
-                      className={`flex items-center justify-between gap-2.5 rounded-xl border p-2.5 sm:px-3 transition-all ${
-                        isCurrent
-                          ? 'border-[#E8B33D] bg-[#221B16] shadow-sm'
-                          : slot.hero
-                          ? 'border-[#332C25] bg-[#1C1815]'
-                          : 'border-dashed border-[#332C25]/80 bg-[#14110F]'
-                      }`}
-                    >
-                      {/* Left: Number + Player Name */}
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#251F1B] border border-[#332C25] text-xs font-black text-[#E8B33D]">
-                          {index + 1}
-                        </span>
-                        <PlayerAvatar name={slot.playerName} size="sm" />
-                        <span className="text-xs sm:text-sm font-bold text-[#F2EDE4] truncate">
-                          {slot.playerName}
-                        </span>
-                      </div>
-
-                      {/* Right: Role & Hero */}
-                      <div className="flex items-center gap-2 shrink-0">
-                        {slot.hero ? (
-                          <>
-                            {roleConfig && (
-                              <span
-                                className={`hidden sm:inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold border ${roleConfig.badgeClass}`}
-                              >
-                                <span>{roleConfig.icon}</span>
-                                <span>{roleConfig.name}</span>
-                              </span>
-                            )}
-                            <div className="flex items-center gap-1.5">
-                              {slot.heroAvatar && (
-                                <img
-                                  src={slot.heroAvatar}
-                                  alt={slot.hero}
-                                  referrerPolicy="no-referrer"
-                                  className="h-6 w-6 rounded-full border border-[#E8B33D]/50 object-cover"
-                                />
-                              )}
-                              <span className="text-xs sm:text-sm font-bold text-[#F2EDE4]">
-                                {slot.hero}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActivePlayerForSpin(slot.playerName);
-                                spinForPlayer(slot.playerName);
-                              }}
-                              className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241F] hover:text-[#E8B33D] transition-colors cursor-pointer"
-                              title="Re-roll hero & role untuk pemain ini"
-                            >
-                              <Dices size={14} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActivePlayerForSpin(slot.playerName);
-                              spinForPlayer(slot.playerName);
-                            }}
-                            className="flex items-center gap-1 rounded-lg border border-[#E8B33D]/40 bg-[#251F1B] px-2.5 py-1 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D] hover:text-[#161311] transition-all cursor-pointer"
-                          >
-                            <Play size={11} fill="currentColor" />
-                            <span>Gacha</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* TIM KIRI */}
             <div className="rounded-2xl border border-[#332C25] bg-[#161311] p-4 sm:p-5 space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
@@ -922,6 +883,8 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                     ? MLBB_ROLES.find((r) => r.name === slot.role)
                     : null;
                   const isCurrent = activePlayerForSpin === slot.playerName;
+                  const playerObj = playerMap.get(slot.playerName.trim().toLowerCase());
+                  const playerAvatarUrl = slot.avatarUrl || playerObj?.avatar_url;
 
                   return (
                     <div
@@ -939,7 +902,12 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#251F1B] border border-[#332C25] text-xs font-black text-[#E8B33D]">
                           {index + 1}
                         </span>
-                        <PlayerAvatar name={slot.playerName} size="sm" />
+                        <PlayerAvatar
+                          name={slot.playerName}
+                          avatarUrl={playerAvatarUrl}
+                          player={playerObj}
+                          size="sm"
+                        />
                         <span className="text-xs sm:text-sm font-bold text-[#F2EDE4] truncate">
                           {slot.playerName}
                         </span>
@@ -1001,6 +969,118 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                 })}
               </div>
             </div>
+
+
+
+
+
+            {/* TIM KANAN */}
+            <div className="rounded-2xl border border-[#332C25] bg-[#161311] p-4 sm:p-5 space-y-3 shadow-md">
+              <div className="flex items-center justify-between border-b border-[#332C25] pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">➡️</span>
+                  <h3 className="font-black text-sm sm:text-base text-[#F2EDE4] tracking-wide">
+                    Tim Kanan
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[#251F1B] border border-[#332C25] px-2.5 py-0.5 text-[11px] font-bold text-[#9C948A]">
+                  {lobbyTeam.filter((p) => !!p.hero).length} / 5 Picked
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {lobbyTeam.map((slot, index) => {
+                  const roleConfig = slot.role
+                    ? MLBB_ROLES.find((r) => r.name === slot.role)
+                    : null;
+                  const isCurrent = activePlayerForSpin === slot.playerName;
+                  const playerObj = playerMap.get(slot.playerName.trim().toLowerCase());
+                  const playerAvatarUrl = slot.avatarUrl || playerObj?.avatar_url;
+
+                  return (
+                    <div
+                      key={`lobby-slot-${slot.playerName}-${index}`}
+                      className={`flex items-center justify-between gap-2.5 rounded-xl border p-2.5 sm:px-3 transition-all ${
+                        isCurrent
+                          ? 'border-[#E8B33D] bg-[#221B16] shadow-sm'
+                          : slot.hero
+                          ? 'border-[#332C25] bg-[#1C1815]'
+                          : 'border-dashed border-[#332C25]/80 bg-[#14110F]'
+                      }`}
+                    >
+                      {/* Left: Number + Player Name */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#251F1B] border border-[#332C25] text-xs font-black text-[#E8B33D]">
+                          {index + 1}
+                        </span>
+                        <PlayerAvatar
+                          name={slot.playerName}
+                          avatarUrl={playerAvatarUrl}
+                          player={playerObj}
+                          size="sm"
+                        />
+                        <span className="text-xs sm:text-sm font-bold text-[#F2EDE4] truncate">
+                          {slot.playerName}
+                        </span>
+                      </div>
+
+                      {/* Right: Role & Hero */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {slot.hero ? (
+                          <>
+                            {roleConfig && (
+                              <span
+                                className={`hidden sm:inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold border ${roleConfig.badgeClass}`}
+                              >
+                                <span>{roleConfig.icon}</span>
+                                <span>{roleConfig.name}</span>
+                              </span>
+                            )}
+                            <div className="flex items-center gap-1.5">
+                              {slot.heroAvatar && (
+                                <img
+                                  src={slot.heroAvatar}
+                                  alt={slot.hero}
+                                  referrerPolicy="no-referrer"
+                                  className="h-6 w-6 rounded-full border border-[#E8B33D]/50 object-cover"
+                                />
+                              )}
+                              <span className="text-xs sm:text-sm font-bold text-[#F2EDE4]">
+                                {slot.hero}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePlayerForSpin(slot.playerName);
+                                spinForPlayer(slot.playerName);
+                              }}
+                              className="rounded-lg p-1.5 text-[#9C948A] hover:bg-[#2A241F] hover:text-[#E8B33D] transition-colors cursor-pointer"
+                              title="Re-roll hero & role untuk pemain ini"
+                            >
+                              <Dices size={14} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePlayerForSpin(slot.playerName);
+                              spinForPlayer(slot.playerName);
+                            }}
+                            className="flex items-center gap-1 rounded-lg border border-[#E8B33D]/40 bg-[#251F1B] px-2.5 py-1 text-xs font-bold text-[#E8B33D] hover:bg-[#E8B33D] hover:text-[#161311] transition-all cursor-pointer"
+                          >
+                            <Play size={11} fill="currentColor" />
+                            <span>Gacha</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
           </div>
 
           {/* ACTION BUTTONS: COPY RESULTS & EXPORT TO ADMIN */}
