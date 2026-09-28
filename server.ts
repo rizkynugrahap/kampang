@@ -11,6 +11,7 @@ import { generateHeuristicPlayerJulukan } from './src/utils/julukan.ts';
 import { teamDisplayName } from './src/utils/teamLabels.ts';
 import { generateTextViaPuter } from './src/utils/puterFallback.ts';
 import { getPlayerDocId } from './src/utils/playerId.ts';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 const app = express();
 const PORT = 3000;
@@ -887,6 +888,296 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: 'Gagal membuat analisis AI: ' + err.message });
   }
+});
+
+// Helper to convert raw PCM Buffer to valid WAV Buffer
+function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer {
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const dataSize = pcmBuffer.length;
+  const header = Buffer.alloc(44);
+
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16); // Subchunk1Size
+  header.writeUInt16LE(1, 20); // AudioFormat PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
+}
+
+// Splits long commentary text on sentence boundaries so TTS never cuts off mid-sentence
+function splitTextIntoSentenceChunks(text: string, maxChunkLength = 360): string[] {
+  const clean = text
+    .replace(/[*_~`#]/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Split on sentence boundaries: period, exclamation, question mark
+  const rawSentences = clean
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const sentence of rawSentences) {
+    if (!currentChunk) {
+      currentChunk = sentence;
+    } else if ((currentChunk + ' ' + sentence).length <= maxChunkLength) {
+      currentChunk += ' ' + sentence;
+    } else {
+      chunks.push(currentChunk);
+      currentChunk = sentence;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  if (chunks.length === 0 && clean.length > 0) {
+    chunks.push(clean.slice(0, maxChunkLength));
+  }
+
+  return chunks;
+}
+
+// Single chunk PCM generator
+async function generatePcmChunk(ai: any, chunkText: string, voiceName: string): Promise<Buffer | null> {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash-lite-tts',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: chunkText,
+              speechMetadata: {
+                style:
+                  'High-energy Indonesian MLBB esports caster at an official MPL championship! Extremely passionate, hype, fast-paced shoutcaster with natural human inflection, laughing, gasping, dramatic pauses, and genuine excitement for Mobile Legends highlights!',
+              },
+            },
+          ],
+        },
+      ] as any,
+      config: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName },
+          },
+        },
+      },
+    });
+
+    const candidate = response.candidates?.[0];
+    const audioPart = candidate?.content?.parts?.find((p: any) => p.inlineData && p.inlineData.data);
+    const base64Data = audioPart?.inlineData?.data;
+    if (!base64Data) return null;
+    return Buffer.from(base64Data, 'base64');
+  } catch (err) {
+    console.warn('[Chunk TTS Error]', err);
+    return null;
+  }
+}
+
+// Server-side cache for commentator audio to preserve AI quotas across sessions & users
+const commentatorAudioServerCache = new Map<string, { audioUrl: string; provider: string; providerName: string }>();
+
+// Generates Edge Neural audio (Tier 2 AI fallback)
+async function generateEdgeNeuralAudio(text: string): Promise<Buffer | null> {
+  try {
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata('id-ID-ArdiNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = await tts.toStream(text, { rate: 1.15, pitch: '+0Hz' });
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      audioStream.on('data', (c) => chunks.push(c));
+      audioStream.on('end', () => {
+        tts.close();
+        resolve(Buffer.concat(chunks));
+      });
+      audioStream.on('error', (e) => {
+        console.warn('[Edge TTS Stream Error]', e);
+        tts.close();
+        resolve(null);
+      });
+    });
+  } catch (err) {
+    console.warn('[Edge TTS Error]', err);
+    return null;
+  }
+}
+
+// Generates Google Cloud audio (Tier 3 AI fallback)
+async function generateGoogleAudio(text: string): Promise<Buffer | null> {
+  try {
+    const clean = text.slice(0, 450);
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=id&client=tw-ob`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return null;
+    const arrayBuf = await res.arrayBuffer();
+    return Buffer.from(arrayBuf);
+  } catch (err) {
+    console.warn('[Google TTS Error]', err);
+    return null;
+  }
+}
+
+// POST /api/commentator/tts (Multi-Tier AI Esports Caster: Gemini -> Edge Neural -> Google Cloud)
+app.post('/api/commentator/tts', async (req, res) => {
+  const { text, mode = 'full' } = req.body;
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'Teks analisis diperlukan' });
+  }
+
+  // Generate cache key based on normalized text and mode
+  const cleanFullText = text
+    .replace(/[*_~`#]/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cacheKey = `${mode}:${cleanFullText.slice(0, 160)}`;
+
+  // 1. Check server-side memory cache first (instant response, 0 AI tokens)
+  if (commentatorAudioServerCache.has(cacheKey)) {
+    const cached = commentatorAudioServerCache.get(cacheKey)!;
+    return res.json({
+      success: true,
+      audioUrl: cached.audioUrl,
+      provider: cached.provider,
+      providerName: cached.providerName,
+      cached: true,
+    });
+  }
+
+  // Prepare text chunks
+  let chunks = splitTextIntoSentenceChunks(cleanFullText, 340);
+  if (mode === 'recap' && chunks.length > 2) {
+    chunks = [chunks[0], chunks[chunks.length - 1]];
+  } else {
+    chunks = chunks.slice(0, 5);
+  }
+
+  if (chunks.length === 0) {
+    return res.status(400).json({ error: 'Teks analisis kosong' });
+  }
+
+  // TIER 1: Try Gemini 3.8 Flash Neural TTS (Puck - Gokil Esports Caster)
+  const ai = getGenAI();
+  if (ai) {
+    try {
+      const pcmResults = await Promise.all(
+        chunks.map((chunk) => generatePcmChunk(ai, chunk, 'Puck'))
+      );
+
+      const validPcmBuffers = pcmResults.filter((b): b is Buffer => Buffer.isBuffer(b) && b.length > 0);
+
+      if (validPcmBuffers.length > 0) {
+        const pauseBytes = Math.floor(24000 * 2 * 0.15);
+        const pauseBuffer = Buffer.alloc(pauseBytes);
+
+        const fullPcm = Buffer.concat(
+          validPcmBuffers.flatMap((buf, idx) =>
+            idx < validPcmBuffers.length - 1 ? [buf, pauseBuffer] : [buf]
+          )
+        );
+
+        const wavBuffer = pcmToWav(fullPcm, 24000, 1, 16);
+        const audioUrl = `data:audio/wav;base64,${wavBuffer.toString('base64')}`;
+
+        commentatorAudioServerCache.set(cacheKey, {
+          audioUrl,
+          provider: 'gemini',
+          providerName: 'Gemini AI Caster (Puck)',
+        });
+
+        return res.json({
+          success: true,
+          audioUrl,
+          provider: 'gemini',
+          providerName: 'Gemini AI Caster (Puck)',
+          mode,
+          chunkCount: validPcmBuffers.length,
+        });
+      }
+    } catch (geminiErr: any) {
+      console.warn('[Commentator TTS] Gemini API limited or failed, seamlessly activating AI Backup:', geminiErr?.message || geminiErr);
+    }
+  }
+
+  // TIER 2: Try Microsoft Azure Neural Indonesian AI Voice (id-ID-ArdiNeural)
+  try {
+    const textToSynthesize = chunks.join(' ');
+    const edgeMp3Buffer = await generateEdgeNeuralAudio(textToSynthesize);
+
+    if (edgeMp3Buffer && edgeMp3Buffer.length > 0) {
+      const audioUrl = `data:audio/mp3;base64,${edgeMp3Buffer.toString('base64')}`;
+
+      commentatorAudioServerCache.set(cacheKey, {
+        audioUrl,
+        provider: 'msedge',
+        providerName: 'Microsoft Neural AI Caster',
+      });
+
+      return res.json({
+        success: true,
+        audioUrl,
+        provider: 'msedge',
+        providerName: 'Microsoft Neural AI Caster (Cadangan)',
+        mode,
+      });
+    }
+  } catch (edgeErr) {
+    console.warn('[Commentator TTS] Edge Neural Voice fallback error:', edgeErr);
+  }
+
+  // TIER 3: Try Google Cloud Audio
+  try {
+    const textToSynthesize = chunks.join(' ');
+    const googleMp3Buffer = await generateGoogleAudio(textToSynthesize);
+
+    if (googleMp3Buffer && googleMp3Buffer.length > 0) {
+      const audioUrl = `data:audio/mp3;base64,${googleMp3Buffer.toString('base64')}`;
+
+      commentatorAudioServerCache.set(cacheKey, {
+        audioUrl,
+        provider: 'google',
+        providerName: 'Google Cloud AI Voice',
+      });
+
+      return res.json({
+        success: true,
+        audioUrl,
+        provider: 'google',
+        providerName: 'Google Cloud AI Voice (Cadangan)',
+        mode,
+      });
+    }
+  } catch (googleErr) {
+    console.warn('[Commentator TTS] Google Cloud audio fallback error:', googleErr);
+  }
+
+  // TIER 4: Local Device Fallback
+  res.status(503).json({
+    error: 'Semua layanan audio AI cloud sedang sibuk, beralih ke suara perangkat lokal',
+    fallback: true,
+  });
 });
 
 // NOTE: Admin login no longer goes through this backend — it now checks

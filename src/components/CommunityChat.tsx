@@ -42,6 +42,7 @@ import { PlayerAccountMenu } from './PlayerAccountMenu';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { GitSyncModal } from './GitSyncModal';
 import { MentionNotificationToast } from './MentionNotificationToast';
+import { MatchCommentatorPlayer } from './MatchCommentatorPlayer';
 import { getPlayerAvatarUrl } from '../constants/playerAvatars';
 import {
   CURATED_CHAT_EMOTES,
@@ -1142,29 +1143,45 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                     </div>
                   )}
 
-                  {/* AI Analysis Preview Accordion */}
+                  {/* AI Analysis Preview Accordion with Sound Commentator */}
                   {aiAnalysisText && (
-                    <div className="mt-2.5 pt-2 border-t border-[#332C25]/80">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedAnalysisMsgIds((prev) => ({
-                            ...prev,
-                            [msg.id]: !prev[msg.id],
-                          }))
-                        }
-                        className="flex items-center gap-1.5 text-[11px] font-bold text-[#E8B33D] hover:text-[#f7cf7c] transition-colors cursor-pointer"
-                      >
-                        <Bot size={13} />
-                        <span>
-                          {isAnalysisExpanded
-                            ? 'Sembunyikan Analisis AI ▲'
-                            : 'Lihat Analisis AI Match ▼'}
-                        </span>
-                      </button>
+                    <div className="mt-2.5 pt-2 border-t border-[#332C25]/80 space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedAnalysisMsgIds((prev) => ({
+                              ...prev,
+                              [msg.id]: !prev[msg.id],
+                            }))
+                          }
+                          className="flex items-center gap-1.5 text-[11px] font-bold text-[#E8B33D] hover:text-[#f7cf7c] transition-colors cursor-pointer"
+                        >
+                          <Bot size={13} />
+                          <span>
+                            {isAnalysisExpanded
+                              ? 'Sembunyikan Analisis AI ▲'
+                              : 'Lihat Analisis AI Match ▼'}
+                          </span>
+                        </button>
+
+                        <MatchCommentatorPlayer
+                          analysisText={aiAnalysisText}
+                          variant="compact"
+                          matchTitle={`Match #${matchNum}`}
+                        />
+                      </div>
+
                       {isAnalysisExpanded && (
-                        <div className="mt-2 rounded-lg bg-[#161311]/90 border border-[#332C25] p-3 text-xs text-[#D5CEBF] whitespace-pre-line leading-relaxed max-h-52 overflow-y-auto">
-                          {aiAnalysisText}
+                        <div className="rounded-lg bg-[#161311]/90 border border-[#332C25] p-3 text-xs text-[#D5CEBF] leading-relaxed max-h-60 overflow-y-auto space-y-2.5">
+                          <MatchCommentatorPlayer
+                            analysisText={aiAnalysisText}
+                            variant="full"
+                            matchTitle={`Match #${matchNum}`}
+                          />
+                          <div className="whitespace-pre-line border-t border-[#332C25]/60 pt-2 text-[#D5CEBF]">
+                            {aiAnalysisText}
+                          </div>
                         </div>
                       )}
                     </div>

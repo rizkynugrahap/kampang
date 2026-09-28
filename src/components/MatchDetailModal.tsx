@@ -7,6 +7,7 @@ import { EditMatchModal, EditMatchSaveData } from './EditMatchModal';
 import { generateHeuristicMatchAnalysis } from '../utils/matchAnalysis';
 import { getMatchDisplayNumber } from '../utils/matchSequence';
 import { teamDisplayName } from '../utils/teamLabels';
+import { MatchCommentatorPlayer } from './MatchCommentatorPlayer';
 
 interface MatchDetailModalProps {
   match: Match | null;
@@ -230,8 +231,8 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
         </div>
 
         {/* AI Analysis section */}
-        <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-4">
-          <div className="mb-2 flex items-center justify-between">
+        <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-4 space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#E8B33D]/20 text-[#E8B33D]">
                 <Bot size={14} />
@@ -257,7 +258,16 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
             )}
           </div>
 
-          <div className="text-xs leading-relaxed text-[#F2EDE4] whitespace-pre-line">
+          {/* Sound Commentator Player */}
+          {analysisDisplay && !isReanalyzing && (
+            <MatchCommentatorPlayer
+              analysisText={analysisDisplay}
+              variant="full"
+              matchTitle={`Match #${getMatchDisplayNumber(match)}`}
+            />
+          )}
+
+          <div className="text-xs leading-relaxed text-[#F2EDE4] whitespace-pre-line bg-[#1A1613]/70 p-3 rounded-lg border border-[#332C25]/60">
             {isReanalyzing ? (
               <div className="space-y-2 py-1">
                 <div className="flex items-center gap-2 text-[#E8B33D]">
