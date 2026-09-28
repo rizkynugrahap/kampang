@@ -33,7 +33,7 @@ interface MatchHistoryViewProps {
   onSelectMatch: (match: Match) => void;
   onDeleteMatch?: (matchId: number) => void;
   onEditMatch?: (originalMatch: Match, updates: EditMatchSaveData) => Promise<boolean>;
-  onReanalyzeMatch?: (matchId: number) => Promise<void>;
+  onReanalyzeMatch?: (matchId: number, season?: string) => Promise<void>;
   heroes?: Hero[];
   players?: Player[];
   isAdmin?: boolean;
@@ -333,7 +333,7 @@ export const MatchHistoryView: React.FC<MatchHistoryViewProps> = ({
                             if (reanalyzingId) return;
                             setReanalyzingId(match.id);
                             try {
-                              await onReanalyzeMatch(match.id);
+                              await onReanalyzeMatch(match.id, match.season);
                             } finally {
                               setReanalyzingId(null);
                             }

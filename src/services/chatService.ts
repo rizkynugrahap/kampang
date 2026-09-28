@@ -211,14 +211,17 @@ export async function sendChatMessage(
 }
 
 /**
- * Sends an automated system announcement when a match finishes
+ * Helper to build standard match result text and details
  */
-export async function sendMatchResultSystemMessage(
-  match: Match,
-  seasonTitle?: string
-): Promise<void> {
+export function buildMatchResultText(match: Match): {
+  content: string;
+  winner: string;
+  mvpName: string;
+  mvpHero: string;
+  matchNum: string | number;
+} {
   const winner = match.winner || 'Belum Ditentukan';
-  const matchNum = match.id;
+  const matchNum = match.matchNumber || match.id;
 
   // Find MVP from match rosters
   const allPlayers = [...(match.pohon || []), ...(match.lobby || [])];
@@ -227,6 +230,18 @@ export async function sendMatchResultSystemMessage(
   const mvpHero = mvpItem ? mvpItem.hero_name : '';
 
   const content = `⚔️ Match #${matchNum} selesai! ${winner} menang 🏆 MVP: ${mvpName}${mvpHero ? ` (${mvpHero})` : ''}`;
+
+  return { content, winner, mvpName, mvpHero, matchNum };
+}
+
+/**
+ * Sends an automated system announcement when a match finishes
+ */
+export async function sendMatchResultSystemMessage(
+  match: Match,
+  seasonTitle?: string
+): Promise<void> {
+  const { content, winner, mvpName, mvpHero } = buildMatchResultText(match);
 
   await sendChatMessage({
     senderName: 'Laga Amal Bot',
@@ -244,6 +259,250 @@ export async function sendMatchResultSystemMessage(
       mvpHero,
     },
   });
+}
+
+/**
+ * Updates an existing match result announcement message when a match is edited
+ */
+export async function updateMatchResultSystemMessage(
+  updatedMatch: Match,
+  previousMatch?: Match,
+  seasonTitle?: string
+): Promise<void> {
+  const { content, winner, mvpName, mvpHero } = buildMatchResultText(updatedMatch);
+  const targetId = previousMatch?.id ?? updatedMatch.id;
+  const matchSeason = (seasonTitle || updatedMatch.season || '').toLowerCase().trim();
+
+  const currentMessages = getLocalMessages();
+  let modified = false;
+
+  const updatedMessages = currentMessages.map((msg) => {
+    if (!msg.isSystem || msg.systemType !== 'match_result') return msg;
+
+    const msgMatchId = String(msg.matchData?.matchId ?? '');
+    const isIdMatch = msgMatchId === String(targetId) || msgMatchId === String(updatedMatch.id);
+    if (!isIdMatch) return msg;
+
+    // Check season compatibility if both specify a season
+    if (msg.matchData?.seasonName && matchSeason) {
+      const msgSeason = msg.matchData.seasonName.toLowerCase().trim();
+      const s1 = msgSeason.replace(/[^a-z0-9]/g, '');
+      const s2 = matchSeason.replace(/[^a-z0-9]/g, '');
+      if (s1 && s2 && s1 !== s2 && !s1.includes(s2) && !s2.includes(s1)) {
+        return msg;
+      }
+    }
+
+    modified = true;
+    const updatedMsg: ChatMessage = {
+      ...msg,
+      content,
+      matchData: {
+        ...msg.matchData,
+        matchId: updatedMatch.id,
+        seasonName: seasonTitle || updatedMatch.season || msg.matchData?.seasonName,
+        winner,
+        mvpPlayer: mvpName,
+        mvpHero,
+      },
+    };
+
+    // Update in Supabase
+    try {
+      supabase
+        .from('chat_messages')
+        .update({
+          content: updatedMsg.content,
+          data: updatedMsg,
+        })
+        .eq('id', msg.id)
+        .then(
+          () => {},
+          (e) => console.warn('Supabase update chat msg error:', e)
+        );
+    } catch (err) {
+      // ignore
+    }
+
+    // Update in Firestore
+    try {
+      const docRef = doc(db, 'chat_messages', msg.id);
+      updateDoc(docRef, JSON.parse(JSON.stringify(updatedMsg))).catch((e) =>
+        console.warn('Firestore update chat msg error:', e)
+      );
+    } catch (err) {
+      // ignore
+    }
+
+    return updatedMsg;
+  });
+
+  if (modified) {
+    saveLocalMessages(updatedMessages);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pantos_chat_updated', { detail: updatedMessages }));
+    }
+  }
+
+  // Also query Supabase rows directly to ensure messages outside local window are updated
+  try {
+    const { data } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (data && data.length > 0) {
+      for (const row of data) {
+        const raw = row.data as ChatMessage;
+        if (
+          raw?.isSystem &&
+          raw?.systemType === 'match_result' &&
+          (String(raw?.matchData?.matchId) === String(targetId) ||
+            String(raw?.matchData?.matchId) === String(updatedMatch.id))
+        ) {
+          const updatedMsg: ChatMessage = {
+            ...raw,
+            content,
+            matchData: {
+              ...raw.matchData,
+              matchId: updatedMatch.id,
+              seasonName: seasonTitle || updatedMatch.season || raw.matchData?.seasonName,
+              winner,
+              mvpPlayer: mvpName,
+              mvpHero,
+            },
+          };
+          await supabase
+            .from('chat_messages')
+            .update({ content, data: updatedMsg })
+            .eq('id', row.id);
+
+          try {
+            const docRef = doc(db, 'chat_messages', row.id);
+            await updateDoc(docRef, JSON.parse(JSON.stringify(updatedMsg)));
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+/**
+ * Remove match result announcement when a match is deleted
+ */
+export async function removeMatchResultSystemMessage(
+  matchId: string | number
+): Promise<void> {
+  const currentMessages = getLocalMessages();
+  const toDelete: string[] = [];
+
+  const filtered = currentMessages.filter((msg) => {
+    if (
+      msg.isSystem &&
+      msg.systemType === 'match_result' &&
+      String(msg.matchData?.matchId) === String(matchId)
+    ) {
+      toDelete.push(msg.id);
+      return false;
+    }
+    return true;
+  });
+
+  if (toDelete.length > 0) {
+    saveLocalMessages(filtered);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pantos_chat_updated', { detail: filtered }));
+    }
+    for (const msgId of toDelete) {
+      deleteChatMessage(msgId).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Automatically self-heals and synchronizes any out-of-sync match_result messages
+ * with the latest match data from the matches state.
+ */
+export async function syncAllMatchSystemMessages(matches: Match[]): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const currentMessages = getLocalMessages();
+  let anyModified = false;
+
+  const updatedMessages = currentMessages.map((msg) => {
+    if (!msg.isSystem || msg.systemType !== 'match_result' || !msg.matchData?.matchId) {
+      return msg;
+    }
+
+    const linkedMatch =
+      matches.find((m) => {
+        if (String(m.id) !== String(msg.matchData?.matchId)) return false;
+        if (msg.matchData?.seasonName && m.season) {
+          const s1 = m.season.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const s2 = msg.matchData.seasonName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return s1 === s2 || s1.includes(s2) || s2.includes(s1);
+        }
+        return true;
+      }) || matches.find((m) => String(m.id) === String(msg.matchData?.matchId));
+
+    if (!linkedMatch) return msg;
+
+    const { content, winner, mvpName, mvpHero } = buildMatchResultText(linkedMatch);
+    const seasonName = linkedMatch.season || msg.matchData.seasonName;
+
+    // Check if anything is out of sync
+    const isDesynced =
+      msg.content !== content ||
+      msg.matchData.winner !== winner ||
+      msg.matchData.mvpPlayer !== mvpName ||
+      msg.matchData.mvpHero !== mvpHero ||
+      msg.matchData.seasonName !== seasonName;
+
+    if (!isDesynced) return msg;
+
+    anyModified = true;
+    const updatedMsg: ChatMessage = {
+      ...msg,
+      content,
+      matchData: {
+        ...msg.matchData,
+        matchId: linkedMatch.id,
+        seasonName,
+        winner,
+        mvpPlayer: mvpName,
+        mvpHero,
+      },
+    };
+
+    // Update in Supabase & Firestore
+    try {
+      supabase
+        .from('chat_messages')
+        .update({ content, data: updatedMsg })
+        .eq('id', msg.id)
+        .then(
+          () => {},
+          () => {}
+        );
+      const docRef = doc(db, 'chat_messages', msg.id);
+      updateDoc(docRef, JSON.parse(JSON.stringify(updatedMsg))).catch(() => {});
+    } catch (e) {
+      // ignore
+    }
+
+    return updatedMsg;
+  });
+
+  if (anyModified) {
+    saveLocalMessages(updatedMessages);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pantos_chat_updated', { detail: updatedMessages }));
+    }
+  }
 }
 
 /**

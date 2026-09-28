@@ -16,8 +16,8 @@ interface MatchDetailModalProps {
   seasons?: LagaAmalSeasonData[];
   matches?: Match[];
   onClose: () => void;
-  onReanalyze?: (matchId: number) => Promise<void>;
-  onReanalyzeMatch?: (matchId: number) => Promise<void>;
+  onReanalyze?: (matchId: number, season?: string) => Promise<void>;
+  onReanalyzeMatch?: (matchId: number, season?: string) => Promise<void>;
   onDeleteMatch?: (matchId: number) => void | Promise<void>;
   onEditMatch?: (originalMatch: Match, updates: EditMatchSaveData) => Promise<boolean>;
   onSelectPlayer?: (name: string) => void;
@@ -59,7 +59,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
     if (!isAdmin || !reanalyzeFn) return;
     setIsReanalyzing(true);
     try {
-      await reanalyzeFn(match.id);
+      await reanalyzeFn(match.id, match.season);
     } finally {
       setIsReanalyzing(false);
     }

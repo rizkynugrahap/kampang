@@ -42,10 +42,15 @@ export function generateHeuristicMatchAnalysis(
   const loserPlayers = loserTeam === 'Tim Pohon' ? match.pohon : match.lobby;
   const allPlayers: MatchPlayerDetail[] = [...match.pohon, ...match.lobby];
 
-  const mvp = allPlayers.find((p) => p.medal === 'MVP');
-  const coklat = allPlayers.find((p) => p.medal === 'Coklat');
-  const secondMvp = winnerPlayers.find((p) => p.medal === 'Gold');
-  const loserBest = loserPlayers.find((p) => p.medal === 'Gold' || p.medal === 'Silver');
+  const mvp = winnerPlayers.find((p) => p.medal === 'MVP') || allPlayers.find((p) => p.medal === 'MVP');
+  const coklat = loserPlayers.find((p) => p.medal === 'Coklat') || allPlayers.find((p) => p.medal === 'Coklat');
+  const secondMvp =
+    winnerPlayers.find((p) => p.medal === 'Gold' && p.player_name !== mvp?.player_name) ||
+    winnerPlayers.find((p) => p.player_name !== mvp?.player_name);
+  const loserBest =
+    loserPlayers.find((p) => p.medal === 'MVP') ||
+    loserPlayers.find((p) => p.medal === 'Gold') ||
+    loserPlayers.find((p) => p.medal === 'Silver');
 
   // Varied sarcastic openers based on match id hash
   const hash = Math.abs((match.id || 1) * 31);

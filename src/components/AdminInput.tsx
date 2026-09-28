@@ -339,6 +339,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
         });
         setPohonPlayers([]);
         setLobbyPlayers([]);
+        setPlayerConfig({});
         setMatchNumber(targetMatchNumber + 1);
       }
     } catch (err: any) {

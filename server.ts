@@ -121,12 +121,13 @@ function buildAnalysisPrompt(match: Match, previousMatches: Match[] = []): strin
   let historyContext = '';
   if (previousMatches.length > 0) {
     const recent = previousMatches.slice(0, 5);
-    const historyLines = recent.map((m, idx) => {
+    const historyLines = recent.map((m) => {
       const pmvp = [...m.pohon, ...m.lobby].find((p) => p.medal === 'MVP');
       const pcoklat = [...m.pohon, ...m.lobby].find((p) => p.medal === 'Coklat');
-      return `  - Match ${m.date || `#${idx + 1}`}: ${teamDisplayName(m.winner)} Menang. MVP: ${
-        pmvp ? `${pmvp.player_name} (${pmvp.hero_name}, skor ${pmvp.score ?? '-'})` : '-'
-      }. Coklat: ${pcoklat ? `${pcoklat.player_name} (${pcoklat.hero_name}, skor ${pcoklat.score ?? '-'})` : '-'}.`;
+      const mNum = m.matchNumber || m.id;
+      return `  - Match #${mNum} (${m.season || ''} - Tanggal: ${m.date || 'Lalu'}): ${teamDisplayName(m.winner)} Menang. MVP: ${
+        pmvp ? `${pmvp.player_name} (Hero: ${pmvp.hero_name}, Skor: ${pmvp.score ?? '-'})` : '-'
+      }. Coklat: ${pcoklat ? `${pcoklat.player_name} (Hero: ${pcoklat.hero_name}, Skor: ${pcoklat.score ?? '-'})` : '-'}.`;
     });
 
     const playerNotes: string[] = [];
@@ -135,16 +136,29 @@ function buildAnalysisPrompt(match: Match, previousMatches: Match[] = []): strin
       let pastCoklats = 0;
       let pastMvps = 0;
       let lastMatchMedal: string | undefined;
+      let lastMatchHero: string | undefined;
+      let lastMatchNum: number | undefined;
 
       for (let i = 0; i < recent.length; i++) {
-        const pastP = [...recent[i].pohon, ...recent[i].lobby].find(
+        const pastMatch = recent[i];
+        const pastP = [...pastMatch.pohon, ...pastMatch.lobby].find(
           (x) => x.player_name.trim().toLowerCase() === pNorm
         );
         if (pastP) {
-          if (!lastMatchMedal) lastMatchMedal = pastP.medal;
+          if (!lastMatchMedal) {
+            lastMatchMedal = pastP.medal;
+            lastMatchHero = pastP.hero_name;
+            lastMatchNum = pastMatch.matchNumber || pastMatch.id;
+          }
           if (pastP.medal === 'Coklat') pastCoklats++;
           if (pastP.medal === 'MVP') pastMvps++;
         }
+      }
+
+      if (lastMatchHero && lastMatchHero !== p.hero_name) {
+        playerNotes.push(
+          `${p.player_name} di Match #${lastMatchNum || 'sebelumnya'} kemarin memakai hero ${lastMatchHero}, sedangkan di MATCH SAAT INI (Match #${match.matchNumber || match.id}) DIA MEMAKAI ${p.hero_name} (WAJIB sebut dia memakai ${p.hero_name} di match ini, jangan sampai tertukar!)`
+        );
       }
 
       if (pastCoklats >= 2) {
@@ -159,7 +173,7 @@ function buildAnalysisPrompt(match: Match, previousMatches: Match[] = []): strin
     }
 
     historyContext =
-      `\n\nRIWAYAT MATCH-MATCH SEBELUMNYA DI SEASON INI:\n` +
+      `\n\n=== RIWAYAT MATCH-MATCH SEBELUMNYA (HANYA REFERENSI HISTORIS) ===\n` +
       historyLines.join('\n') +
       (playerNotes.length > 0
         ? `\nCatatan Khusus Riwayat Pemain:\n- ` + playerNotes.join('\n- ')
@@ -167,15 +181,20 @@ function buildAnalysisPrompt(match: Match, previousMatches: Match[] = []): strin
   }
 
   return (
-    `DATA PERTANDINGAN SAAT INI:\n` +
-    `- Tanggal / Match: ${match.date || 'Terbaru'} (${match.season || 'Season Aktif'})\n` +
+    `=== PERTANDINGAN SAAT INI (MATCH #${match.matchNumber || match.id}) - ANALISIS WAJIB BERDASARKAN HERO & DATA INI ===\n` +
+    `- Musim: ${match.season || 'Season Aktif'}\n` +
+    `- Tanggal: ${match.date || 'Terbaru'}\n` +
     `- Pemenang: ${teamDisplayName(winnerTeam)}\n` +
     `- Pecundang: ${teamDisplayName(loserTeam)}\n` +
-    `- Skuad Pemenang (${teamDisplayName(winnerTeam)}): ${winnerPlayers}\n` +
-    `- Skuad Pecundang (${teamDisplayName(loserTeam)}): ${loserPlayers}\n` +
-    `- MVP Laga: ${mvp ? `${mvp.player_name} (${mvp.hero_name} - skor ${mvp.score ?? '-'})` : '-'}\n` +
-    `- Coklat / Feeder Terburuk: ${coklat ? `${coklat.player_name} (${coklat.hero_name} - skor ${coklat.score ?? '-'})` : '-'}` +
-    historyContext
+    `- Skuad Pemenang (${teamDisplayName(winnerTeam)}):\n  ${winnerPlayers}\n` +
+    `- Skuad Pecundang (${teamDisplayName(loserTeam)}):\n  ${loserPlayers}\n` +
+    `- MVP Laga Ini: ${mvp ? `${mvp.player_name} (${mvp.hero_name} - skor ${mvp.score ?? '-'})` : '-'}\n` +
+    `- Coklat / Feeder Match Ini: ${coklat ? `${coklat.player_name} (${coklat.hero_name} - skor ${coklat.score ?? '-'})` : 'Tidak ada (permainan rapat)'}\n` +
+    historyContext +
+    `\n\nPERINGATAN SANGAT PENTING UNTUK KOMENTATOR:\n` +
+    `Hero yang dibahas untuk setiap pemain di "PERTANDINGAN SAAT INI" HARUS PERSIS 100% SESUAI dengan daftar skuad di atas!\n` +
+    `JANGAN PERNAH menukar hero match saat ini dengan hero dari riwayat match sebelumnya!\n` +
+    `Jika mengungkit match sebelumnya, bedakan dengan jelas: "Kemarin pakai [Hero Lalu], sekarang pakai [Hero Ini]".`
   );
 }
 
@@ -192,15 +211,21 @@ async function generateMatchAnalysis(match: Match, previousMatches: Match[] = []
     '2. GAYA BICARA: Sarkastik, brutal, nyeleneh, dan penuh roasting pedas. Puji MVP setinggi langit yang menggendong tim sampai tulang punggung retak. ' +
     'Roasting habis-habisan pemain yang "makan Coklat" atau feeder yang jadi ATM berjalan buat musuh. Gunakan istilah khas tongkrongan gamer MLBB ' +
     '(misal: beban keluarga, donatur bintang, sedekah kill, cosplay minion, ATM berjalan, punggung patah, buta map, tangan rental, pensiun aja, buy 1 get 4, jagoan kandang, coklat anget, kena geprek, rotasi ngawur, dll).\n' +
-    '3. BACA DAN MANFAATKAN RIWAYAT MATCH SEBELUMNYA: Manfaatkan data riwayat match sebelumnya yang diberikan di prompt! Hubungkan performa match ini dengan riwayat mereka ' +
+    '3. AKURASI HERO 100% MUTLAK (DILARANG SALAH SEBUT HERO):\n' +
+    '- Hero yang dipakai setiap pemain HARUS TEPAT SESUAI DENGAN DAFTAR "PERTANDINGAN SAAT INI".\n' +
+    '- DILARANG KERAS menukar hero pemain dengan hero dari match sebelumnya!\n' +
+    '- Jika ingin membandingkan dengan match sebelumnya, buat pembeda yang jelas dan gamblang, misal:\n' +
+    '  "Pemain X yang kemarin sangar pakai Hero A, di match ini ganti pakai Hero B malah jadi ampas..."\n' +
+    '- Jangan pernah sekali-kali mengatakan dia memakai hero match lalu di match saat ini!\n' +
+    '4. BACA DAN MANFAATKAN RIWAYAT MATCH SEBELUMNYA: Manfaatkan data riwayat match sebelumnya yang diberikan di prompt! Hubungkan performa match ini dengan riwayat mereka ' +
     '(misal: apakah dia langganan MVP, atau kemarin sempat kena Coklat dan sekarang balas dendam/tobat, atau malah konsisten jadi donatur setia). ' +
     'Sebut juga tren kemenangan tim (winstreak, patah telur, dominasi, dibantai) agar narasinya terasa hidup dan berkesinambungan!\n' +
-    '4. FORMAT: Tulis dalam 2 sampai 3 paragraf padat, pedas, menghibur, dan penuh sarkasme berbobot dalam bahasa Indonesia tongkrongan santai.';
+    '5. FORMAT: Tulis dalam 2 sampai 3 paragraf padat, pedas, menghibur, dan penuh sarkasme berbobot dalam bahasa Indonesia tongkrongan santai.';
 
-  // Layer 1: Google Gemini Models (trying modern, active models first)
+  // Layer 1: Google Gemini Models (prioritizing high-throughput, low-latency models to prevent 503 errors)
   const ai = getGenAI();
   if (ai) {
-    const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -217,8 +242,7 @@ async function generateMatchAnalysis(match: Match, previousMatches: Match[] = []
           return response.text.trim();
         }
       } catch (err: any) {
-        const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err || '');
-        console.info(`[Gemini] Model ${modelName} unavailable (${errMsg.slice(0, 80)}), trying next alternative.`);
+        console.info(`[Gemini] Model ${modelName} temporarily busy, checking next alternative.`);
       }
     }
   }
@@ -280,7 +304,7 @@ Panduan julukan:
 
   const ai = getGenAI();
   if (ai) {
-    const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
     for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
@@ -294,10 +318,11 @@ Panduan julukan:
         if (response.text && response.text.trim()) {
           let cleanTitle = response.text.trim().replace(/^["']|["']$/g, '').replace(/^[-*•]\s*/, '');
           if (cleanTitle.length > 50) cleanTitle = cleanTitle.slice(0, 50);
+          console.info(`[Gemini] Julukan generated via ${modelName}`);
           return cleanTitle;
         }
       } catch (err: any) {
-        console.info(`[Gemini] Julukan model ${modelName} unavailable, trying next candidate.`);
+        console.info(`[Gemini] Julukan model ${modelName} temporarily busy, checking next alternative.`);
       }
     }
   }
@@ -804,11 +829,16 @@ app.delete('/api/matches/:id', (req, res) => {
 // unreachable) and never made it into this server's local store.
 app.post('/api/matches/:id/analyze', async (req, res) => {
   const matchId = Number(req.params.id);
-  let match = store.matches.find((m) => m.id === matchId);
-  const isKnownLocally = Boolean(match);
+  const targetSeason = req.body?.season;
 
-  if (!match && req.body && req.body.winner && req.body.pohon && req.body.lobby) {
+  // Prefer the exact client-sent match payload if valid, otherwise find matching id and season
+  let match: Match | undefined;
+  if (req.body && req.body.winner && Array.isArray(req.body.pohon) && Array.isArray(req.body.lobby)) {
     match = { id: matchId, ...req.body } as Match;
+  } else {
+    match =
+      store.matches.find((m) => m.id === matchId && (!targetSeason || m.season === targetSeason)) ||
+      store.matches.find((m) => m.id === matchId);
   }
 
   if (!match) {
@@ -816,17 +846,44 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
   }
 
   try {
+    const seasonToMatch = match.season || targetSeason;
     const previousMatches =
       Array.isArray(req.body.recentMatches) && req.body.recentMatches.length > 0
         ? req.body.recentMatches
-        : store.matches.filter((m) => m.id !== matchId).slice(0, 10);
+        : store.matches
+            .filter((m) => !(m.id === matchId && (!seasonToMatch || m.season === seasonToMatch)) && (!seasonToMatch || m.season === seasonToMatch))
+            .slice(0, 10);
 
     const analysis = await generateMatchAnalysis(match, previousMatches);
     match.ai_analysis = analysis;
-    if (isKnownLocally) {
+
+    const storeIdx = store.matches.findIndex(
+      (m) => m.id === matchId && (!seasonToMatch || m.season === seasonToMatch)
+    );
+    if (storeIdx !== -1) {
+      store.matches[storeIdx].ai_analysis = analysis;
       saveStore(store);
     }
-    res.json({ id: matchId, ai_analysis: analysis });
+
+    if (supabase) {
+      try {
+        const seasonSlug = (seasonToMatch || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        const rowId = seasonSlug ? `${seasonSlug}-${matchId}` : String(matchId);
+        await supabase.from('matches').upsert({
+          id: rowId,
+          data: match,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (sbErr) {
+        console.warn('[Supabase Server] Error updating match analysis in Supabase:', sbErr);
+      }
+    }
+
+    res.json({ id: matchId, season: match.season, ai_analysis: analysis });
   } catch (err: any) {
     res.status(500).json({ error: 'Gagal membuat analisis AI: ' + err.message });
   }

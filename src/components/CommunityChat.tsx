@@ -32,6 +32,7 @@ import {
   Volume2,
   VolumeX,
   CheckCheck,
+  Bot,
 } from 'lucide-react';
 import { Player, Match, Season, ChatMessage, ChatReaction, LagaAmalSeasonData } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -60,6 +61,7 @@ import {
   toggleEmojiReaction,
   pinChatMessage,
   deleteChatMessage,
+  syncAllMatchSystemMessages,
 } from '../services/chatService';
 import {
   playMentionChime,
@@ -135,6 +137,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
   const initialLoadCompleteRef = useRef<boolean>(false);
 
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [expandedAnalysisMsgIds, setExpandedAnalysisMsgIds] = useState<Record<string, boolean>>({});
 
   // Floating Player Profile & Zoom Modal States
   const [floatingPlayerName, setFloatingPlayerName] = useState<string | null>(null);
@@ -164,6 +167,26 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
     });
     return () => unsub();
   }, []);
+
+  // Listen for local chat update events (instant sync without network lag)
+  useEffect(() => {
+    const handleChatUpdated = (e: any) => {
+      if (Array.isArray(e?.detail)) {
+        setMessages(e.detail);
+      }
+    };
+    window.addEventListener('pantos_chat_updated', handleChatUpdated);
+    return () => {
+      window.removeEventListener('pantos_chat_updated', handleChatUpdated);
+    };
+  }, []);
+
+  // Synchronize any out-of-sync match_result system messages with current matches
+  useEffect(() => {
+    if (matches && matches.length > 0) {
+      syncAllMatchSystemMessages(matches);
+    }
+  }, [matches]);
 
   // Update read mention IDs whenever session changes
   useEffect(() => {
@@ -1033,6 +1056,39 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
 
             // SPECIAL SYSTEM MESSAGE (Match Result)
             if (msg.isSystem && msg.systemType === 'match_result') {
+              // Dynamically resolve against latest match state from matches prop
+              const liveMatch =
+                matches.find((m) => {
+                  if (String(m.id) !== String(msg.matchData?.matchId)) return false;
+                  if (msg.matchData?.seasonName && m.season) {
+                    const s1 = m.season.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const s2 = msg.matchData.seasonName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    return s1 === s2 || s1.includes(s2) || s2.includes(s1);
+                  }
+                  return true;
+                }) || matches.find((m) => String(m.id) === String(msg.matchData?.matchId));
+
+              const currentWinner = liveMatch?.winner || msg.matchData?.winner || 'Belum Ditentukan';
+              const matchNum = liveMatch?.matchNumber || liveMatch?.id || msg.matchData?.matchId;
+              const currentSeasonName = liveMatch?.season || msg.matchData?.seasonName;
+
+              let currentMvpPlayer = msg.matchData?.mvpPlayer || 'Semua Berjuang';
+              let currentMvpHero = msg.matchData?.mvpHero || '';
+
+              if (liveMatch) {
+                const allPlayers = [...(liveMatch.pohon || []), ...(liveMatch.lobby || [])];
+                const mvpItem = allPlayers.find((p) => p.medal === 'MVP');
+                if (mvpItem) {
+                  currentMvpPlayer = mvpItem.player_name;
+                  currentMvpHero = mvpItem.hero_name || '';
+                }
+              }
+
+              const displayContent = `⚔️ Match #${matchNum} selesai! ${currentWinner} menang 🏆 MVP: ${currentMvpPlayer}${currentMvpHero ? ` (${currentMvpHero})` : ''}`;
+              const aiAnalysisText = liveMatch?.ai_analysis;
+              const isAnalysisExpanded = !!expandedAnalysisMsgIds[msg.id];
+              const matchDetailId = liveMatch?.id || msg.matchData?.matchId;
+
               return (
                 <div
                   key={msg.id}
@@ -1047,9 +1103,9 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                       <span className="text-xs font-black uppercase tracking-wider text-[#E8B33D]">
                         Hasil Pertandingan
                       </span>
-                      {msg.matchData?.seasonName && (
+                      {currentSeasonName && (
                         <span className="text-[10px] px-2 py-0.2 rounded-full bg-[#161311] text-[#9C948A] border border-[#332C25]">
-                          {msg.matchData.seasonName}
+                          {currentSeasonName}
                         </span>
                       )}
                     </div>
@@ -1059,29 +1115,57 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                   </div>
 
                   <p className="text-sm font-bold text-[#F2EDE4] leading-relaxed">
-                    {msg.content}
+                    {displayContent}
                   </p>
 
                   {/* MVP Banner */}
-                  {msg.matchData?.mvpPlayer && (
+                  {(currentMvpPlayer || msg.matchData?.mvpPlayer) && (
                     <div className="mt-2.5 flex items-center justify-between rounded-lg bg-[#161311]/70 border border-[#332C25] px-3 py-1.5">
                       <div className="flex items-center gap-2">
                         <Trophy size={14} className="text-[#E8B33D]" />
                         <span className="text-xs text-[#9C948A]">MVP Match:</span>
                         <span className="text-xs font-black text-[#E8B33D]">
-                          {msg.matchData.mvpPlayer}
+                          {currentMvpPlayer}
                         </span>
-                        {msg.matchData.mvpHero && (
-                          <HeroAvatar heroName={msg.matchData.mvpHero} size="xs" />
+                        {currentMvpHero && (
+                          <HeroAvatar heroName={currentMvpHero} size="xs" />
                         )}
                       </div>
-                      {onOpenMatchDetail && msg.matchData.matchId && (
+                      {onOpenMatchDetail && matchDetailId && (
                         <button
-                          onClick={() => onOpenMatchDetail(msg.matchData!.matchId)}
+                          onClick={() => onOpenMatchDetail(matchDetailId)}
                           className="text-[10px] font-bold text-[#E8B33D] hover:underline cursor-pointer"
                         >
                           Detail Match →
                         </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* AI Analysis Preview Accordion */}
+                  {aiAnalysisText && (
+                    <div className="mt-2.5 pt-2 border-t border-[#332C25]/80">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedAnalysisMsgIds((prev) => ({
+                            ...prev,
+                            [msg.id]: !prev[msg.id],
+                          }))
+                        }
+                        className="flex items-center gap-1.5 text-[11px] font-bold text-[#E8B33D] hover:text-[#f7cf7c] transition-colors cursor-pointer"
+                      >
+                        <Bot size={13} />
+                        <span>
+                          {isAnalysisExpanded
+                            ? 'Sembunyikan Analisis AI ▲'
+                            : 'Lihat Analisis AI Match ▼'}
+                        </span>
+                      </button>
+                      {isAnalysisExpanded && (
+                        <div className="mt-2 rounded-lg bg-[#161311]/90 border border-[#332C25] p-3 text-xs text-[#D5CEBF] whitespace-pre-line leading-relaxed max-h-52 overflow-y-auto">
+                          {aiAnalysisText}
+                        </div>
                       )}
                     </div>
                   )}

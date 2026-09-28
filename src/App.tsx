@@ -29,7 +29,12 @@ import { SupabaseStatusBadge } from './components/SupabaseStatusBadge';
 import { CommunityChat } from './components/CommunityChat';
 import { PlayerAuthProvider } from './contexts/PlayerAuthContext';
 import { PlayerAccountMenu } from './components/PlayerAccountMenu';
-import { sendMatchResultSystemMessage } from './services/chatService';
+import {
+  sendMatchResultSystemMessage,
+  updateMatchResultSystemMessage,
+  removeMatchResultSystemMessage,
+  syncAllMatchSystemMessages,
+} from './services/chatService';
 import {
   BackgroundSettingsModal,
   DEFAULT_GIT_BACKGROUND_URL,
@@ -872,6 +877,13 @@ export default function App() {
         console.warn('Backend delete match sync:', e)
       );
 
+      // 3. Remove match result announcement from Community Chat
+      try {
+        await removeMatchResultSystemMessage(matchId);
+      } catch (chatErr) {
+        console.warn('Could not remove match announcement in chat:', chatErr);
+      }
+
       // 4. Update local matches state
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
@@ -933,27 +945,49 @@ export default function App() {
   // still works for matches that only exist in Firestore/local state (e.g.
   // saved while the backend was unreachable) and were never known to this
   // server's own local store.
-  const handleAnalyzeMatch = async (matchId: number) => {
-    const targetMatch = matches.find((m) => m.id === matchId);
-    const recentMatches = matches.filter((m) => m.id !== matchId).slice(0, 10);
+  const handleAnalyzeMatch = async (matchId: number, matchSeason?: string) => {
+    const targetMatch =
+      matches.find((m) => m.id === matchId && (!matchSeason || m.season === matchSeason)) ||
+      matches.find((m) => m.id === matchId);
+    if (!targetMatch) return;
+
+    const targetSeason = targetMatch.season || matchSeason;
+    const recentMatches = matches
+      .filter(
+        (m) =>
+          !(m.id === targetMatch.id && (!targetSeason || m.season === targetSeason)) &&
+          (!targetSeason || m.season === targetSeason)
+      )
+      .slice(0, 10);
+
     try {
       const res = await fetch(`/api/matches/${matchId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...(targetMatch || {}), recentMatches }),
+        body: JSON.stringify({ ...targetMatch, season: targetSeason, recentMatches }),
       });
       if (res.ok) {
         const data = await res.json();
         let updatedMatch: Match | undefined;
-        setMatches((prev) =>
-          prev.map((m) => {
-            if (m.id !== matchId) return m;
-            updatedMatch = { ...m, ai_analysis: data.ai_analysis, is_generating_analysis: false };
-            return updatedMatch;
-          })
-        );
-        if (selectedMatch && selectedMatch.id === matchId) {
-          setSelectedMatch((prev) => (prev ? { ...prev, ai_analysis: data.ai_analysis, is_generating_analysis: false } : null));
+        setMatches((prev) => {
+          const next = prev.map((m) => {
+            if (m.id === targetMatch.id && (!targetSeason || m.season === targetSeason)) {
+              updatedMatch = { ...m, ai_analysis: data.ai_analysis, is_generating_analysis: false };
+              return updatedMatch;
+            }
+            return m;
+          });
+          safeSetItem('pantos_matches_cache', JSON.stringify(next));
+          return next;
+        });
+        if (
+          selectedMatch &&
+          selectedMatch.id === targetMatch.id &&
+          (!targetSeason || selectedMatch.season === targetSeason)
+        ) {
+          setSelectedMatch((prev) =>
+            prev ? { ...prev, ai_analysis: data.ai_analysis, is_generating_analysis: false } : null
+          );
         }
         // Persist the regenerated analysis to Supabase too
         if (updatedMatch) {
@@ -964,11 +998,20 @@ export default function App() {
       throw new Error('Backend analyze endpoint returned ' + res.status);
     } catch (err) {
       console.warn('Error analyzing match via backend, using local fallback:', err);
-      if (!targetMatch) return;
       const fallbackAnalysis = generateHeuristicMatchAnalysis(targetMatch, recentMatches);
       const updatedMatch: Match = { ...targetMatch, ai_analysis: fallbackAnalysis, is_generating_analysis: false };
-      setMatches((prev) => prev.map((m) => (m.id === matchId ? updatedMatch : m)));
-      if (selectedMatch && selectedMatch.id === matchId) {
+      setMatches((prev) => {
+        const next = prev.map((m) =>
+          m.id === targetMatch.id && (!targetSeason || m.season === targetSeason) ? updatedMatch : m
+        );
+        safeSetItem('pantos_matches_cache', JSON.stringify(next));
+        return next;
+      });
+      if (
+        selectedMatch &&
+        selectedMatch.id === targetMatch.id &&
+        (!targetSeason || selectedMatch.season === targetSeason)
+      ) {
         setSelectedMatch(updatedMatch);
       }
       try {
@@ -1003,6 +1046,40 @@ export default function App() {
       const updatedMatch: Match = { ...originalMatch, ...updates };
       const seasonChanged = updates.season !== originalMatch.season;
       const idChanged = updates.id !== originalMatch.id;
+
+      // If roster (heroes/players/medals/scores) or winner changed, regenerate analysis to match new data!
+      const rosterOrWinnerChanged =
+        JSON.stringify(originalMatch.pohon) !== JSON.stringify(updates.pohon) ||
+        JSON.stringify(originalMatch.lobby) !== JSON.stringify(updates.lobby) ||
+        originalMatch.winner !== updates.winner;
+
+      if (rosterOrWinnerChanged) {
+        const recentMatches = matches
+          .filter(
+            (m) =>
+              !(m.id === updatedMatch.id && m.season === updatedMatch.season) &&
+              (!updatedMatch.season || m.season === updatedMatch.season)
+          )
+          .slice(0, 10);
+
+        try {
+          const res = await fetch(`/api/matches/${updatedMatch.id}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...updatedMatch, recentMatches }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.ai_analysis) {
+              updatedMatch.ai_analysis = data.ai_analysis;
+            }
+          } else {
+            updatedMatch.ai_analysis = generateHeuristicMatchAnalysis(updatedMatch, recentMatches);
+          }
+        } catch {
+          updatedMatch.ai_analysis = generateHeuristicMatchAnalysis(updatedMatch, recentMatches);
+        }
+      }
 
       const oldSeason = seasons.find((s) => s.title === originalMatch.season);
       const newSeason = seasons.find((s) => s.title === updates.season);
@@ -1039,8 +1116,16 @@ export default function App() {
         return next;
       });
 
-      setMatches((prev) => prev.map((m) => (m.id === originalMatch.id ? updatedMatch : m)));
-      if (selectedMatch && selectedMatch.id === originalMatch.id) {
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.id === originalMatch.id && m.season === originalMatch.season ? updatedMatch : m
+        )
+      );
+      if (
+        selectedMatch &&
+        selectedMatch.id === originalMatch.id &&
+        selectedMatch.season === originalMatch.season
+      ) {
         setSelectedMatch(updatedMatch);
       }
 
@@ -1074,6 +1159,17 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedMatch),
         }).catch((e) => console.warn('Backend edit match sync:', e));
+      }
+
+      // Synchronize and update the match announcement in Community Chat history
+      try {
+        await updateMatchResultSystemMessage(
+          updatedMatch,
+          originalMatch,
+          updates.season || activeSeason?.title
+        );
+      } catch (chatErr) {
+        console.warn('Could not update match announcement in chat:', chatErr);
       }
 
       return true;
@@ -1837,7 +1933,9 @@ export default function App() {
             seasons={seasons}
             isAdmin={isAdmin}
             onOpenMatchDetail={(matchId) => {
-              const found = seasonMatches.find((m) => String(m.id) === String(matchId));
+              const found =
+                matches.find((m) => String(m.id) === String(matchId)) ||
+                seasonMatches.find((m) => String(m.id) === String(matchId));
               if (found) setSelectedMatch(found);
             }}
             onViewPlayerProfile={(nicknameOrId) => {
@@ -2188,7 +2286,7 @@ export default function App() {
           onClose={() => setSelectedMatch(null)}
           onDeleteMatch={(id) => handleDeleteMatch(id)}
           onEditMatch={handleEditMatch}
-          onReanalyzeMatch={(id) => handleAnalyzeMatch(id)}
+          onReanalyzeMatch={(id, s) => handleAnalyzeMatch(id, s || selectedMatch?.season)}
           onSelectPlayer={(name) => {
             handleViewPlayerProfile(name);
             setSelectedMatch(null);
