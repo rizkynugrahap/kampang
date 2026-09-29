@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   deleteDoc,
   getDocs,
   query,
@@ -376,5 +377,172 @@ export async function forceSyncAllToFirestore(data: {
   } catch (err) {
     console.error('Firestore force sync error:', err);
     throw err;
+  }
+}
+
+// ----------------- COMMENTATOR AUDIO STORAGE IN FIRESTORE -----------------
+
+function computeTextHash(str: string): string {
+  let hash = 0;
+  const clean = str.replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < clean.length; i++) {
+    hash = ((hash << 5) - hash + clean.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+export interface StoredAudioResult {
+  audioUrl: string;
+  provider: string;
+  providerName: string;
+}
+
+/**
+ * Saves generated commentator audio directly to Firestore so it persists permanently and can be replayed infinitely
+ */
+export async function saveCommentatorAudioToFirestore(params: {
+  matchId?: number | string;
+  mode: 'full' | 'recap';
+  audioUrl: string;
+  provider: string;
+  providerName: string;
+  text: string;
+}): Promise<void> {
+  if (!params.audioUrl) return;
+
+  try {
+    const textHash = computeTextHash(params.text);
+    const docId = params.matchId
+      ? `match_${params.matchId}_${params.mode}`
+      : `text_${textHash}_${params.mode}`;
+
+    const docRef = doc(db, 'commentator_audios', docId);
+
+    // If audioUrl is large (> 700,000 characters), split across subcollection parts
+    const CHUNK_SIZE = 700000;
+    if (params.audioUrl.length > CHUNK_SIZE) {
+      const totalParts = Math.ceil(params.audioUrl.length / CHUNK_SIZE);
+      await setDoc(
+        docRef,
+        {
+          id: docId,
+          matchId: params.matchId ? String(params.matchId) : null,
+          mode: params.mode,
+          provider: params.provider,
+          providerName: params.providerName,
+          textHash,
+          hasParts: true,
+          totalParts,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      for (let i = 0; i < totalParts; i++) {
+        const partRef = doc(db, 'commentator_audios', docId, 'parts', String(i));
+        await setDoc(partRef, {
+          index: i,
+          data: params.audioUrl.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE),
+        });
+      }
+    } else {
+      await setDoc(
+        docRef,
+        {
+          id: docId,
+          matchId: params.matchId ? String(params.matchId) : null,
+          mode: params.mode,
+          audioUrl: params.audioUrl,
+          provider: params.provider,
+          providerName: params.providerName,
+          textHash,
+          hasParts: false,
+          totalParts: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    }
+
+    // Also update match doc in 'matches' collection if matchId is given
+    if (params.matchId) {
+      try {
+        const matchRef = doc(db, 'matches', String(params.matchId));
+        const fieldName =
+          params.mode === 'recap' ? 'commentator_audio_recap' : 'commentator_audio_full';
+        await setDoc(
+          matchRef,
+          {
+            [fieldName]: params.audioUrl.length <= CHUNK_SIZE ? params.audioUrl : `ref:${docId}`,
+            commentator_provider: params.providerName,
+          },
+          { merge: true }
+        );
+      } catch (mErr) {
+        console.warn('Could not update match with audio:', mErr);
+      }
+    }
+  } catch (err) {
+    console.warn('saveCommentatorAudioToFirestore error:', err);
+  }
+}
+
+/**
+ * Retrieves saved commentator audio from Firestore database
+ */
+export async function getCommentatorAudioFromFirestore(params: {
+  matchId?: number | string;
+  mode: 'full' | 'recap';
+  text: string;
+}): Promise<StoredAudioResult | null> {
+  try {
+    const textHash = computeTextHash(params.text);
+
+    // 1. Try match docId if matchId provided
+    const docIdsToTry: string[] = [];
+    if (params.matchId) {
+      docIdsToTry.push(`match_${params.matchId}_${params.mode}`);
+    }
+    docIdsToTry.push(`text_${textHash}_${params.mode}`);
+
+    for (const docId of docIdsToTry) {
+      const docRef = doc(db, 'commentator_audios', docId);
+      const snap = await getDoc(docRef);
+
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.hasParts && data.totalParts > 1) {
+          const partsSnap = await getDocs(
+            collection(db, 'commentator_audios', docId, 'parts')
+          );
+          const partsList: { index: number; data: string }[] = [];
+          partsSnap.forEach((pDoc) => {
+            partsList.push(pDoc.data() as any);
+          });
+          partsList.sort((a, b) => a.index - b.index);
+          const fullAudioUrl = partsList.map((p) => p.data).join('');
+          if (fullAudioUrl) {
+            return {
+              audioUrl: fullAudioUrl,
+              provider: data.provider || 'gemini',
+              providerName: (data.providerName || 'AI Caster') + ' (Tersimpan di Database)',
+            };
+          }
+        } else if (data.audioUrl) {
+          return {
+            audioUrl: data.audioUrl,
+            provider: data.provider || 'gemini',
+            providerName: (data.providerName || 'AI Caster') + ' (Tersimpan di Database)',
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('getCommentatorAudioFromFirestore error:', err);
+    return null;
   }
 }

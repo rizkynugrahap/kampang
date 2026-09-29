@@ -30,10 +30,32 @@
         "season": { "type": "string" },
         "winner": { "type": "string" },
         "ai_analysis": { "type": "string" },
+        "commentator_audio_full": { "type": "string" },
+        "commentator_audio_recap": { "type": "string" },
+        "commentator_provider": { "type": "string" },
         "pohon": { "type": "array" },
         "lobby": { "type": "array" }
       },
       "required": ["id", "date", "winner"]
+    },
+    "CommentatorAudio": {
+      "title": "CommentatorAudio",
+      "description": "Dokumen file audio komentator caster match yang tersimpan di database Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matchId": { "type": "string" },
+        "mode": { "type": "string", "enum": ["full", "recap"] },
+        "audioUrl": { "type": "string" },
+        "provider": { "type": "string" },
+        "providerName": { "type": "string" },
+        "textHash": { "type": "string" },
+        "hasParts": { "type": "boolean" },
+        "totalParts": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id"]
     },
     "LagaAmalSeason": {
       "title": "LagaAmalSeason",
@@ -93,6 +115,10 @@
     "/app_meta/{metaId}": {
       "schema": "AppMeta",
       "description": "Pengaturan metadata aplikasi"
+    },
+    "/commentator_audios/{audioId}": {
+      "schema": "CommentatorAudio",
+      "description": "Dokumen audio ulasan komentator caster yang tersimpan permanen di database"
     }
   }
 }

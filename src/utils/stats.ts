@@ -326,3 +326,183 @@ export function sortKelasSemen(players: Player[]): Player[] {
     return (b.score || 0) - (a.score || 0);
   });
 }
+
+export type MedalType = 'MVP' | 'Gold' | 'Silver' | 'Coklat';
+
+export interface PlayerHeroMedalDetail {
+  hero: string;
+  medalCount: number;
+  totalGames: number;
+  winCount: number;
+  winRate: number;
+  avgScore: number;
+  allMedals: {
+    mvp: number;
+    gold: number;
+    silver: number;
+    coklat: number;
+  };
+}
+
+/**
+ * Returns breakdown of all heroes used by a player that achieved a specific medal,
+ * including how many times that medal was achieved and total matches played with that hero.
+ */
+export function getPlayerHeroesByMedal(
+  playerName: string,
+  medal: MedalType,
+  matches: Match[] = [],
+  seasonData?: LagaAmalSeasonData
+): PlayerHeroMedalDetail[] {
+  const normName = (playerName || '').trim().toLowerCase();
+  if (!normName) return [];
+
+  const heroStats: Record<
+    string,
+    {
+      medalCount: number;
+      totalGames: number;
+      winCount: number;
+      scores: number[];
+      allMedals: { mvp: number; gold: number; silver: number; coklat: number };
+    }
+  > = {};
+
+  // 1. From live match history
+  for (const m of matches) {
+    const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
+    const playerDetail = allRoster.find((p) => (p.player_name || '').toLowerCase() === normName);
+
+    if (playerDetail) {
+      const hero = playerDetail.hero_name || 'Hero';
+      if (!heroStats[hero]) {
+        heroStats[hero] = {
+          medalCount: 0,
+          totalGames: 0,
+          winCount: 0,
+          scores: [],
+          allMedals: { mvp: 0, gold: 0, silver: 0, coklat: 0 },
+        };
+      }
+
+      heroStats[hero].totalGames += 1;
+      const isWinner =
+        (m.pohon?.some((p) => (p.player_name || '').toLowerCase() === normName) && m.winner === 'Tim Pohon') ||
+        (m.lobby?.some((p) => (p.player_name || '').toLowerCase() === normName) && m.winner === 'Tim Lobby');
+      if (isWinner) heroStats[hero].winCount += 1;
+
+      if (typeof playerDetail.score === 'number' && !isNaN(playerDetail.score) && playerDetail.score > 0) {
+        heroStats[hero].scores.push(playerDetail.score);
+      }
+
+      if (playerDetail.medal === 'MVP') heroStats[hero].allMedals.mvp += 1;
+      if (playerDetail.medal === 'Gold') heroStats[hero].allMedals.gold += 1;
+      if (playerDetail.medal === 'Silver') heroStats[hero].allMedals.silver += 1;
+      if (playerDetail.medal === 'Coklat') heroStats[hero].allMedals.coklat += 1;
+
+      const normMedal = (playerDetail.medal || '').toLowerCase();
+      const targetMatches =
+        medal === 'Gold'
+          ? normMedal === 'gold' || normMedal === 'antam'
+          : normMedal === medal.toLowerCase();
+
+      if (targetMatches) {
+        heroStats[hero].medalCount += 1;
+      }
+    }
+  }
+
+  // 2. Fallback to season matchRows if live matches are empty for this player
+  if (Object.keys(heroStats).length === 0 && seasonData?.matchRows && seasonData.matchRows.length > 0) {
+    for (const r of seasonData.matchRows) {
+      if ((r.nickname || '').toLowerCase() === normName && r.hero) {
+        const hero = r.hero;
+        if (!heroStats[hero]) {
+          heroStats[hero] = {
+            medalCount: 0,
+            totalGames: 0,
+            winCount: 0,
+            scores: [],
+            allMedals: { mvp: 0, gold: 0, silver: 0, coklat: 0 },
+          };
+        }
+        heroStats[hero].totalGames += 1;
+        if (r.result?.toLowerCase() === 'menang' || r.result?.toLowerCase() === 'victory') {
+          heroStats[hero].winCount += 1;
+        }
+        if (typeof r.score === 'number' && !isNaN(r.score) && r.score > 0) {
+          heroStats[hero].scores.push(r.score);
+        }
+        if (r.mvp) heroStats[hero].allMedals.mvp += 1;
+        if (r.antam) heroStats[hero].allMedals.gold += 1;
+        if (r.silver) heroStats[hero].allMedals.silver += 1;
+        if (r.coklat) heroStats[hero].allMedals.coklat += 1;
+
+        if (medal === 'MVP' && r.mvp) heroStats[hero].medalCount += 1;
+        if (medal === 'Gold' && r.antam) heroStats[hero].medalCount += 1;
+        if (medal === 'Silver' && r.silver) heroStats[hero].medalCount += 1;
+        if (medal === 'Coklat' && r.coklat) heroStats[hero].medalCount += 1;
+      }
+    }
+  }
+
+  // 3. Fallback to seasonData.heroPicksByUser
+  if (Object.keys(heroStats).length === 0 && seasonData?.heroPicksByUser && seasonData.heroPicksByUser.length > 0) {
+    const userPicks = seasonData.heroPicksByUser.filter(
+      (hp) => (hp.player || '').toLowerCase() === normName
+    );
+    for (const hp of userPicks) {
+      const hero = hp.hero;
+      const count =
+        medal === 'MVP'
+          ? hp.mvp
+          : medal === 'Gold'
+          ? hp.antam
+          : medal === 'Silver'
+          ? hp.silver
+          : hp.coklat;
+
+      if (hp.total > 0) {
+        heroStats[hero] = {
+          medalCount: count || 0,
+          totalGames: hp.total,
+          winCount: Math.round(hp.total * 0.5),
+          scores: [],
+          allMedals: {
+            mvp: hp.mvp || 0,
+            gold: hp.antam || 0,
+            silver: hp.silver || 0,
+            coklat: hp.coklat || 0,
+          },
+        };
+      }
+    }
+  }
+
+  // Filter to heroes that have at least 1 of the target medal
+  const result: PlayerHeroMedalDetail[] = Object.keys(heroStats)
+    .filter((hero) => heroStats[hero].medalCount > 0)
+    .map((hero) => {
+      const d = heroStats[hero];
+      const winRate = d.totalGames > 0 ? Math.round((d.winCount / d.totalGames) * 100) : 0;
+      const avgScore =
+        d.scores.length > 0
+          ? Number((d.scores.reduce((a, b) => a + b, 0) / d.scores.length).toFixed(1))
+          : 0;
+
+      return {
+        hero,
+        medalCount: d.medalCount,
+        totalGames: d.totalGames,
+        winCount: d.winCount,
+        winRate,
+        avgScore,
+        allMedals: d.allMedals,
+      };
+    });
+
+  // Sort by medalCount descending, then totalGames descending
+  result.sort((a, b) => b.medalCount - a.medalCount || b.totalGames - a.totalGames);
+
+  return result;
+}

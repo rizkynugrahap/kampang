@@ -74,6 +74,9 @@ export interface Match {
   type: MatchType;
   tournament_stage?: string;
   ai_analysis?: string;
+  commentator_audio_full?: string;
+  commentator_audio_recap?: string;
+  commentator_provider?: string;
   is_generating_analysis?: boolean;
   pohon: MatchPlayerDetail[];
   lobby: MatchPlayerDetail[];

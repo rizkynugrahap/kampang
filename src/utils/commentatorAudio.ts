@@ -4,13 +4,19 @@
  * Features:
  * 1. Primary: Server-side Gemini AI Text-to-Speech (gemini-3.8-flash-lite-tts)
  *    with realistic human inflection, excitement, gasping, and hype caster tone.
- * 2. In-memory audio caching for instant replay.
- * 3. Secondary Fallback: Enhanced Web Speech API with natural neural Indonesian voice selection
- *    and punctuation rhythm tuning if the server/API key is unreachable.
+ * 2. Automatic cloud database (Firestore) upload & instant playback caching.
+ * 3. Rate-limit detection & countdown estimator: when cloud AI is rate-limited,
+ *    it gracefully stops and notifies the user with the estimated reset time.
+ *    ROBOT VOICE IS STRICTLY ELIMINATED as requested.
  * 4. Web Audio API broadcast fanfare stinger before commentary starts.
  */
 
-export type CasterVoiceId = 'Puck' | 'Fenrir' | 'Charon' | 'Kore';
+import {
+  saveCommentatorAudioToFirestore,
+  getCommentatorAudioFromFirestore,
+} from '../services/firestoreSync';
+
+export type CasterVoiceId = 'Puck';
 
 export interface CasterPersona {
   id: CasterVoiceId;
@@ -19,76 +25,64 @@ export interface CasterPersona {
   avatarEmoji: string;
 }
 
-export const CASTER_PERSONAS: CasterPersona[] = [
-  {
-    id: 'Puck',
-    name: 'Caster Hype (Puck)',
-    tagline: 'Berapi-api, penuh histeria & teriakan turnamen',
-    avatarEmoji: '🔥',
-  },
-  {
-    id: 'Fenrir',
-    name: 'Caster Shoutcaster (Fenrir)',
-    tagline: 'Suara lantang, tegas & penuh tensi tinggi',
-    avatarEmoji: '⚡',
-  },
-  {
-    id: 'Charon',
-    name: 'Caster Analis Senior (Charon)',
-    tagline: 'Gaya caster senior berbobot & mendalam',
-    avatarEmoji: '🎙️',
-  },
-  {
-    id: 'Kore',
-    name: 'Caster Host (Kore)',
-    tagline: 'Vokal ceria, energik & elegan',
-    avatarEmoji: '👑',
-  },
-];
+export const MAIN_CASTER: CasterPersona = {
+  id: 'Puck',
+  name: 'Caster Utama MPL (Gaya Paling Gokil)',
+  tagline: 'Berapi-api, penuh histeria, ketawa & teriakan turnamen MLBB',
+  avatarEmoji: '🔥',
+};
+
+export const CASTER_PERSONAS: CasterPersona[] = [MAIN_CASTER];
+
+export interface RateLimitState {
+  isLimited: boolean;
+  message: string;
+  retryAfterSeconds: number;
+  resetTimestamp: number;
+  resetTimeFormatted: string;
+}
+
+export interface CommentatorPlayOptions {
+  matchId?: number | string;
+  mode?: 'full' | 'recap';
+  forceRegenerate?: boolean;
+  onLoading?: () => void;
+  onStart?: (isAiAudio: boolean, providerName?: string) => void;
+  onEnd?: () => void;
+  onError?: (err: any) => void;
+  onRateLimit?: (rateLimit: RateLimitState) => void;
+}
 
 class CommentatorAudioManager {
   private ctx: AudioContext | null = null;
   public enabled: boolean = true;
   private currentAudioElement: HTMLAudioElement | null = null;
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
-  private audioCache = new Map<string, string>(); // text+voice -> dataUrl
-  private naturalIndonesianVoice: SpeechSynthesisVoice | null = null;
+  private audioCache = new Map<string, string>(); // cacheKey -> dataUrl
+  private activeRateLimit: RateLimitState | null = null;
+  private rateLimitListeners = new Set<(state: RateLimitState | null) => void>();
 
-  constructor() {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      this.initVoices();
-      window.speechSynthesis.onvoiceschanged = () => {
-        this.initVoices();
-      };
+  public getRateLimitStatus(): RateLimitState | null {
+    if (this.activeRateLimit && this.activeRateLimit.resetTimestamp <= Date.now()) {
+      this.activeRateLimit = null;
     }
+    return this.activeRateLimit;
   }
 
-  private initVoices() {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    const voices = window.speechSynthesis.getVoices();
+  public subscribeRateLimit(cb: (state: RateLimitState | null) => void): () => void {
+    this.rateLimitListeners.add(cb);
+    cb(this.getRateLimitStatus());
+    return () => {
+      this.rateLimitListeners.delete(cb);
+    };
+  }
 
-    // Priority 1: Natural / Online Neural Indonesian voices (e.g. Microsoft Gadis Online Natural, Google Bahasa Indonesia)
-    const naturalIndo = voices.find(
-      (v) =>
-        (v.lang === 'id-ID' || v.lang === 'id_ID' || v.lang.toLowerCase().startsWith('id')) &&
-        (v.name.toLowerCase().includes('natural') ||
-          v.name.toLowerCase().includes('online') ||
-          v.name.toLowerCase().includes('google'))
-    );
-
-    // Priority 2: Any Indonesian voice
-    const anyIndo =
-      naturalIndo ||
-      voices.find(
-        (v) =>
-          v.lang === 'id-ID' ||
-          v.lang === 'id_ID' ||
-          v.lang.toLowerCase().startsWith('id') ||
-          v.name.toLowerCase().includes('indonesia')
-      ) ||
-      null;
-
-    this.naturalIndonesianVoice = anyIndo;
+  private notifyRateLimit(limit: RateLimitState | null) {
+    this.activeRateLimit = limit;
+    this.rateLimitListeners.forEach((cb) => {
+      try {
+        cb(limit);
+      } catch {}
+    });
   }
 
   private getAudioContext(): AudioContext | null {
@@ -183,18 +177,35 @@ class CommentatorAudioManager {
   }
 
   /**
+   * Checks if an audio commentary is already uploaded and saved in Firestore database
+   */
+  public async checkStoredAudio(
+    matchId?: number | string,
+    text?: string,
+    mode: 'full' | 'recap' = 'full'
+  ): Promise<boolean> {
+    if (!text && !matchId) return false;
+    try {
+      const cleanText = text ? this.cleanTextForCaster(text) : '';
+      const cached = await getCommentatorAudioFromFirestore({
+        matchId,
+        mode,
+        text: cleanText,
+      });
+      return !!cached?.audioUrl;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Primary: Generate and play realistic AI Caster speech via Multi-Tier backend (Gemini -> Edge Neural -> Google).
-   * If backend fails, transparently falls back to optimized browser speech.
+   * Automatically checks Firestore database first so audio can be replayed infinitely without consuming AI limits.
+   * If rate-limited, immediately halts without switching to robotic voices and alerts the user with an estimate timer.
    */
   public async playCasterCommentary(
     text: string,
-    options: {
-      mode?: 'full' | 'recap';
-      onLoading?: () => void;
-      onStart?: (isAiAudio: boolean, providerName?: string) => void;
-      onEnd?: () => void;
-      onError?: (err: any) => void;
-    } = {}
+    options: CommentatorPlayOptions = {}
   ): Promise<void> {
     this.stop();
 
@@ -202,19 +213,56 @@ class CommentatorAudioManager {
     if (!cleanText) return;
 
     const chosenMode = options.mode || 'full';
-    const cacheKey = `${chosenMode}:${cleanText.slice(0, 140)}`;
+    const cacheKey = `${options.matchId || ''}:${chosenMode}:${cleanText.slice(0, 140)}`;
 
     if (options.onLoading) options.onLoading();
 
-    // 1. Check if audio is already cached in browser memory
-    if (this.audioCache.has(cacheKey)) {
+    // 1. Check if audio is already cached in browser memory (instant replay, 0 AI tokens)
+    if (!options.forceRegenerate && this.audioCache.has(cacheKey)) {
       const audioUrl = this.audioCache.get(cacheKey)!;
       await this.playBroadcastFanfare();
-      this.playHtmlAudio(audioUrl, options, 'AI Caster (Tersimpan)');
+      this.playHtmlAudio(audioUrl, options, 'AI Caster (Tersimpan di Memori)');
       return;
     }
 
-    // 2. Fetch Multi-Tier AI TTS audio from backend (Gemini -> Edge Neural -> Google)
+    // 2. Check Firestore Database for permanently uploaded audio (0 AI tokens)
+    if (!options.forceRegenerate) {
+      try {
+        const storedAudio = await getCommentatorAudioFromFirestore({
+          matchId: options.matchId,
+          mode: chosenMode,
+          text: cleanText,
+        });
+
+        if (storedAudio && storedAudio.audioUrl) {
+          this.audioCache.set(cacheKey, storedAudio.audioUrl);
+          await this.playBroadcastFanfare();
+          this.playHtmlAudio(
+            storedAudio.audioUrl,
+            options,
+            storedAudio.providerName || 'AI Caster (Tersimpan di Database)'
+          );
+          return;
+        }
+      } catch (dbErr) {
+        console.warn('[Commentator Engine] Check Firestore audio error:', dbErr);
+      }
+    }
+
+    // 3. Check if active rate limit cooldown is still running
+    const currentLimit = this.getRateLimitStatus();
+    if (!options.forceRegenerate && currentLimit && currentLimit.resetTimestamp > Date.now()) {
+      const secondsLeft = Math.ceil((currentLimit.resetTimestamp - Date.now()) / 1000);
+      const updatedLimit: RateLimitState = {
+        ...currentLimit,
+        retryAfterSeconds: secondsLeft,
+      };
+      if (options.onRateLimit) options.onRateLimit(updatedLimit);
+      if (options.onError) options.onError(new Error(updatedLimit.message));
+      return;
+    }
+
+    // 4. Fetch Multi-Tier AI TTS audio from backend (Gemini -> Edge Neural -> Google)
     try {
       const res = await fetch('/api/commentator/tts', {
         method: 'POST',
@@ -229,18 +277,91 @@ class CommentatorAudioManager {
         const data = await res.json();
         if (data.success && data.audioUrl) {
           this.audioCache.set(cacheKey, data.audioUrl);
+          this.notifyRateLimit(null); // Clear any past limit
+
+          // IMMEDIATELY upload to Firestore Database so it is saved and can be replayed infinitely!
+          saveCommentatorAudioToFirestore({
+            matchId: options.matchId,
+            mode: chosenMode,
+            audioUrl: data.audioUrl,
+            provider: data.provider || 'gemini',
+            providerName: data.providerName || 'AI Caster',
+            text: cleanText,
+          }).catch((uploadErr) => {
+            console.warn('[Commentator Engine] Failed to upload audio to Firestore:', uploadErr);
+          });
+
           await this.playBroadcastFanfare();
           this.playHtmlAudio(data.audioUrl, options, data.providerName || 'AI Neural Caster');
           return;
         }
       }
-    } catch (apiErr) {
-      console.warn('[Commentator Engine] Backend TTS unavailable, falling back to browser speech:', apiErr);
-    }
 
-    // 3. Fallback to Enhanced Browser Speech Synthesis
-    await this.playBroadcastFanfare();
-    this.playBrowserSpeechFallback(cleanText, options);
+      // Handle rate limit response (HTTP 429 or server rate limit response)
+      let limitInfo: RateLimitState | null = null;
+      try {
+        const errJson = await res.json();
+        if (errJson && (errJson.isRateLimited || res.status === 429)) {
+          limitInfo = {
+            isLimited: true,
+            message:
+              errJson.message ||
+              'Kapasitas generate suara AI Caster sedang limit. Mohon coba lagi beberapa saat lagi.',
+            retryAfterSeconds: errJson.retryAfterSeconds || 60,
+            resetTimestamp: errJson.resetTimestamp || Date.now() + 60000,
+            resetTimeFormatted:
+              errJson.resetTimeFormatted ||
+              new Date(Date.now() + 60000).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              }),
+          };
+        }
+      } catch {}
+
+      if (!limitInfo) {
+        const cooldown = 60;
+        const resetTs = Date.now() + cooldown * 1000;
+        limitInfo = {
+          isLimited: true,
+          message:
+            'Kapasitas generate suara AI Caster sedang mencapai batas limit rate. Silakan coba lagi nanti.',
+          retryAfterSeconds: cooldown,
+          resetTimestamp: resetTs,
+          resetTimeFormatted: new Date(resetTs).toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          }),
+        };
+      }
+
+      this.notifyRateLimit(limitInfo);
+      if (options.onRateLimit) options.onRateLimit(limitInfo);
+      if (options.onError) options.onError(new Error(limitInfo.message));
+
+      // Strictly stop here. Do not play robot speech!
+      return;
+    } catch (apiErr: any) {
+      console.warn('[Commentator Engine] Request error:', apiErr);
+      const cooldown = 60;
+      const resetTs = Date.now() + cooldown * 1000;
+      const genericLimit: RateLimitState = {
+        isLimited: true,
+        message: 'Koneksi ke AI Caster terputus atau sedang limit. Silakan coba lagi nanti.',
+        retryAfterSeconds: cooldown,
+        resetTimestamp: resetTs,
+        resetTimeFormatted: new Date(resetTs).toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      };
+      this.notifyRateLimit(genericLimit);
+      if (options.onRateLimit) options.onRateLimit(genericLimit);
+      if (options.onError) options.onError(new Error(genericLimit.message));
+    }
   }
 
   private playHtmlAudio(
@@ -279,67 +400,15 @@ class CommentatorAudioManager {
     }
   }
 
-  private playBrowserSpeechFallback(
-    text: string,
-    options: {
-      onStart?: (isAiAudio: boolean, providerName?: string) => void;
-      onEnd?: () => void;
-      onError?: (err: any) => void;
-    }
-  ) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      if (options.onError) options.onError(new Error('Browser tidak mendukung Speech Synthesis'));
-      return;
-    }
-
-    try {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'id-ID';
-
-      if (!this.naturalIndonesianVoice) {
-        this.initVoices();
-      }
-      if (this.naturalIndonesianVoice) {
-        utterance.voice = this.naturalIndonesianVoice;
-      }
-
-      utterance.rate = 1.1;
-      utterance.pitch = 1.05;
-
-      utterance.onstart = () => {
-        if (options.onStart) options.onStart(false, 'Suara Perangkat (Lokal)');
-      };
-
-      utterance.onend = () => {
-        this.currentUtterance = null;
-        if (options.onEnd) options.onEnd();
-      };
-
-      utterance.onerror = (e) => {
-        this.currentUtterance = null;
-        if (options.onError) options.onError(e);
-      };
-
-      this.currentUtterance = utterance;
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      if (options.onError) options.onError(err);
-    }
-  }
-
   public pause(): void {
     if (this.currentAudioElement) {
       this.currentAudioElement.pause();
-    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.pause();
     }
   }
 
   public resume(): void {
     if (this.currentAudioElement) {
       this.currentAudioElement.play().catch(() => {});
-    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.resume();
     }
   }
 
@@ -349,18 +418,11 @@ class CommentatorAudioManager {
       this.currentAudioElement.currentTime = 0;
       this.currentAudioElement = null;
     }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      this.currentUtterance = null;
-    }
   }
 
   public isPlaying(): boolean {
     if (this.currentAudioElement) {
       return !this.currentAudioElement.paused && !this.currentAudioElement.ended;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      return window.speechSynthesis.speaking;
     }
     return false;
   }

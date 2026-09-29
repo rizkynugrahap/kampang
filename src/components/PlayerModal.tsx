@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Trophy, Sparkles, Shield, User, ZoomIn } from 'lucide-react';
+import { X, Trophy, Sparkles, Shield, User, ZoomIn, MousePointerClick } from 'lucide-react';
 import { Player, Match } from '../types';
-import { getPlayerTopHeroes } from '../utils/stats';
+import { getPlayerTopHeroes, getPlayerHeroesByMedal, MedalType } from '../utils/stats';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { ImagePreviewModal } from './ImagePreviewModal';
@@ -21,10 +21,12 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
   onViewProfile,
 }) => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [selectedMedal, setSelectedMedal] = useState<MedalType | null>(null);
 
   if (!player) return null;
 
   const topHeroes = getPlayerTopHeroes(player.name, matches);
+  const medalHeroes = selectedMedal ? getPlayerHeroesByMedal(player.name, selectedMedal, matches) : [];
 
   const total =
     player.medals.MVP +
@@ -86,41 +88,142 @@ export const PlayerModal: React.FC<PlayerModalProps> = ({
             </button>
           </div>
 
-        {/* Medals overview */}
-        <div className="my-4 grid grid-cols-4 gap-2 text-center">
-          <div className="rounded-lg border border-[#332C25] bg-[#241F1B] p-2">
-            <span className="block font-black text-base text-[#E8B33D]">
-              {player.medals.MVP}
+        {/* Medals overview (Clickable KPI) */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5 px-0.5">
+            <span className="text-[10px] font-bold text-[#9C948A] flex items-center gap-1">
+              <MousePointerClick size={11} className="text-[#E8B33D]" />
+              <span>KPI Medali (Klik untuk lihat hero)</span>
             </span>
-            <span className="text-[10px] font-semibold text-[#9C948A] uppercase">
-              MVP
-            </span>
+            {selectedMedal && (
+              <button
+                type="button"
+                onClick={() => setSelectedMedal(null)}
+                className="text-[10px] text-[#E8B33D] hover:underline font-bold"
+              >
+                Tutup [x]
+              </button>
+            )}
           </div>
-          <div className="rounded-lg border border-[#332C25] bg-[#241F1B] p-2">
-            <span className="block font-black text-base text-[#D8A93A]">
-              {player.medals.Gold}
-            </span>
-            <span className="text-[10px] font-semibold text-[#9C948A] uppercase">
-              Gold
-            </span>
-          </div>
-          <div className="rounded-lg border border-[#332C25] bg-[#241F1B] p-2">
-            <span className="block font-black text-base text-[#B9B2A8]">
-              {player.medals.Silver}
-            </span>
-            <span className="text-[10px] font-semibold text-[#9C948A] uppercase">
-              Silver
-            </span>
-          </div>
-          <div className="rounded-lg border border-[#332C25] bg-[#241F1B] p-2">
-            <span className="block font-black text-base text-[#b8764a]">
-              {player.medals.Coklat}
-            </span>
-            <span className="text-[10px] font-semibold text-[#9C948A] uppercase">
-              Coklat
-            </span>
+
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <button
+              type="button"
+              onClick={() => setSelectedMedal((prev) => (prev === 'MVP' ? null : 'MVP'))}
+              className={`rounded-lg border p-2 transition-all cursor-pointer ${
+                selectedMedal === 'MVP'
+                  ? 'border-[#E8B33D] bg-[#2E2419] ring-2 ring-[#E8B33D] shadow-sm'
+                  : 'border-[#332C25] bg-[#241F1B] hover:border-[#E8B33D]/60'
+              }`}
+            >
+              <span className="block font-black text-base text-[#E8B33D]">
+                {player.medals.MVP}
+              </span>
+              <span className="text-[10px] font-bold text-[#E8B33D] uppercase">
+                MVP
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedMedal((prev) => (prev === 'Gold' ? null : 'Gold'))}
+              className={`rounded-lg border p-2 transition-all cursor-pointer ${
+                selectedMedal === 'Gold'
+                  ? 'border-[#D8A93A] bg-[#2C2114] ring-2 ring-[#D8A93A] shadow-sm'
+                  : 'border-[#332C25] bg-[#241F1B] hover:border-[#D8A93A]/60'
+              }`}
+            >
+              <span className="block font-black text-base text-[#D8A93A]">
+                {player.medals.Gold}
+              </span>
+              <span className="text-[10px] font-bold text-[#D8A93A] uppercase">
+                Gold
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedMedal((prev) => (prev === 'Silver' ? null : 'Silver'))}
+              className={`rounded-lg border p-2 transition-all cursor-pointer ${
+                selectedMedal === 'Silver'
+                  ? 'border-slate-300 bg-[#222428] ring-2 ring-slate-300 shadow-sm'
+                  : 'border-[#332C25] bg-[#241F1B] hover:border-[#B9B2A8]/60'
+              }`}
+            >
+              <span className="block font-black text-base text-[#B9B2A8]">
+                {player.medals.Silver}
+              </span>
+              <span className="text-[10px] font-bold text-[#B9B2A8] uppercase">
+                Silver
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedMedal((prev) => (prev === 'Coklat' ? null : 'Coklat'))}
+              className={`rounded-lg border p-2 transition-all cursor-pointer ${
+                selectedMedal === 'Coklat'
+                  ? 'border-amber-700 bg-[#2A1710] ring-2 ring-amber-700 shadow-sm'
+                  : 'border-[#332C25] bg-[#241F1B] hover:border-[#6B4226]/60'
+              }`}
+            >
+              <span className="block font-black text-base text-[#b8764a]">
+                {player.medals.Coklat}
+              </span>
+              <span className="text-[10px] font-bold text-[#b8764a] uppercase">
+                Coklat
+              </span>
+            </button>
           </div>
         </div>
+
+        {/* Selected Medal Hero Breakdown List */}
+        {selectedMedal && (
+          <div className="my-3 rounded-xl border border-white/15 bg-black/40 p-3 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="text-xs font-bold text-[#F2EDE4] flex items-center gap-1.5">
+                <span>{selectedMedal === 'MVP' ? '👑' : selectedMedal === 'Gold' ? '🥇' : selectedMedal === 'Silver' ? '🥈' : '🍫'}</span>
+                <span>Hero Peraih Medali {selectedMedal}:</span>
+              </span>
+              <span className="text-[10px] text-[#9C948A]">
+                {medalHeroes.length} hero ditemukan
+              </span>
+            </div>
+
+            {medalHeroes.length > 0 ? (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {medalHeroes.map((item) => (
+                  <div
+                    key={item.hero}
+                    className="flex items-center justify-between rounded-lg bg-[#241F1B] p-2 border border-[#332C25]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <HeroAvatar heroName={item.hero} size="xs" shape="rounded" />
+                      <div>
+                        <span className="font-bold text-xs text-[#F2EDE4] block">
+                          {item.hero}
+                        </span>
+                        <span className="text-[10px] text-[#9C948A]">
+                          Dimainkan: {item.totalGames} Match
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="inline-block rounded bg-[#E8B33D]/20 border border-[#E8B33D]/40 px-1.5 py-0.5 text-[10px] font-black text-[#E8B33D]">
+                        {item.medalCount}x {selectedMedal}
+                      </span>
+                      <span className="block text-[9px] text-[#9C948A] mt-0.5">
+                        WR {item.winRate}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[#9C948A] text-center py-2">
+                Tidak ada data hero dengan medali {selectedMedal}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Top 3 Hero andalan */}
         <div className="space-y-3">

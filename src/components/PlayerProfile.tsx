@@ -17,6 +17,11 @@ import {
   ZoomIn,
   Search,
   Filter,
+  X,
+  Swords,
+  Flame,
+  ChevronUp,
+  MousePointerClick,
 } from 'lucide-react';
 import {
   PieChart,
@@ -32,7 +37,12 @@ import {
 import { Player, Match, LagaAmalSeasonData, MLBB_TIER_OPTIONS } from '../types';
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
-import { getPlayerTopHeroes, getPlayerPerformanceTrend } from '../utils/stats';
+import {
+  getPlayerTopHeroes,
+  getPlayerPerformanceTrend,
+  getPlayerHeroesByMedal,
+  MedalType,
+} from '../utils/stats';
 import { UpdateAvatarModal } from './UpdateAvatarModal';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { getPlayerAvatarUrl } from '../constants/playerAvatars';
@@ -76,11 +86,23 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   const [isGeneratingTitle, setIsGeneratingTitle] = useState<boolean>(false);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
+  // Selected KPI medal for hero breakdown view
+  const [selectedMedalFilter, setSelectedMedalFilter] = useState<MedalType | null>(null);
+
   // Selector filters
   const [selectorFilterTab, setSelectorFilterTab] = useState<'all' | 'cabutan'>('all');
   const [selectorSearch, setSelectorSearch] = useState<string>('');
 
   const activeId = selectedPlayerId !== undefined ? selectedPlayerId : internalSelectedId;
+
+  // Reset selected medal filter when changing active player or active season
+  useEffect(() => {
+    setSelectedMedalFilter(null);
+  }, [activeId, activeSeason?.id]);
+
+  const handleToggleMedal = (medal: MedalType) => {
+    setSelectedMedalFilter((prev) => (prev === medal ? null : medal));
+  };
 
   // 1. Filter eligible players for the selected season:
   // ATURAN: Jika ada pemain cabutan dan pemain cabutan itu TIDAK bermain di season tersebut (0 match),
@@ -264,6 +286,12 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
 
   // Top heroes
   const topHeroes = getPlayerTopHeroes(player.name, matches, activeSeason);
+
+  // Breakdown of heroes for the selected KPI medal
+  const medalHeroes = React.useMemo(() => {
+    if (!selectedMedalFilter || !player) return [];
+    return getPlayerHeroesByMedal(player.name, selectedMedalFilter, matches, activeSeason);
+  }, [selectedMedalFilter, player?.name, matches, activeSeason]);
 
   // Daily Trend score & performa calculation
   const dailyTrendData = getPlayerPerformanceTrend(player.name, matches, activeSeason);
@@ -818,40 +846,310 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
           </div>
         )}
 
-        {/* 4 Medals Breakdown Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-xl border border-[#E8B33D]/30 bg-[#2A2218] p-3 text-center">
-            <span className="block text-[10px] font-bold text-[#E8B33D] uppercase tracking-wider">👑 MVP</span>
-            <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{mvpCount}</span>
-            <span className="text-[10px] text-[#9C948A]">Gelar MVP</span>
+        {/* 4 Medals Breakdown Cards (Interactive KPI Cards) */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-bold text-[#9C948A] flex items-center gap-1.5">
+              <MousePointerClick size={13} className="text-[#E8B33D]" />
+              <span>KPI Perolehan Medali (Klik untuk melihat list hero peraih medali)</span>
+            </span>
+            {selectedMedalFilter && (
+              <button
+                type="button"
+                onClick={() => setSelectedMedalFilter(null)}
+                className="text-[11px] font-bold text-[#E8B33D] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>Tutup Rincian Hero</span>
+                <X size={12} />
+              </button>
+            )}
           </div>
-          <div className="rounded-xl border border-[#D8A93A]/30 bg-[#251E17] p-3 text-center">
-            <span className="block text-[10px] font-bold text-[#D8A93A] uppercase tracking-wider">🥇 Antam (Gold)</span>
-            <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{goldCount}</span>
-            <span className="text-[10px] text-[#9C948A]">Medali Gold</span>
-          </div>
-          <div className="rounded-xl border border-[#B9B2A8]/30 bg-[#211E1B] p-3 text-center">
-            <span className="block text-[10px] font-bold text-[#B9B2A8] uppercase tracking-wider">🥈 Silver</span>
-            <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{silverCount}</span>
-            <span className="text-[10px] text-[#9C948A]">Medali Silver</span>
-          </div>
-          <div className="rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center">
-            <span className="block text-[10px] font-bold text-[#b8764a] uppercase tracking-wider">🍫 Coklat (Semen)</span>
-            <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{coklatCount}</span>
-            <span className="text-[10px] text-[#b8764a]">Medali Coklat</span>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* MVP Card */}
+            <button
+              type="button"
+              onClick={() => handleToggleMedal('MVP')}
+              className={`rounded-xl border p-3 text-center transition-all cursor-pointer group relative overflow-hidden text-left sm:text-center ${
+                selectedMedalFilter === 'MVP'
+                  ? 'border-[#E8B33D] bg-gradient-to-b from-[#382B1B] to-[#251D14] ring-2 ring-[#E8B33D] shadow-lg shadow-[#E8B33D]/25 scale-[1.02]'
+                  : 'border-[#E8B33D]/30 bg-[#2A2218] hover:border-[#E8B33D]/70 hover:bg-[#32271B] hover:scale-[1.01]'
+              }`}
+              title="Klik untuk melihat daftar hero yang dipakai meraih gelar MVP"
+            >
+              <div className="flex items-center justify-between sm:justify-center">
+                <span className="block text-[10px] font-bold text-[#E8B33D] uppercase tracking-wider">👑 MVP</span>
+                {selectedMedalFilter === 'MVP' && (
+                  <span className="sm:hidden text-[9px] bg-[#E8B33D] text-[#161311] px-1.5 py-0.5 rounded font-black">Aktif</span>
+                )}
+              </div>
+              <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{mvpCount}</span>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-[#9C948A] mt-0.5">
+                <span>Gelar MVP</span>
+                <span className="text-[#E8B33D] font-bold">
+                  {selectedMedalFilter === 'MVP' ? '• Terbuka ↓' : '• Cek Hero →'}
+                </span>
+              </div>
+            </button>
+
+            {/* Antam (Gold) Card */}
+            <button
+              type="button"
+              onClick={() => handleToggleMedal('Gold')}
+              className={`rounded-xl border p-3 text-center transition-all cursor-pointer group relative overflow-hidden text-left sm:text-center ${
+                selectedMedalFilter === 'Gold'
+                  ? 'border-[#D97706] bg-gradient-to-b from-[#362415] to-[#22170E] ring-2 ring-[#D97706] shadow-lg shadow-[#D97706]/25 scale-[1.02]'
+                  : 'border-[#D8A93A]/30 bg-[#251E17] hover:border-[#D8A93A]/70 hover:bg-[#30251C] hover:scale-[1.01]'
+              }`}
+              title="Klik untuk melihat daftar hero yang dipakai meraih medali Antam (Gold)"
+            >
+              <div className="flex items-center justify-between sm:justify-center">
+                <span className="block text-[10px] font-bold text-[#D8A93A] uppercase tracking-wider">🥇 Antam (Gold)</span>
+                {selectedMedalFilter === 'Gold' && (
+                  <span className="sm:hidden text-[9px] bg-[#D97706] text-[#161311] px-1.5 py-0.5 rounded font-black">Aktif</span>
+                )}
+              </div>
+              <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{goldCount}</span>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-[#9C948A] mt-0.5">
+                <span>Medali Gold</span>
+                <span className="text-[#D8A93A] font-bold">
+                  {selectedMedalFilter === 'Gold' ? '• Terbuka ↓' : '• Cek Hero →'}
+                </span>
+              </div>
+            </button>
+
+            {/* Silver Card */}
+            <button
+              type="button"
+              onClick={() => handleToggleMedal('Silver')}
+              className={`rounded-xl border p-3 text-center transition-all cursor-pointer group relative overflow-hidden text-left sm:text-center ${
+                selectedMedalFilter === 'Silver'
+                  ? 'border-slate-300 bg-gradient-to-b from-[#2A2B30] to-[#1C1D21] ring-2 ring-slate-300 shadow-lg shadow-slate-400/20 scale-[1.02]'
+                  : 'border-[#B9B2A8]/30 bg-[#211E1B] hover:border-[#B9B2A8]/70 hover:bg-[#2B2723] hover:scale-[1.01]'
+              }`}
+              title="Klik untuk melihat daftar hero yang dipakai meraih medali Silver"
+            >
+              <div className="flex items-center justify-between sm:justify-center">
+                <span className="block text-[10px] font-bold text-[#B9B2A8] uppercase tracking-wider">🥈 Silver</span>
+                {selectedMedalFilter === 'Silver' && (
+                  <span className="sm:hidden text-[9px] bg-slate-300 text-[#161311] px-1.5 py-0.5 rounded font-black">Aktif</span>
+                )}
+              </div>
+              <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{silverCount}</span>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-[#9C948A] mt-0.5">
+                <span>Medali Silver</span>
+                <span className="text-slate-300 font-bold">
+                  {selectedMedalFilter === 'Silver' ? '• Terbuka ↓' : '• Cek Hero →'}
+                </span>
+              </div>
+            </button>
+
+            {/* Coklat (Semen) Card */}
+            <button
+              type="button"
+              onClick={() => handleToggleMedal('Coklat')}
+              className={`rounded-xl border p-3 text-center transition-all cursor-pointer group relative overflow-hidden text-left sm:text-center ${
+                selectedMedalFilter === 'Coklat'
+                  ? 'border-amber-700 bg-gradient-to-b from-[#381D14] to-[#24130D] ring-2 ring-amber-700 shadow-lg shadow-amber-900/30 scale-[1.02]'
+                  : 'border-[#6B4226]/40 bg-[#2A1D15] hover:border-[#6B4226]/80 hover:bg-[#34241B] hover:scale-[1.01]'
+              }`}
+              title="Klik untuk melihat daftar hero yang dipakai meraih medali Coklat (Semen)"
+            >
+              <div className="flex items-center justify-between sm:justify-center">
+                <span className="block text-[10px] font-bold text-[#b8764a] uppercase tracking-wider">🍫 Coklat (Semen)</span>
+                {selectedMedalFilter === 'Coklat' && (
+                  <span className="sm:hidden text-[9px] bg-amber-700 text-[#F2EDE4] px-1.5 py-0.5 rounded font-black">Aktif</span>
+                )}
+              </div>
+              <span className="text-2xl font-black text-[#F2EDE4] mt-0.5 block">{coklatCount}</span>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-[#b8764a] mt-0.5">
+                <span>Medali Coklat</span>
+                <span className="text-amber-500 font-bold">
+                  {selectedMedalFilter === 'Coklat' ? '• Terbuka ↓' : '• Cek Hero →'}
+                </span>
+              </div>
+            </button>
           </div>
         </div>
 
+        {/* Dynamic Hero List Panel for Selected Medal */}
+        {selectedMedalFilter && (
+          <div
+            id="medal-heroes-breakdown-panel"
+            className={`rounded-2xl border-2 p-4 sm:p-5 shadow-2xl transition-all duration-300 relative overflow-hidden ${
+              selectedMedalFilter === 'MVP'
+                ? 'border-[#E8B33D]/70 bg-gradient-to-br from-[#291F14] via-[#1D1711] to-[#15120F] shadow-[#E8B33D]/15'
+                : selectedMedalFilter === 'Gold'
+                ? 'border-[#D97706]/70 bg-gradient-to-br from-[#281A10] via-[#1C140D] to-[#15100B] shadow-amber-600/15'
+                : selectedMedalFilter === 'Silver'
+                ? 'border-slate-400/60 bg-gradient-to-br from-[#202227] via-[#181A1D] to-[#121316] shadow-slate-400/15'
+                : 'border-amber-800/70 bg-gradient-to-br from-[#26150F] via-[#1A0F0B] to-[#140C08] shadow-amber-950/25'
+            }`}
+          >
+            {/* Header bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/50 border border-white/10 text-xl shadow-inner">
+                  {selectedMedalFilter === 'MVP' ? '👑' : selectedMedalFilter === 'Gold' ? '🥇' : selectedMedalFilter === 'Silver' ? '🥈' : '🍫'}
+                </span>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-black text-sm sm:text-base text-[#F2EDE4]">
+                      Daftar Hero Peraih Medali {selectedMedalFilter === 'Gold' ? 'Antam (Gold)' : selectedMedalFilter === 'Coklat' ? 'Coklat (Semen)' : selectedMedalFilter}
+                    </h4>
+                    <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-bold text-[#E8B33D]">
+                      {player.name}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#9C948A] mt-0.5">
+                    {medalHeroes.length > 0
+                      ? `${medalHeroes.length} hero berbeda sukses menyumbang medali ini untuk ${player.name}`
+                      : `Belum ada hero yang tercatat memperoleh medali ini`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Switcher & Close button */}
+              <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                <div className="inline-flex items-center gap-1 rounded-xl bg-black/40 border border-white/10 p-1 text-xs">
+                  {(['MVP', 'Gold', 'Silver', 'Coklat'] as MedalType[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSelectedMedalFilter(m)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer ${
+                        selectedMedalFilter === m
+                          ? m === 'MVP'
+                            ? 'bg-[#E8B33D] text-[#161311] shadow'
+                            : m === 'Gold'
+                            ? 'bg-amber-500 text-[#161311] shadow'
+                            : m === 'Silver'
+                            ? 'bg-slate-300 text-[#161311] shadow'
+                            : 'bg-amber-700 text-[#F2EDE4] shadow'
+                          : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                      }`}
+                    >
+                      {m === 'MVP' ? '👑 MVP' : m === 'Gold' ? '🥇 Antam' : m === 'Silver' ? '🥈 Silver' : '🍫 Coklat'}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedMedalFilter(null)}
+                  className="rounded-xl border border-white/10 bg-black/40 hover:bg-white/10 p-2 text-[#9C948A] hover:text-[#F2EDE4] transition-all cursor-pointer"
+                  title="Tutup Panel"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            {/* Hero Cards Grid */}
+            {medalHeroes.length > 0 ? (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {medalHeroes.map((item, idx) => (
+                  <div
+                    key={item.hero}
+                    className="rounded-xl border border-white/10 bg-black/35 p-3.5 hover:border-white/25 hover:bg-black/50 transition-all space-y-2.5 relative group shadow-sm"
+                  >
+                    {/* Rank pill */}
+                    <span className="absolute top-2.5 right-2.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-black text-[#9C948A]">
+                      #{idx + 1}
+                    </span>
+
+                    {/* Top row: Avatar & Hero Name */}
+                    <div className="flex items-center gap-3">
+                      <HeroAvatar heroName={item.hero} size="md" shape="rounded" />
+                      <div>
+                        <h5 className="font-black text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">
+                          {item.hero}
+                        </h5>
+                        <span className="text-[11px] text-[#9C948A]">
+                          Sudah dimainkan: <strong className="text-[#F2EDE4]">{item.totalGames} Match</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Middle row: Key Medal Achievement Badge */}
+                    <div className="flex items-center justify-between gap-2 rounded-lg bg-black/40 border border-white/5 p-2">
+                      <span className="text-xs text-[#9C948A]">Perolehan Medali:</span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-black shadow-xs ${
+                          selectedMedalFilter === 'MVP'
+                            ? 'bg-[#E8B33D]/25 border border-[#E8B33D] text-[#E8B33D]'
+                            : selectedMedalFilter === 'Gold'
+                            ? 'bg-amber-500/25 border border-amber-500 text-amber-300'
+                            : selectedMedalFilter === 'Silver'
+                            ? 'bg-slate-400/25 border border-slate-400 text-slate-200'
+                            : 'bg-amber-800/30 border border-amber-700 text-amber-300'
+                        }`}
+                      >
+                        <span>{selectedMedalFilter === 'MVP' ? '👑' : selectedMedalFilter === 'Gold' ? '🥇' : selectedMedalFilter === 'Silver' ? '🥈' : '🍫'}</span>
+                        <span>{item.medalCount}x {selectedMedalFilter === 'Gold' ? 'Antam' : selectedMedalFilter}</span>
+                      </span>
+                    </div>
+
+                    {/* Bottom row: Match stats & Win rate */}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-white/5">
+                      <div>
+                        <span className="text-[#9C948A] block text-[10px]">Rasio Medali:</span>
+                        <span className="font-bold text-[#F2EDE4]">
+                          {Math.round((item.medalCount / item.totalGames) * 100)}% dari match
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#9C948A] block text-[10px]">Win Rate Hero:</span>
+                        <span className={`font-bold ${item.winRate >= 60 ? 'text-emerald-400' : item.winRate >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>
+                          {item.winRate}% ({item.winCount}M / {item.totalGames - item.winCount}K)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Mini all medals bar */}
+                    <div className="flex items-center gap-1.5 pt-1.5 text-[10px] text-[#9C948A] border-t border-white/5 flex-wrap">
+                      <span className="opacity-80">Total medali hero ini:</span>
+                      <span className="font-bold text-[#E8B33D]">{item.allMedals.mvp} MVP</span>
+                      <span>·</span>
+                      <span className="font-bold text-amber-400">{item.allMedals.gold} Antam</span>
+                      <span>·</span>
+                      <span className="font-bold text-slate-300">{item.allMedals.silver} Silv</span>
+                      <span>·</span>
+                      <span className="font-bold text-amber-600">{item.allMedals.coklat} Cok</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-6 text-center space-y-2">
+                <span className="text-3xl block">
+                  {selectedMedalFilter === 'Coklat' ? '🛡️' : '🎮'}
+                </span>
+                <h5 className="font-bold text-sm text-[#F2EDE4]">
+                  {selectedMedalFilter === 'Coklat'
+                    ? `${player.name} Bersih Tanpa Medali Coklat!`
+                    : `Belum Ada Catatan Hero untuk Medali ${selectedMedalFilter}`}
+                </h5>
+                <p className="text-xs text-[#9C948A] max-w-md mx-auto">
+                  {selectedMedalFilter === 'Coklat'
+                    ? 'Pemain ini bermain sangat konsisten dan belum pernah mendapatkan medali coklat (beban/semen) pada season yang dipilih.'
+                    : `Pemain ${player.name} belum memiliki riwayat medali ${selectedMedalFilter} dengan hero spesifik pada data pertandingan season ini.`}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Charts Grid */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Pie Chart: Distribusi Medali */}
+          {/* Pie Chart: Distribusi Medali (Interactive Diagram) */}
           <div className="rounded-xl border border-[#332C25] bg-[#241F1B] p-4">
             <div className="mb-2 flex items-center justify-between">
               <span className="flex items-center gap-1.5 font-bold text-xs text-[#E8B33D] uppercase tracking-wider">
                 <PieIcon size={14} /> Distribusi Medali Laga Amal
               </span>
               <span className="text-[11px] text-[#9C948A]">
-                Total {totalMedals} Medali
+                Total {totalMedals} Medali (Klik grafik/legend untuk detail)
               </span>
             </div>
 
@@ -867,6 +1165,14 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                     innerRadius={45}
                     outerRadius={72}
                     paddingAngle={3}
+                    cursor="pointer"
+                    onClick={(entry: any) => {
+                      const rawName = entry?.name || '';
+                      if (rawName.includes('MVP')) handleToggleMedal('MVP');
+                      else if (rawName.includes('Antam') || rawName.includes('Gold')) handleToggleMedal('Gold');
+                      else if (rawName.includes('Silver')) handleToggleMedal('Silver');
+                      else if (rawName.includes('Coklat')) handleToggleMedal('Coklat');
+                    }}
                   >
                     {pieData.map((entry) => (
                       <Cell
@@ -890,24 +1196,60 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
               </ResponsiveContainer>
             </div>
 
-            {/* Legend pills */}
-            <div className="mt-2 flex flex-wrap justify-center gap-3 text-xs">
-              <span className="flex items-center gap-1.5 text-[#F2EDE4]">
+            {/* Interactive Legend pills */}
+            <div className="mt-2 flex flex-wrap justify-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => handleToggleMedal('MVP')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedMedalFilter === 'MVP'
+                    ? 'bg-[#E8B33D]/25 border border-[#E8B33D] text-[#E8B33D] shadow-sm'
+                    : 'text-[#F2EDE4] hover:bg-[#2A2218] border border-transparent'
+                }`}
+                title="Klik untuk filter hero peraih MVP"
+              >
                 <span className="h-2.5 w-2.5 rounded-full bg-[#E8B33D]" />
                 MVP: {mvpCount}
-              </span>
-              <span className="flex items-center gap-1.5 text-[#F2EDE4]">
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleMedal('Gold')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedMedalFilter === 'Gold'
+                    ? 'bg-[#D8A93A]/25 border border-[#D8A93A] text-[#D8A93A] shadow-sm'
+                    : 'text-[#F2EDE4] hover:bg-[#251E17] border border-transparent'
+                }`}
+                title="Klik untuk filter hero peraih Antam"
+              >
                 <span className="h-2.5 w-2.5 rounded-full bg-[#D8A93A]" />
                 Antam: {goldCount}
-              </span>
-              <span className="flex items-center gap-1.5 text-[#F2EDE4]">
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleMedal('Silver')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedMedalFilter === 'Silver'
+                    ? 'bg-[#B9B2A8]/25 border border-[#B9B2A8] text-[#B9B2A8] shadow-sm'
+                    : 'text-[#F2EDE4] hover:bg-[#211E1B] border border-transparent'
+                }`}
+                title="Klik untuk filter hero peraih Silver"
+              >
                 <span className="h-2.5 w-2.5 rounded-full bg-[#B9B2A8]" />
                 Silver: {silverCount}
-              </span>
-              <span className="flex items-center gap-1.5 text-[#F2EDE4]">
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleMedal('Coklat')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedMedalFilter === 'Coklat'
+                    ? 'bg-[#6B4226]/35 border border-[#6B4226] text-[#b8764a] shadow-sm'
+                    : 'text-[#F2EDE4] hover:bg-[#2A1D15] border border-transparent'
+                }`}
+                title="Klik untuk filter hero peraih Coklat"
+              >
                 <span className="h-2.5 w-2.5 rounded-full bg-[#6B4226]" />
                 Coklat: {coklatCount}
-              </span>
+              </button>
             </div>
           </div>
 

@@ -261,6 +261,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
           {/* Sound Commentator Player */}
           {analysisDisplay && !isReanalyzing && (
             <MatchCommentatorPlayer
+              matchId={match.id}
               analysisText={analysisDisplay}
               variant="full"
               matchTitle={`Match #${getMatchDisplayNumber(match)}`}

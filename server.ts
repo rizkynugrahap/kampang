@@ -915,7 +915,7 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPe
 }
 
 // Splits long commentary text on sentence boundaries so TTS never cuts off mid-sentence
-function splitTextIntoSentenceChunks(text: string, maxChunkLength = 360): string[] {
+function splitTextIntoSentenceChunks(text: string, maxChunkLength = 340): string[] {
   const clean = text
     .replace(/[*_~`#]/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -923,9 +923,11 @@ function splitTextIntoSentenceChunks(text: string, maxChunkLength = 360): string
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Split on sentence boundaries: period, exclamation, question mark
+  if (!clean) return [];
+
+  // Split on sentence boundaries: period, exclamation, question mark, newline
   const rawSentences = clean
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?\n])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -933,6 +935,42 @@ function splitTextIntoSentenceChunks(text: string, maxChunkLength = 360): string
   let currentChunk = '';
 
   for (const sentence of rawSentences) {
+    // If a single sentence exceeds maxChunkLength, split by commas or clauses
+    if (sentence.length > maxChunkLength) {
+      if (currentChunk) {
+        chunks.push(currentChunk);
+        currentChunk = '';
+      }
+      const subClauses = sentence.split(/(?<=[,;:\n])\s+/).filter(Boolean);
+      let subChunk = '';
+      for (const clause of subClauses) {
+        if ((subChunk + ' ' + clause).trim().length <= maxChunkLength) {
+          subChunk = (subChunk + ' ' + clause).trim();
+        } else {
+          if (subChunk) chunks.push(subChunk);
+          if (clause.length > maxChunkLength) {
+            // Hard split by words
+            const words = clause.split(' ');
+            let wordChunk = '';
+            for (const w of words) {
+              if ((wordChunk + ' ' + w).trim().length <= maxChunkLength) {
+                wordChunk = (wordChunk + ' ' + w).trim();
+              } else {
+                if (wordChunk) chunks.push(wordChunk);
+                wordChunk = w;
+              }
+            }
+            if (wordChunk) chunks.push(wordChunk);
+            subChunk = '';
+          } else {
+            subChunk = clause;
+          }
+        }
+      }
+      if (subChunk) chunks.push(subChunk);
+      continue;
+    }
+
     if (!currentChunk) {
       currentChunk = sentence;
     } else if ((currentChunk + ' ' + sentence).length <= maxChunkLength) {
@@ -954,8 +992,8 @@ function splitTextIntoSentenceChunks(text: string, maxChunkLength = 360): string
   return chunks;
 }
 
-// Single chunk PCM generator
-async function generatePcmChunk(ai: any, chunkText: string, voiceName: string): Promise<Buffer | null> {
+// Single chunk PCM generator using Gemini 3.8 Flash Lite TTS (Puck - Gokil Hype Caster)
+async function generatePcmChunk(ai: any, chunkText: string, voiceName: string = 'Puck'): Promise<Buffer | null> {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
@@ -997,22 +1035,32 @@ async function generatePcmChunk(ai: any, chunkText: string, voiceName: string): 
 // Server-side cache for commentator audio to preserve AI quotas across sessions & users
 const commentatorAudioServerCache = new Map<string, { audioUrl: string; provider: string; providerName: string }>();
 
-// Generates Edge Neural audio (Tier 2 AI fallback)
+// Rate limit cooldown timestamp tracker
+let aiRateLimitResetTimestamp: number = 0;
+
+// Generates Edge Neural audio (Tier 2 AI fallback - 100% human-like Indonesian voice, no quota limit)
 async function generateEdgeNeuralAudio(text: string): Promise<Buffer | null> {
   try {
     const tts = new MsEdgeTTS();
     await tts.setMetadata('id-ID-ArdiNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = await tts.toStream(text, { rate: 1.15, pitch: '+0Hz' });
+    const { audioStream } = await tts.toStream(text, { rate: 1.14, pitch: '+0Hz' });
     return new Promise((resolve) => {
       const chunks: Buffer[] = [];
+      const timer = setTimeout(() => {
+        try { tts.close(); } catch {}
+        resolve(null);
+      }, 12000);
+
       audioStream.on('data', (c) => chunks.push(c));
       audioStream.on('end', () => {
-        tts.close();
+        clearTimeout(timer);
+        try { tts.close(); } catch {}
         resolve(Buffer.concat(chunks));
       });
       audioStream.on('error', (e) => {
+        clearTimeout(timer);
         console.warn('[Edge TTS Stream Error]', e);
-        tts.close();
+        try { tts.close(); } catch {}
         resolve(null);
       });
     });
@@ -1052,7 +1100,7 @@ app.post('/api/commentator/tts', async (req, res) => {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const cacheKey = `${mode}:${cleanFullText.slice(0, 160)}`;
+  const cacheKey = `${mode}:${cleanFullText.slice(0, 200)}`;
 
   // 1. Check server-side memory cache first (instant response, 0 AI tokens)
   if (commentatorAudioServerCache.has(cacheKey)) {
@@ -1067,29 +1115,39 @@ app.post('/api/commentator/tts', async (req, res) => {
   }
 
   // Prepare text chunks
-  let chunks = splitTextIntoSentenceChunks(cleanFullText, 340);
-  if (mode === 'recap' && chunks.length > 2) {
-    chunks = [chunks[0], chunks[chunks.length - 1]];
+  let allChunks = splitTextIntoSentenceChunks(cleanFullText, 340);
+  let chunks: string[] = [];
+
+  if (mode === 'recap') {
+    // Recap: take intro + closing/MVP highlights (up to 2 chunks, ~25s)
+    chunks = allChunks.length > 2 ? [allChunks[0], allChunks[allChunks.length - 1]] : allChunks;
   } else {
-    chunks = chunks.slice(0, 5);
+    // Full: keep up to 10 chunks (~3,400 characters, no premature cut off!)
+    chunks = allChunks.slice(0, 10);
   }
 
   if (chunks.length === 0) {
     return res.status(400).json({ error: 'Teks analisis kosong' });
   }
 
+  const textToSynthesize = mode === 'recap' ? chunks.join(' ') : cleanFullText;
+
   // TIER 1: Try Gemini 3.8 Flash Neural TTS (Puck - Gokil Esports Caster)
   const ai = getGenAI();
   if (ai) {
     try {
+      // Execute chunk generation
       const pcmResults = await Promise.all(
         chunks.map((chunk) => generatePcmChunk(ai, chunk, 'Puck'))
       );
 
       const validPcmBuffers = pcmResults.filter((b): b is Buffer => Buffer.isBuffer(b) && b.length > 0);
 
-      if (validPcmBuffers.length > 0) {
-        const pauseBytes = Math.floor(24000 * 2 * 0.15);
+      // ONLY use Gemini result if ALL chunks succeeded.
+      // If even 1 chunk failed or was throttled, we DO NOT cut off the audio;
+      // instead we seamlessly drop down to Tier 2 (Edge Neural) so the user gets 100% complete audio!
+      if (validPcmBuffers.length === chunks.length) {
+        const pauseBytes = Math.floor(24000 * 2 * 0.12);
         const pauseBuffer = Buffer.alloc(pauseBytes);
 
         const fullPcm = Buffer.concat(
@@ -1104,26 +1162,39 @@ app.post('/api/commentator/tts', async (req, res) => {
         commentatorAudioServerCache.set(cacheKey, {
           audioUrl,
           provider: 'gemini',
-          providerName: 'Gemini AI Caster (Puck)',
+          providerName: 'Gemini AI Caster (Puck - Hype)',
         });
 
         return res.json({
           success: true,
           audioUrl,
           provider: 'gemini',
-          providerName: 'Gemini AI Caster (Puck)',
+          providerName: 'Gemini AI Caster (Puck - Hype)',
           mode,
           chunkCount: validPcmBuffers.length,
         });
+      } else {
+        console.warn(`[Commentator TTS] Gemini generated ${validPcmBuffers.length}/${chunks.length} chunks. Seamlessly switching to Tier 2 (Edge Neural) for 100% full audio completeness.`);
       }
     } catch (geminiErr: any) {
-      console.warn('[Commentator TTS] Gemini API limited or failed, seamlessly activating AI Backup:', geminiErr?.message || geminiErr);
+      console.warn('[Commentator TTS] Gemini API quota limited or failed, seamlessly activating AI Backup:', geminiErr?.message || geminiErr);
+      const isQuotaOrLimit =
+        geminiErr?.status === 429 ||
+        String(geminiErr?.message).includes('429') ||
+        String(geminiErr?.message).includes('RESOURCE_EXHAUSTED') ||
+        String(geminiErr?.message).includes('quota');
+      if (isQuotaOrLimit) {
+        const now = Date.now();
+        if (aiRateLimitResetTimestamp < now) {
+          aiRateLimitResetTimestamp = now + 60 * 1000;
+        }
+      }
     }
   }
 
-  // TIER 2: Try Microsoft Azure Neural Indonesian AI Voice (id-ID-ArdiNeural)
+  // TIER 2: Microsoft Edge Neural Indonesian AI Voice (id-ID-ArdiNeural)
+  // High fidelity 24kHz natural human voice, no token limit, handles full text in 1 smooth file
   try {
-    const textToSynthesize = chunks.join(' ');
     const edgeMp3Buffer = await generateEdgeNeuralAudio(textToSynthesize);
 
     if (edgeMp3Buffer && edgeMp3Buffer.length > 0) {
@@ -1132,14 +1203,14 @@ app.post('/api/commentator/tts', async (req, res) => {
       commentatorAudioServerCache.set(cacheKey, {
         audioUrl,
         provider: 'msedge',
-        providerName: 'Microsoft Neural AI Caster',
+        providerName: 'Microsoft Neural AI (Cadangan Otomatis)',
       });
 
       return res.json({
         success: true,
         audioUrl,
         provider: 'msedge',
-        providerName: 'Microsoft Neural AI Caster (Cadangan)',
+        providerName: 'Microsoft Neural AI (Cadangan Otomatis)',
         mode,
       });
     }
@@ -1147,9 +1218,8 @@ app.post('/api/commentator/tts', async (req, res) => {
     console.warn('[Commentator TTS] Edge Neural Voice fallback error:', edgeErr);
   }
 
-  // TIER 3: Try Google Cloud Audio
+  // TIER 3: Google Cloud Audio Fallback
   try {
-    const textToSynthesize = chunks.join(' ');
     const googleMp3Buffer = await generateGoogleAudio(textToSynthesize);
 
     if (googleMp3Buffer && googleMp3Buffer.length > 0) {
@@ -1158,14 +1228,14 @@ app.post('/api/commentator/tts', async (req, res) => {
       commentatorAudioServerCache.set(cacheKey, {
         audioUrl,
         provider: 'google',
-        providerName: 'Google Cloud AI Voice',
+        providerName: 'Google Cloud Audio (Cadangan)',
       });
 
       return res.json({
         success: true,
         audioUrl,
         provider: 'google',
-        providerName: 'Google Cloud AI Voice (Cadangan)',
+        providerName: 'Google Cloud Audio (Cadangan)',
         mode,
       });
     }
@@ -1173,10 +1243,28 @@ app.post('/api/commentator/tts', async (req, res) => {
     console.warn('[Commentator TTS] Google Cloud audio fallback error:', googleErr);
   }
 
-  // TIER 4: Local Device Fallback
-  res.status(503).json({
-    error: 'Semua layanan audio AI cloud sedang sibuk, beralih ke suara perangkat lokal',
-    fallback: true,
+  // If all AI TTS providers are exhausted or rate limited:
+  // Strictly DO NOT fallback to robotic browser voices. Return structured 429 rate limit estimate.
+  const now = Date.now();
+  if (aiRateLimitResetTimestamp < now) {
+    aiRateLimitResetTimestamp = now + 60 * 1000;
+  }
+  const retryAfterSeconds = Math.max(5, Math.ceil((aiRateLimitResetTimestamp - now) / 1000));
+  const resetTimestamp = now + retryAfterSeconds * 1000;
+  const resetTimeFormatted = new Date(resetTimestamp).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  return res.status(429).json({
+    success: false,
+    isRateLimited: true,
+    error: 'Layanan AI Audio sedang mencapai batas limit',
+    message: `Kapasitas generate suara AI Caster sedang mencapai batas limit. Mohon tunggu ~${retryAfterSeconds} detik sebelum mencoba generate lagi.`,
+    retryAfterSeconds,
+    resetTimestamp,
+    resetTimeFormatted,
   });
 });
 

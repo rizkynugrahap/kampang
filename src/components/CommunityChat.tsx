@@ -1166,6 +1166,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                         </button>
 
                         <MatchCommentatorPlayer
+                          matchId={matchDetailId}
                           analysisText={aiAnalysisText}
                           variant="compact"
                           matchTitle={`Match #${matchNum}`}
@@ -1175,6 +1176,7 @@ export const CommunityChat: React.FC<CommunityChatProps> = ({
                       {isAnalysisExpanded && (
                         <div className="rounded-lg bg-[#161311]/90 border border-[#332C25] p-3 text-xs text-[#D5CEBF] leading-relaxed max-h-60 overflow-y-auto space-y-2.5">
                           <MatchCommentatorPlayer
+                            matchId={matchDetailId}
                             analysisText={aiAnalysisText}
                             variant="full"
                             matchTitle={`Match #${matchNum}`}
