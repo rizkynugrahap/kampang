@@ -343,7 +343,7 @@ export default function App() {
     const iconUrl =
       themeConfig.logoType === 'image' && themeConfig.logoUrl
         ? themeConfig.logoUrl
-        : '/favicon.svg';
+        : '/favicon.png';
 
     let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
     if (!link) {
@@ -352,6 +352,7 @@ export default function App() {
       document.head.appendChild(link);
     }
     link.href = iconUrl;
+    link.type = iconUrl.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
   }, [themeConfig.logoType, themeConfig.logoUrl]);
 
   // Keep players in sync when activeSeason changes, preserving admin overrides (badge, tier, julukan, avatar)
