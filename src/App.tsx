@@ -338,6 +338,22 @@ export default function App() {
     );
   };
 
+  // Synchronize browser tab favicon with custom branding if available
+  useEffect(() => {
+    const iconUrl =
+      themeConfig.logoType === 'image' && themeConfig.logoUrl
+        ? themeConfig.logoUrl
+        : '/favicon.svg';
+
+    let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = iconUrl;
+  }, [themeConfig.logoType, themeConfig.logoUrl]);
+
   // Keep players in sync when activeSeason changes, preserving admin overrides (badge, tier, julukan, avatar)
   useEffect(() => {
     const derived = buildPlayersFromSeason(activeSeason);

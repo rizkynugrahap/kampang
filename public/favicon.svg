@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Shield Gradient -->
+    <radialGradient id="bg-grad" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#2D241C" />
+      <stop offset="50%" stop-color="#1A1512" />
+      <stop offset="100%" stop-color="#0E0C0A" />
+    </radialGradient>
+
+    <!-- Gold Gradients -->
+    <linearGradient id="gold-primary" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF3C4" />
+      <stop offset="30%" stop-color="#FCD34D" />
+      <stop offset="60%" stop-color="#E8B33D" />
+      <stop offset="90%" stop-color="#B45309" />
+      <stop offset="100%" stop-color="#78350F" />
+    </linearGradient>
+
+    <linearGradient id="gold-bright" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="35%" stop-color="#FDE047" />
+      <stop offset="70%" stop-color="#E8B33D" />
+      <stop offset="100%" stop-color="#92400E" />
+    </linearGradient>
+
+    <!-- Crimson & Emerald Gems -->
+    <radialGradient id="ruby-gem" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#FCA5A5" />
+      <stop offset="40%" stop-color="#EF4444" />
+      <stop offset="100%" stop-color="#7F1D1D" />
+    </radialGradient>
+
+    <filter id="gold-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Crossed Battle Swords in Background -->
+  <g opacity="0.95">
+    <!-- Left-to-Right Sword -->
+    <path d="M96 96 L416 416" stroke="url(#gold-primary)" stroke-width="18" stroke-linecap="round" />
+    <path d="M96 96 L140 100 L100 140 Z" fill="#FFF3C4" />
+    <!-- Hilt & Crossguard -->
+    <path d="M370 340 L440 410" stroke="#78350F" stroke-width="26" stroke-linecap="round" />
+    <path d="M350 380 L400 330" stroke="url(#gold-bright)" stroke-width="14" stroke-linecap="round" />
+    <!-- Right-to-Left Sword -->
+    <path d="M416 96 L96 416" stroke="url(#gold-primary)" stroke-width="18" stroke-linecap="round" />
+    <path d="M416 96 L376 100 L412 140 Z" fill="#FFF3C4" />
+    <!-- Hilt & Crossguard -->
+    <path d="M142 340 L72 410" stroke="#78350F" stroke-width="26" stroke-linecap="round" />
+    <path d="M162 380 L112 330" stroke="url(#gold-bright)" stroke-width="14" stroke-linecap="round" />
+  </g>
+
+  <!-- Main Tournament Shield -->
+  <!-- Outer Gold Border -->
+  <path d="M256 36 L432 104 C432 284 360 412 256 476 C152 412 80 284 80 104 Z" 
+        fill="url(#gold-primary)" 
+        filter="url(#gold-glow)" />
+
+  <!-- Shield Inner Dark Plate -->
+  <path d="M256 54 L414 116 C414 274 348 394 256 454 C164 394 98 274 98 116 Z" 
+        fill="url(#bg-grad)" 
+        stroke="#451A03" 
+        stroke-width="3" />
+
+  <!-- Shield Inner Border Accent -->
+  <path d="M256 70 L396 126 C396 264 336 376 256 432 C176 376 116 264 116 126 Z" 
+        fill="none" 
+        stroke="url(#gold-bright)" 
+        stroke-width="4" 
+        opacity="0.85" />
+
+  <!-- Crown / Crest on top of Shield -->
+  <g transform="translate(0, 5)">
+    <path d="M200 110 L256 76 L312 110 L292 136 L220 136 Z" fill="url(#gold-bright)" />
+    <polygon points="256,66 262,78 276,78 265,86 269,98 256,90 243,98 247,86 236,78 250,78" fill="#FFF3C4" />
+    <circle cx="256" cy="116" r="6" fill="url(#ruby-gem)" />
+    <circle cx="228" cy="122" r="4" fill="url(#ruby-gem)" />
+    <circle cx="284" cy="122" r="4" fill="url(#ruby-gem)" />
+  </g>
+
+  <!-- Monogram "LP" (Laga Pantos) -->
+  <g id="monogram" transform="translate(256, 270)">
+    <!-- Shadow for Monogram -->
+    <text x="0" y="24" 
+          font-family="system-ui, -apple-system, 'Segoe UI', Impact, 'Arial Black', sans-serif" 
+          font-size="142" 
+          font-weight="900" 
+          font-style="italic" 
+          letter-spacing="-6" 
+          text-anchor="middle" 
+          fill="#000000" 
+          opacity="0.75">LP</text>
+
+    <!-- Base Monogram -->
+    <text x="-2" y="20" 
+          font-family="system-ui, -apple-system, 'Segoe UI', Impact, 'Arial Black', sans-serif" 
+          font-size="142" 
+          font-weight="900" 
+          font-style="italic" 
+          letter-spacing="-6" 
+          text-anchor="middle" 
+          fill="url(#gold-bright)" 
+          stroke="#451A03" 
+          stroke-width="4">LP</text>
+  </g>
+
+  <!-- Banner "LAGA AMAL" at shield bottom -->
+  <g transform="translate(256, 380)">
+    <!-- Banner background ribbon -->
+    <path d="M-130 -14 L130 -14 L114 18 L-114 18 Z" 
+          fill="#1E1610" 
+          stroke="url(#gold-primary)" 
+          stroke-width="3" />
+    <text x="0" y="8" 
+          font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" 
+          font-size="20" 
+          font-weight="900" 
+          letter-spacing="5" 
+          text-anchor="middle" 
+          fill="#FFF3C4">LAGA AMAL</text>
+  </g>
+
+  <!-- Small MLBB Style Star at Bottom Tip -->
+  <polygon points="256,432 260,442 271,442 262,449 265,459 256,453 247,459 250,449 241,442 252,442" fill="url(#gold-bright)" />
+</svg>
