@@ -56,11 +56,54 @@ export function sortSeasonsDescending(seasonList: LagaAmalSeasonData[]): LagaAma
 }
 
 /**
- * Builds the application-wide Player[] roster directly from a LagaAmalSeasonData object.
- * This guarantees 100% data synchronicity across Dashboard, Profile, and Standings.
+ * Builds the application-wide Player[] roster directly from a LagaAmalSeasonData object,
+ * optionally cross-verified against seasonMatches for 100% data consistency.
  */
-export function buildPlayersFromSeason(season?: LagaAmalSeasonData | null): Player[] {
+export function buildPlayersFromSeason(
+  season?: LagaAmalSeasonData | null,
+  seasonMatches?: Match[]
+): Player[] {
   if (!season || !Array.isArray(season.players)) return [];
+
+  // If seasonMatches are provided and not empty, tally player stats from actual match history
+  const matchStatsMap = new Map<
+    string,
+    { matches: number; wins: number; mvp: number; antam: number; silver: number; coklat: number; score: number }
+  >();
+
+  if (Array.isArray(seasonMatches) && seasonMatches.length > 0) {
+    seasonMatches.forEach((m) => {
+      const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
+      allRoster.forEach((p) => {
+        const key = (p.player_name || '').trim().toLowerCase();
+        if (!key) return;
+        if (!matchStatsMap.has(key)) {
+          matchStatsMap.set(key, { matches: 0, wins: 0, mvp: 0, antam: 0, silver: 0, coklat: 0, score: 0 });
+        }
+        const st = matchStatsMap.get(key)!;
+        st.matches += 1;
+        const isWinner =
+          (p.team === 'Pohon' && m.winner === 'Tim Pohon') ||
+          (p.team === 'Lobby' && m.winner === 'Tim Lobby');
+        if (isWinner) st.wins += 1;
+        if (p.medal === 'MVP') st.mvp += 1;
+        else if (p.medal === 'Gold') st.antam += 1;
+        else if (p.medal === 'Silver') st.silver += 1;
+        else if (p.medal === 'Coklat') st.coklat += 1;
+        const s =
+          typeof p.score === 'number' && !isNaN(p.score)
+            ? p.score
+            : p.medal === 'MVP'
+            ? 10.0
+            : p.medal === 'Gold'
+            ? 8.5
+            : p.medal === 'Silver'
+            ? 6.0
+            : 3.5;
+        st.score += s;
+      });
+    });
+  }
 
   const uniquePlayers: LagaAmalPlayerStat[] = [];
   const seenNames = new Set<string>();
@@ -69,8 +112,55 @@ export function buildPlayersFromSeason(season?: LagaAmalSeasonData | null): Play
     const key = (p.nickname || '').trim().toLowerCase();
     if (!key || seenNames.has(key)) continue;
     seenNames.add(key);
-    uniquePlayers.push(p);
+
+    const fromMatch = matchStatsMap.get(key);
+    if (fromMatch) {
+      const avgScore = fromMatch.matches > 0 ? parseFloat((fromMatch.score / fromMatch.matches).toFixed(2)) : 0;
+      const winRate = fromMatch.matches > 0 ? parseFloat(((fromMatch.wins / fromMatch.matches) * 100).toFixed(1)) : 0;
+      uniquePlayers.push({
+        ...p,
+        matches: fromMatch.matches,
+        mvp: fromMatch.mvp,
+        antam: fromMatch.antam,
+        silver: fromMatch.silver,
+        coklat: fromMatch.coklat,
+        score: parseFloat(fromMatch.score.toFixed(1)),
+        avgScore,
+        winRate,
+      });
+    } else {
+      uniquePlayers.push(p);
+    }
   }
+
+  // Also include any player who played in seasonMatches but was not yet in season.players
+  matchStatsMap.forEach((fromMatch, key) => {
+    if (!seenNames.has(key)) {
+      seenNames.add(key);
+      let realName = key;
+      seasonMatches?.forEach((m) => {
+        const found = [...(m.pohon || []), ...(m.lobby || [])].find(
+          (p) => (p.player_name || '').trim().toLowerCase() === key
+        );
+        if (found) realName = found.player_name.trim();
+      });
+      const avgScore = fromMatch.matches > 0 ? parseFloat((fromMatch.score / fromMatch.matches).toFixed(2)) : 0;
+      const winRate = fromMatch.matches > 0 ? parseFloat(((fromMatch.wins / fromMatch.matches) * 100).toFixed(1)) : 0;
+      uniquePlayers.push({
+        nickname: realName,
+        status: fromMatch.matches >= 20 ? 'Aktif' : 'Cabutan',
+        tier: fromMatch.mvp >= 20 ? 'Mythic Glory' : fromMatch.mvp >= 10 ? 'Mythic' : 'Legend',
+        matches: fromMatch.matches,
+        mvp: fromMatch.mvp,
+        antam: fromMatch.antam,
+        silver: fromMatch.silver,
+        coklat: fromMatch.coklat,
+        score: parseFloat(fromMatch.score.toFixed(1)),
+        avgScore,
+        winRate,
+      });
+    }
+  });
 
   return uniquePlayers.map((p, idx) => {
     let tier = 'Legend';
@@ -98,6 +188,179 @@ export function buildPlayersFromSeason(season?: LagaAmalSeasonData | null): Play
       avatar_url: getPlayerAvatarUrl(p.nickname, p.avatar_url),
     };
   });
+}
+
+/**
+ * Completely rebuilds a season's player stats, tops summary, and hero pool
+ * directly from its raw match history. Guarantees 100% data sync.
+ */
+export function rebuildSeasonFromMatches(
+  season: LagaAmalSeasonData,
+  seasonMatches: Match[]
+): LagaAmalSeasonData {
+  if (!season) return season;
+  if (!Array.isArray(seasonMatches) || seasonMatches.length === 0) {
+    return recalculateSeasonStats(season);
+  }
+
+  const updated = JSON.parse(JSON.stringify(season)) as LagaAmalSeasonData;
+
+  const playerStatsMap = new Map<
+    string,
+    {
+      nickname: string;
+      matches: number;
+      wins: number;
+      mvp: number;
+      antam: number;
+      silver: number;
+      coklat: number;
+      score: number;
+    }
+  >();
+
+  const heroPicksMap = new Map<string, LagaAmalHeroPick>();
+
+  // Sort matches chronologically
+  const sortedMatches = [...seasonMatches].sort((a, b) => {
+    const numA = Number(a.matchNumber || a.id) || 0;
+    const numB = Number(b.matchNumber || b.id) || 0;
+    return numA - numB;
+  });
+
+  sortedMatches.forEach((m) => {
+    const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
+    allRoster.forEach((p) => {
+      const name = p.player_name.trim();
+      const key = name.toLowerCase();
+      if (!playerStatsMap.has(key)) {
+        playerStatsMap.set(key, {
+          nickname: name,
+          matches: 0,
+          wins: 0,
+          mvp: 0,
+          antam: 0,
+          silver: 0,
+          coklat: 0,
+          score: 0,
+        });
+      }
+      const st = playerStatsMap.get(key)!;
+      st.matches += 1;
+
+      const isWinner =
+        (p.team === 'Pohon' && m.winner === 'Tim Pohon') ||
+        (p.team === 'Lobby' && m.winner === 'Tim Lobby');
+      if (isWinner) st.wins += 1;
+
+      if (p.medal === 'MVP') st.mvp += 1;
+      else if (p.medal === 'Gold') st.antam += 1;
+      else if (p.medal === 'Silver') st.silver += 1;
+      else if (p.medal === 'Coklat') st.coklat += 1;
+
+      const s =
+        typeof p.score === 'number' && !isNaN(p.score)
+          ? p.score
+          : p.medal === 'MVP'
+          ? 10.0
+          : p.medal === 'Gold'
+          ? 8.5
+          : p.medal === 'Silver'
+          ? 6.0
+          : 3.5;
+      st.score += s;
+
+      if (p.hero_name) {
+        const hpKey = `${name.toLowerCase()}:::${p.hero_name.toLowerCase()}`;
+        if (!heroPicksMap.has(hpKey)) {
+          heroPicksMap.set(hpKey, {
+            player: name,
+            hero: p.hero_name,
+            total: 0,
+            mvp: 0,
+            antam: 0,
+            silver: 0,
+            coklat: 0,
+          });
+        }
+        const hp = heroPicksMap.get(hpKey)!;
+        hp.total += 1;
+        if (p.medal === 'MVP') hp.mvp += 1;
+        else if (p.medal === 'Gold') hp.antam += 1;
+        else if (p.medal === 'Silver') hp.silver += 1;
+        else if (p.medal === 'Coklat') hp.coklat += 1;
+      }
+    });
+  });
+
+  const existingPlayerMap = new Map<string, LagaAmalPlayerStat>();
+  (updated.players || []).forEach((p) => {
+    existingPlayerMap.set(p.nickname.trim().toLowerCase(), p);
+  });
+
+  const updatedPlayers: LagaAmalPlayerStat[] = [];
+  const processedKeys = new Set<string>();
+
+  playerStatsMap.forEach((fromMatch, key) => {
+    processedKeys.add(key);
+    const existing = existingPlayerMap.get(key);
+    const avgScore = fromMatch.matches > 0 ? parseFloat((fromMatch.score / fromMatch.matches).toFixed(2)) : 0;
+    const winRate = fromMatch.matches > 0 ? parseFloat(((fromMatch.wins / fromMatch.matches) * 100).toFixed(1)) : 0;
+
+    let tier = existing?.tier || 'Legend';
+    if (fromMatch.mvp >= 20 || winRate >= 65) tier = 'Mythic Glory';
+    else if (fromMatch.mvp >= 10 || winRate >= 50) tier = 'Mythic';
+    else if (fromMatch.coklat >= 6) tier = 'Epic (Semen)';
+
+    updatedPlayers.push({
+      nickname: fromMatch.nickname,
+      avatar_url: existing?.avatar_url || getPlayerAvatarUrl(fromMatch.nickname),
+      status: existing?.status || (fromMatch.matches >= 20 ? 'Aktif' : 'Cabutan'),
+      tier,
+      julukan: existing?.julukan,
+      julukan_updated_at: existing?.julukan_updated_at,
+      matches: fromMatch.matches,
+      mvp: fromMatch.mvp,
+      antam: fromMatch.antam,
+      silver: fromMatch.silver,
+      coklat: fromMatch.coklat,
+      score: parseFloat(fromMatch.score.toFixed(1)),
+      avgScore,
+      winRate,
+    });
+  });
+
+  (updated.players || []).forEach((p) => {
+    const key = p.nickname.trim().toLowerCase();
+    if (!processedKeys.has(key)) {
+      updatedPlayers.push({
+        ...p,
+        matches: 0,
+        mvp: 0,
+        antam: 0,
+        silver: 0,
+        coklat: 0,
+        score: 0,
+        avgScore: 0,
+        winRate: 0,
+      });
+    }
+  });
+
+  updatedPlayers.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.mvp !== a.mvp) return b.mvp - a.mvp;
+    if (b.antam !== a.antam) return b.antam - a.antam;
+    if (a.coklat !== b.coklat) return a.coklat - b.coklat;
+    return b.winRate - a.winRate;
+  });
+
+  updated.players = updatedPlayers;
+  updated.heroPicksByUser = Array.from(heroPicksMap.values());
+  updated.totalMatches = seasonMatches.length;
+  updated.totalMatchesRecorded = seasonMatches.length;
+
+  return recalculateSeasonStats(updated);
 }
 
 /**

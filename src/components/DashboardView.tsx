@@ -236,7 +236,134 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
 
     if (teamFilter === 'all') {
-      // Use the season's official aggregated roster (excluding cabutan with 0 matches)
+      if (seasonMatches.length > 0) {
+        const tallyMap = new Map<
+          string,
+          {
+            nickname: string;
+            matches: number;
+            wins: number;
+            mvp: number;
+            antam: number;
+            silver: number;
+            coklat: number;
+            scores: number[];
+          }
+        >();
+
+        seasonMatches.forEach((m) => {
+          const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
+          allRoster.forEach((mp) => {
+            const key = mp.player_name.trim().toLowerCase();
+            if (!tallyMap.has(key)) {
+              tallyMap.set(key, {
+                nickname: mp.player_name,
+                matches: 0,
+                wins: 0,
+                mvp: 0,
+                antam: 0,
+                silver: 0,
+                coklat: 0,
+                scores: [],
+              });
+            }
+            const item = tallyMap.get(key)!;
+            item.matches += 1;
+            const isWinner =
+              (mp.team === 'Pohon' && m.winner === 'Tim Pohon') ||
+              (mp.team === 'Lobby' && m.winner === 'Tim Lobby');
+            if (isWinner) item.wins += 1;
+            if (mp.medal === 'MVP') item.mvp += 1;
+            else if (mp.medal === 'Gold') item.antam += 1;
+            else if (mp.medal === 'Silver') item.silver += 1;
+            else if (mp.medal === 'Coklat') item.coklat += 1;
+
+            const s =
+              typeof mp.score === 'number' && !isNaN(mp.score)
+                ? mp.score
+                : mp.medal === 'MVP'
+                ? 10.0
+                : mp.medal === 'Gold'
+                ? 8.5
+                : mp.medal === 'Silver'
+                ? 6.0
+                : 3.5;
+            item.scores.push(s);
+          });
+        });
+
+        // Also add non-cabutan active players from activeSeason.players who have 0 matches in this season
+        (activeSeason.players || []).forEach((p) => {
+          const key = p.nickname.trim().toLowerCase();
+          const meta = playerMetaMap.get(key);
+          const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
+          if (!tallyMap.has(key) && !isCabutan) {
+            tallyMap.set(key, {
+              nickname: p.nickname,
+              matches: 0,
+              wins: 0,
+              mvp: 0,
+              antam: 0,
+              silver: 0,
+              coklat: 0,
+              scores: [],
+            });
+          }
+        });
+
+        const list: PlayerStatsComputed[] = Array.from(tallyMap.values())
+          .filter((item) => {
+            const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
+            const isCabutan = meta?.status === 'Cabutan';
+            if (isCabutan && item.matches < 1) return false;
+            return true;
+          })
+          .map((item) => {
+            const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
+            const totalScore = item.scores.reduce((a, b) => a + b, 0);
+            const avgScore = item.scores.length > 0 ? totalScore / item.scores.length : 0;
+            const winRate = item.matches > 0 ? (item.wins / item.matches) * 100 : 0;
+
+            const julukan =
+              meta?.julukan ||
+              generateHeuristicPlayerJulukan(
+                meta || {
+                  id: item.nickname,
+                  name: item.nickname,
+                  status: 'Aktif',
+                  tier: 'Legend',
+                  total_match: item.matches,
+                  medals: { MVP: item.mvp, Gold: item.antam, Silver: item.silver, Coklat: item.coklat },
+                },
+                { mvp: item.mvp, coklat: item.coklat, antam: item.antam, winRate }
+              );
+
+            return {
+              nickname: item.nickname,
+              avatar_url: meta?.avatar_url,
+              tier: meta?.tier || (item.mvp >= 15 ? 'Mythic Glory' : item.mvp >= 5 ? 'Mythic' : 'Legend'),
+              julukan,
+              matches: item.matches,
+              mvp: item.mvp,
+              antam: item.antam,
+              silver: item.silver,
+              coklat: item.coklat,
+              score: Math.round(totalScore * 10) / 10,
+              avgScore: Math.round(avgScore * 100) / 100,
+              winRate: Math.round(winRate * 10) / 10,
+            };
+          });
+
+        return list.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (b.mvp !== a.mvp) return b.mvp - a.mvp;
+          if (b.antam !== a.antam) return b.antam - a.antam;
+          if (a.coklat !== b.coklat) return a.coklat - b.coklat;
+          return b.winRate - a.winRate;
+        });
+      }
+
+      // Fallback if season has no individual match records yet (split or estimated)
       const list: PlayerStatsComputed[] = (activeSeason.players || [])
         .filter((p) => {
           const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());

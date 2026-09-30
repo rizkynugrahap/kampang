@@ -259,20 +259,113 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
     (p) => p.nickname.trim().toLowerCase() === player.name.trim().toLowerCase()
   );
   const seasonRank = seasonPlayerIndex >= 0 ? seasonPlayerIndex + 1 : 0;
-  const hasSeasonMatches = seasonPlayerStat ? (seasonPlayerStat.matches || 0) > 0 : false;
 
-  // Medals and metrics: follow the active season
-  // If player played in the season, use season data.
-  // If player hasn't played in this season, show 0 for the active season so ranking & stats are per-season.
+  // 1b. Direct match tally for this player in this season.
+  // This guarantees 100% synchronization with match history (riwayat) and hero breakdown list.
+  const matchStatsForPlayer = React.useMemo(() => {
+    const normName = player.name.trim().toLowerCase();
+    const playerMatches = (matches || []).filter((m) => {
+      const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
+      return allRoster.some((p) => (p.player_name || '').trim().toLowerCase() === normName);
+    });
+
+    if (playerMatches.length === 0) return null;
+
+    let mvp = 0;
+    let antam = 0;
+    let silver = 0;
+    let coklat = 0;
+    let score = 0;
+    let wins = 0;
+
+    playerMatches.forEach((m) => {
+      const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
+      const pd = allRoster.find((p) => (p.player_name || '').trim().toLowerCase() === normName);
+      if (!pd) return;
+
+      if (pd.medal === 'MVP') mvp += 1;
+      else if (pd.medal === 'Gold') antam += 1;
+      else if (pd.medal === 'Silver') silver += 1;
+      else if (pd.medal === 'Coklat') coklat += 1;
+
+      const s =
+        typeof pd.score === 'number' && !isNaN(pd.score)
+          ? pd.score
+          : pd.medal === 'MVP'
+          ? 10.0
+          : pd.medal === 'Gold'
+          ? 8.5
+          : pd.medal === 'Silver'
+          ? 6.0
+          : 3.5;
+      score += s;
+
+      const isWinner =
+        (m.pohon?.some((p) => (p.player_name || '').trim().toLowerCase() === normName) && m.winner === 'Tim Pohon') ||
+        (m.lobby?.some((p) => (p.player_name || '').trim().toLowerCase() === normName) && m.winner === 'Tim Lobby');
+      if (isWinner) wins += 1;
+    });
+
+    return {
+      matches: playerMatches.length,
+      mvp,
+      antam,
+      silver,
+      coklat,
+      score: Math.round(score * 10) / 10,
+      avgScore: playerMatches.length > 0 ? Math.round((score / playerMatches.length) * 100) / 100 : 0,
+      winRate: playerMatches.length > 0 ? Math.round((wins / playerMatches.length) * 1000) / 10 : 0,
+    };
+  }, [matches, player.name]);
+
+  const hasSeasonMatches = matchStatsForPlayer
+    ? matchStatsForPlayer.matches > 0
+    : seasonPlayerStat
+    ? (seasonPlayerStat.matches || 0) > 0
+    : false;
+
+  // Medals and metrics: prioritize direct match tally, then season document, then global player
   const isSeasonSelected = Boolean(activeSeason && activeSeason.id);
-  const mvpCount = isSeasonSelected ? (seasonPlayerStat?.mvp ?? 0) : player.medals.MVP;
-  const goldCount = isSeasonSelected ? (seasonPlayerStat?.antam ?? 0) : player.medals.Gold;
-  const silverCount = isSeasonSelected ? (seasonPlayerStat?.silver ?? 0) : player.medals.Silver;
-  const coklatCount = isSeasonSelected ? (seasonPlayerStat?.coklat ?? 0) : player.medals.Coklat;
-  const totalMatches = isSeasonSelected ? (seasonPlayerStat?.matches ?? 0) : player.total_match;
-  const totalScore = isSeasonSelected ? (seasonPlayerStat?.score ?? 0) : (player.score || 0);
-  const avgScore = isSeasonSelected ? (seasonPlayerStat?.avgScore ?? 0) : (player.avgScore || 0);
-  const winRate = isSeasonSelected ? (seasonPlayerStat?.winRate ?? 0) : (player.winRate || 0);
+  const mvpCount = matchStatsForPlayer
+    ? matchStatsForPlayer.mvp
+    : isSeasonSelected
+    ? (seasonPlayerStat?.mvp ?? 0)
+    : player.medals.MVP;
+  const goldCount = matchStatsForPlayer
+    ? matchStatsForPlayer.antam
+    : isSeasonSelected
+    ? (seasonPlayerStat?.antam ?? 0)
+    : player.medals.Gold;
+  const silverCount = matchStatsForPlayer
+    ? matchStatsForPlayer.silver
+    : isSeasonSelected
+    ? (seasonPlayerStat?.silver ?? 0)
+    : player.medals.Silver;
+  const coklatCount = matchStatsForPlayer
+    ? matchStatsForPlayer.coklat
+    : isSeasonSelected
+    ? (seasonPlayerStat?.coklat ?? 0)
+    : player.medals.Coklat;
+  const totalMatches = matchStatsForPlayer
+    ? matchStatsForPlayer.matches
+    : isSeasonSelected
+    ? (seasonPlayerStat?.matches ?? 0)
+    : player.total_match;
+  const totalScore = matchStatsForPlayer
+    ? matchStatsForPlayer.score
+    : isSeasonSelected
+    ? (seasonPlayerStat?.score ?? 0)
+    : (player.score || 0);
+  const avgScore = matchStatsForPlayer
+    ? matchStatsForPlayer.avgScore
+    : isSeasonSelected
+    ? (seasonPlayerStat?.avgScore ?? 0)
+    : (player.avgScore || 0);
+  const winRate = matchStatsForPlayer
+    ? matchStatsForPlayer.winRate
+    : isSeasonSelected
+    ? (seasonPlayerStat?.winRate ?? 0)
+    : (player.winRate || 0);
 
   const totalMedals = mvpCount + goldCount + silverCount + coklatCount;
 

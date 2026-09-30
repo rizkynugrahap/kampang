@@ -60,7 +60,15 @@ import {
   deletePlayerFromSupabase,
 } from './services/supabaseSync';
 import { MLBB_HEROES } from './constants/heroes';
-import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats, revertMatchFromSeason, EMPTY_SEASON, sortSeasonsDescending } from './utils/seasonCalculations';
+import {
+  buildPlayersFromSeason,
+  applyMatchToSeason,
+  recalculateSeasonStats,
+  rebuildSeasonFromMatches,
+  revertMatchFromSeason,
+  EMPTY_SEASON,
+  sortSeasonsDescending,
+} from './utils/seasonCalculations';
 import { saveCustomPlayerAvatar, normalizeImageUrl, registerKnownPlayerAvatars } from './constants/playerAvatars';
 import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
@@ -355,9 +363,9 @@ export default function App() {
     link.type = iconUrl.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
   }, [themeConfig.logoType, themeConfig.logoUrl]);
 
-  // Keep players in sync when activeSeason changes, preserving admin overrides (badge, tier, julukan, avatar)
+  // Keep players in sync when activeSeason or seasonMatches change, preserving admin overrides (badge, tier, julukan, avatar)
   useEffect(() => {
-    const derived = buildPlayersFromSeason(activeSeason);
+    const derived = buildPlayersFromSeason(activeSeason, seasonMatches);
     const cachedPlayersStr = safeGetItem('pantos_players_cache');
     let cachedOverrides: Player[] = [];
     if (cachedPlayersStr) {
@@ -372,7 +380,46 @@ export default function App() {
       const mergedWithPrev = mergePlayerOverrides(derived, prev);
       return cachedOverrides.length > 0 ? mergePlayerOverrides(mergedWithPrev, cachedOverrides) : mergedWithPrev;
     });
-  }, [activeSeason]);
+  }, [activeSeason, seasonMatches]);
+
+  // Ensure active season player stats are synchronized with match history
+  useEffect(() => {
+    if (seasonMatches.length > 0 && activeSeason && activeSeason.id) {
+      const rebuilt = rebuildSeasonFromMatches(activeSeason, seasonMatches);
+      // Check if there are discrepancies between activeSeason and rebuilt
+      let isMismatch = false;
+      if (!activeSeason.players || rebuilt.players.length !== activeSeason.players.length) {
+        isMismatch = true;
+      } else {
+        for (const rp of rebuilt.players) {
+          const ap = activeSeason.players.find(
+            (p) => p.nickname.trim().toLowerCase() === rp.nickname.trim().toLowerCase()
+          );
+          if (
+            !ap ||
+            ap.matches !== rp.matches ||
+            ap.mvp !== rp.mvp ||
+            ap.antam !== rp.antam ||
+            ap.silver !== rp.silver ||
+            ap.coklat !== rp.coklat
+          ) {
+            isMismatch = true;
+            break;
+          }
+        }
+      }
+
+      if (isMismatch) {
+        setSeasons((prevSeasons) =>
+          prevSeasons.map((s) => (s.id === activeSeason.id ? rebuilt : s))
+        );
+        // Persist the repaired season to Supabase asynchronously
+        syncLagaAmalToSupabase(rebuilt).catch((err) =>
+          console.warn('Auto-sync repaired season error:', err)
+        );
+      }
+    }
+  }, [seasonMatches, activeSeason?.id]);
 
   // Initial load from backend API, with automatic fallback directly to Supabase
   const loadData = async () => {
