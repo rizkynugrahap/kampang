@@ -150,10 +150,9 @@ export function normalizeHeroKey(name: string): string {
 }
 
 /**
- * Resolves the official MLBB portrait URL for a given hero.
- * Returns empty string if unknown so HeroAvatar can cleanly display initials.
+ * Resolves the raw upstream CDN URL for an MLBB hero.
  */
-export function getHeroIconUrl(heroName: string): string {
+export function getRawHeroIconUrl(heroName: string): string {
   if (!heroName || typeof heroName !== "string") return "";
   const trimmed = heroName.trim();
   if (!trimmed) return "";
@@ -186,6 +185,24 @@ export function getHeroIconUrl(heroName: string): string {
   }
 
   return "";
+}
+
+/**
+ * Resolves the official MLBB portrait URL for a given hero.
+ * Routes through internal server endpoint `/api/hero-icon/:heroName` to bypass
+ * corporate firewalls and proxy restrictions that block external gaming CDNs.
+ */
+export function getHeroIconUrl(heroName: string): string {
+  if (!heroName || typeof heroName !== "string") return "";
+  const trimmed = heroName.trim();
+  if (!trimmed) return "";
+
+  // Verify that hero is recognized
+  const raw = getRawHeroIconUrl(trimmed);
+  if (!raw) return "";
+
+  // When running in browser, route via internal server proxy to prevent company proxy block
+  return `/api/hero-icon/${encodeURIComponent(trimmed)}`;
 }
 
 // Deprecated alias for backward compatibility

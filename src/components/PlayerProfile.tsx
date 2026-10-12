@@ -324,44 +324,60 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
     ? (seasonPlayerStat.matches || 0) > 0
     : false;
 
-  // Medals and metrics: prioritize direct match tally, then season document, then global player
+  // Medals and metrics: prioritize official season document stats from Klasemen, then direct match tally, then global player
   const isSeasonSelected = Boolean(activeSeason && activeSeason.id);
-  const mvpCount = matchStatsForPlayer
+  const mvpCount = (seasonPlayerStat && typeof seasonPlayerStat.mvp === 'number')
+    ? seasonPlayerStat.mvp
+    : matchStatsForPlayer
     ? matchStatsForPlayer.mvp
     : isSeasonSelected
     ? (seasonPlayerStat?.mvp ?? 0)
     : player.medals.MVP;
-  const goldCount = matchStatsForPlayer
+  const goldCount = (seasonPlayerStat && typeof seasonPlayerStat.antam === 'number')
+    ? seasonPlayerStat.antam
+    : matchStatsForPlayer
     ? matchStatsForPlayer.antam
     : isSeasonSelected
     ? (seasonPlayerStat?.antam ?? 0)
     : player.medals.Gold;
-  const silverCount = matchStatsForPlayer
+  const silverCount = (seasonPlayerStat && typeof seasonPlayerStat.silver === 'number')
+    ? seasonPlayerStat.silver
+    : matchStatsForPlayer
     ? matchStatsForPlayer.silver
     : isSeasonSelected
     ? (seasonPlayerStat?.silver ?? 0)
     : player.medals.Silver;
-  const coklatCount = matchStatsForPlayer
+  const coklatCount = (seasonPlayerStat && typeof seasonPlayerStat.coklat === 'number')
+    ? seasonPlayerStat.coklat
+    : matchStatsForPlayer
     ? matchStatsForPlayer.coklat
     : isSeasonSelected
     ? (seasonPlayerStat?.coklat ?? 0)
     : player.medals.Coklat;
-  const totalMatches = matchStatsForPlayer
+  const totalMatches = (seasonPlayerStat && typeof seasonPlayerStat.matches === 'number')
+    ? seasonPlayerStat.matches
+    : matchStatsForPlayer
     ? matchStatsForPlayer.matches
     : isSeasonSelected
     ? (seasonPlayerStat?.matches ?? 0)
     : player.total_match;
-  const totalScore = matchStatsForPlayer
+  const totalScore = (seasonPlayerStat && typeof seasonPlayerStat.score === 'number')
+    ? seasonPlayerStat.score
+    : matchStatsForPlayer
     ? matchStatsForPlayer.score
     : isSeasonSelected
     ? (seasonPlayerStat?.score ?? 0)
     : (player.score || 0);
-  const avgScore = matchStatsForPlayer
+  const avgScore = (seasonPlayerStat && typeof seasonPlayerStat.avgScore === 'number')
+    ? seasonPlayerStat.avgScore
+    : matchStatsForPlayer
     ? matchStatsForPlayer.avgScore
     : isSeasonSelected
     ? (seasonPlayerStat?.avgScore ?? 0)
     : (player.avgScore || 0);
-  const winRate = matchStatsForPlayer
+  const winRate = (seasonPlayerStat && typeof seasonPlayerStat.winRate === 'number')
+    ? seasonPlayerStat.winRate
+    : matchStatsForPlayer
     ? matchStatsForPlayer.winRate
     : isSeasonSelected
     ? (seasonPlayerStat?.winRate ?? 0)

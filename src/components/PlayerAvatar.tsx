@@ -59,6 +59,7 @@ const PlayerAvatarComponent: React.FC<PlayerAvatarProps> = ({
   const effectiveTier = tier || player?.tier;
 
   const [hasError, setHasError] = useState(false);
+  const [triedProxy, setTriedProxy] = useState(false);
   const [revision, setRevision] = useState(0);
   // getPlayerAvatarUrl() touches localStorage; memoize per name+url (and
   // revision, bumped when a global avatar-updated event fires) so it isn't
@@ -71,7 +72,26 @@ const PlayerAvatarComponent: React.FC<PlayerAvatarProps> = ({
   // Reset error state when effectiveName, avatarUrl or resolvedUrl changes
   useEffect(() => {
     setHasError(false);
+    setTriedProxy(false);
   }, [effectiveName, effectiveAvatarUrl, resolvedUrl]);
+
+  const activeSrc = useMemo(() => {
+    if (!resolvedUrl) return '';
+    if (triedProxy) {
+      if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
+        return `/api/proxy-image?url=${encodeURIComponent(resolvedUrl)}`;
+      }
+    }
+    return resolvedUrl;
+  }, [resolvedUrl, triedProxy]);
+
+  const handleImageError = () => {
+    if (!triedProxy && resolvedUrl && (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) && !resolvedUrl.startsWith('/api/')) {
+      setTriedProxy(true);
+    } else {
+      setHasError(true);
+    }
+  };
 
   // Listen to global avatar updates for instant sync across all open tabs/components
   useEffect(() => {
@@ -114,12 +134,12 @@ const PlayerAvatarComponent: React.FC<PlayerAvatarProps> = ({
       <div
         className={`${sizeClass} rounded-full overflow-hidden bg-[#241F1B] border-2 ${ringClass} shadow-md flex items-center justify-center font-bold text-[#E8B33D] transition-transform duration-200 hover:scale-105`}
       >
-        {!hasError && resolvedUrl ? (
+        {!hasError && activeSrc ? (
           <img
-            src={resolvedUrl}
+            src={activeSrc}
             alt={effectiveName || 'Player Avatar'}
             referrerPolicy="no-referrer"
-            onError={() => setHasError(true)}
+            onError={handleImageError}
             className="h-full w-full object-cover bg-[#1A1614]"
             loading="lazy"
           />

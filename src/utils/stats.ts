@@ -371,7 +371,7 @@ export function getPlayerHeroesByMedal(
   // 1. From live match history
   for (const m of matches) {
     const allRoster = [...(m.pohon || []), ...(m.lobby || [])];
-    const playerDetail = allRoster.find((p) => (p.player_name || '').toLowerCase() === normName);
+    const playerDetail = allRoster.find((p) => (p.player_name || '').trim().toLowerCase() === normName);
 
     if (playerDetail) {
       const hero = playerDetail.hero_name || 'Hero';
@@ -387,8 +387,8 @@ export function getPlayerHeroesByMedal(
 
       heroStats[hero].totalGames += 1;
       const isWinner =
-        (m.pohon?.some((p) => (p.player_name || '').toLowerCase() === normName) && m.winner === 'Tim Pohon') ||
-        (m.lobby?.some((p) => (p.player_name || '').toLowerCase() === normName) && m.winner === 'Tim Lobby');
+        (m.pohon?.some((p) => (p.player_name || '').trim().toLowerCase() === normName) && m.winner === 'Tim Pohon') ||
+        (m.lobby?.some((p) => (p.player_name || '').trim().toLowerCase() === normName) && m.winner === 'Tim Lobby');
       if (isWinner) heroStats[hero].winCount += 1;
 
       if (typeof playerDetail.score === 'number' && !isNaN(playerDetail.score) && playerDetail.score > 0) {
@@ -415,7 +415,7 @@ export function getPlayerHeroesByMedal(
   // 2. Fallback to season matchRows if live matches are empty for this player
   if (Object.keys(heroStats).length === 0 && seasonData?.matchRows && seasonData.matchRows.length > 0) {
     for (const r of seasonData.matchRows) {
-      if ((r.nickname || '').toLowerCase() === normName && r.hero) {
+      if ((r.nickname || '').trim().toLowerCase() === normName && r.hero) {
         const hero = r.hero;
         if (!heroStats[hero]) {
           heroStats[hero] = {
@@ -449,7 +449,7 @@ export function getPlayerHeroesByMedal(
   // 3. Fallback to seasonData.heroPicksByUser
   if (Object.keys(heroStats).length === 0 && seasonData?.heroPicksByUser && seasonData.heroPicksByUser.length > 0) {
     const userPicks = seasonData.heroPicksByUser.filter(
-      (hp) => (hp.player || '').toLowerCase() === normName
+      (hp) => (hp.player || '').trim().toLowerCase() === normName
     );
     for (const hp of userPicks) {
       const hero = hp.hero;

@@ -932,10 +932,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     dataKey="shortName"
                     stroke="#9C948A"
                     fontSize={10}
-                    width={70}
+                    width={75}
                     tickLine={false}
                     axisLine={{ stroke: '#332C25' }}
                     interval={0}
+                    tick={({ x, y, payload }) => {
+                      const item = kpiChartData.find(
+                        (d) => d.shortName === payload.value || d.name === payload.value
+                      );
+                      const fullName = item?.name || payload.value;
+                      return (
+                        <text
+                          x={x}
+                          y={y}
+                          dy={3}
+                          textAnchor="end"
+                          fill="#F2EDE4"
+                          fontSize={10}
+                          fontWeight="bold"
+                          className="cursor-pointer hover:fill-[#E8B33D] transition-colors"
+                          onClick={() => onSelectPlayer?.(fullName)}
+                        >
+                          {payload.value}
+                        </text>
+                      );
+                    }}
                   />
                   <RechartsTooltip
                     content={({ active, payload }) => {
@@ -1115,7 +1136,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {bestPlayer ? (
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5">
               {/* Big Photo */}
-              <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => onSelectPlayer && onSelectPlayer(bestPlayer.nickname)}
+                className="relative shrink-0 cursor-pointer hover:scale-105 active:scale-95 transition-transform text-left"
+                title={`Lihat profil ${bestPlayer.nickname}`}
+              >
                 <PlayerAvatar
                   name={bestPlayer.nickname}
                   avatarUrl={bestPlayer.avatar_url}
@@ -1125,7 +1151,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#E8B33D] text-[#161311] font-black shadow-lg text-sm">
                   👑
                 </div>
-              </div>
+              </button>
 
               {/* Player Info */}
               <div className="flex-1 text-center sm:text-left space-y-2.5 w-full">
@@ -1195,7 +1221,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {badPlayer ? (
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5">
               {/* Big Photo */}
-              <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => onSelectPlayer && onSelectPlayer(badPlayer.nickname)}
+                className="relative shrink-0 cursor-pointer hover:scale-105 active:scale-95 transition-transform text-left"
+                title={`Lihat profil ${badPlayer.nickname}`}
+              >
                 <PlayerAvatar
                   name={badPlayer.nickname}
                   avatarUrl={badPlayer.avatar_url}
@@ -1205,7 +1236,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#8B4513] text-[#F2EDE4] font-black shadow-lg text-sm">
                   🍫
                 </div>
-              </div>
+              </button>
 
               {/* Player Info */}
               <div className="flex-1 text-center sm:text-left space-y-2.5 w-full">

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { getHeroIconUrl } from '../constants/mlbbHeroIcons';
+import React, { useState, useEffect } from 'react';
+import { getHeroIconUrl, getRawHeroIconUrl } from '../constants/mlbbHeroIcons';
 import { Medal } from '../types';
 
 interface HeroAvatarProps {
@@ -37,7 +37,24 @@ export const HeroAvatar: React.FC<HeroAvatarProps> = ({
   role,
 }) => {
   const [hasError, setHasError] = useState(false);
-  const iconUrl = getHeroIconUrl(heroName);
+  const [usedFallback, setUsedFallback] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+    setUsedFallback(false);
+  }, [heroName]);
+
+  const proxyUrl = getHeroIconUrl(heroName);
+  const rawUrl = getRawHeroIconUrl(heroName);
+  const activeUrl = !usedFallback ? proxyUrl : rawUrl;
+
+  const handleImageError = () => {
+    if (!usedFallback && rawUrl && rawUrl !== proxyUrl) {
+      setUsedFallback(true);
+    } else {
+      setHasError(true);
+    }
+  };
 
   const roundedClass =
     shape === 'circle'
@@ -58,12 +75,12 @@ export const HeroAvatar: React.FC<HeroAvatarProps> = ({
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
       <div className={`relative shrink-0 ${sizeClass} ${roundedClass} overflow-hidden bg-[#241F1B] border border-[#3D352E] shadow-sm flex items-center justify-center font-bold text-[#E8B33D]`}>
-        {iconUrl && !hasError ? (
+        {activeUrl && !hasError ? (
           <img
-            src={iconUrl}
+            src={activeUrl}
             alt={heroName}
             referrerPolicy="no-referrer"
-            onError={() => setHasError(true)}
+            onError={handleImageError}
             className="h-full w-full object-cover transition-transform duration-300 hover:scale-110"
             loading="lazy"
           />

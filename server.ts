@@ -12,6 +12,7 @@ import { teamDisplayName } from './src/utils/teamLabels.ts';
 import { generateTextViaPuter } from './src/utils/puterFallback.ts';
 import { getPlayerDocId } from './src/utils/playerId.ts';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { MLBB_OFFICIAL_HERO_ICONS, getRawHeroIconUrl } from './src/constants/mlbbHeroIcons.ts';
 
 const app = express();
 const PORT = 3000;
@@ -1271,6 +1272,179 @@ app.post('/api/commentator/tts', async (req, res) => {
 // NOTE: Admin login no longer goes through this backend — it now checks
 // the `admins` collection in Firestore directly from the client
 // (see src/services/firestoreSync.ts: verifyAdminLogin / seedAdminIfEmpty).
+
+// ----------------- IMAGE & HERO ICON PROXY -----------------
+// Solves corporate proxy blocking by proxying external CDN images through our own domain.
+const imageBufferCache = new Map<string, { buffer: Buffer; contentType: string; timestamp: number }>();
+const MAX_PROXY_CACHE_ITEMS = 600;
+
+function generateHeroFallbackSvg(name: string): string {
+  const clean = (name || 'Hero').trim();
+  const initials =
+    clean
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'ML';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+    <defs>
+      <linearGradient id="bg-${initials}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#2D241C" />
+        <stop offset="100%" stop-color="#161311" />
+      </linearGradient>
+      <linearGradient id="gold-${initials}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#FFF3C4" />
+        <stop offset="50%" stop-color="#E8B33D" />
+        <stop offset="100%" stop-color="#92400E" />
+      </linearGradient>
+    </defs>
+    <rect width="100" height="100" rx="22" fill="url(#bg-${initials})" />
+    <rect x="2.5" y="2.5" width="95" height="95" rx="20" fill="none" stroke="url(#gold-${initials})" stroke-width="3" opacity="0.85" />
+    <text x="50" y="58" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="900" fill="url(#gold-${initials})" text-anchor="middle" dominant-baseline="middle">${initials}</text>
+  </svg>`;
+}
+
+// GET /api/proxy-image?url=...
+// Bypasses office network firewall blocks by fetching avatars/assets server-side
+app.get('/api/proxy-image', async (req, res) => {
+  const rawUrl = req.query.url as string;
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return res.status(400).send('Missing url parameter');
+  }
+
+  const cleanUrl = rawUrl.trim();
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    return res.status(400).send('Invalid url format');
+  }
+
+  const cached = imageBufferCache.get(cleanUrl);
+  if (cached && Date.now() - cached.timestamp < 7 * 24 * 3600 * 1000) {
+    res.setHeader('Content-Type', cached.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    return res.send(cached.buffer);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const upstreamRes = await fetch(cleanUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!upstreamRes.ok) {
+      return res.status(upstreamRes.status).send('Upstream image error');
+    }
+
+    const contentType = upstreamRes.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await upstreamRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    if (imageBufferCache.size >= MAX_PROXY_CACHE_ITEMS) {
+      const firstKey = imageBufferCache.keys().next().value;
+      if (firstKey) imageBufferCache.delete(firstKey);
+    }
+    imageBufferCache.set(cleanUrl, { buffer, contentType, timestamp: Date.now() });
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    return res.send(buffer);
+  } catch (err) {
+    console.warn(`[Proxy Image] Error fetching ${cleanUrl}:`, err);
+    return res.status(502).send('Proxy error');
+  }
+});
+
+// GET /api/hero-icon?name=Ruby OR GET /api/hero-icon/:heroName
+// Serves MLBB hero avatar icon directly from app origin so corporate firewalls never block them
+const handleHeroIconRequest = async (req: express.Request, res: express.Response) => {
+  const heroParam = (req.params.heroName || req.query.name || '') as string;
+  const clean = heroParam.trim();
+  if (!clean) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    return res.send(generateHeroFallbackSvg('ML'));
+  }
+
+  const lower = clean.toLowerCase();
+  const alpha = lower.replace(/[^a-z0-9]/g, '');
+
+  let cdnUrl =
+    getRawHeroIconUrl(clean) ||
+    (MLBB_OFFICIAL_HERO_ICONS as Record<string, string>)[lower] ||
+    (MLBB_OFFICIAL_HERO_ICONS as Record<string, string>)[alpha];
+
+  if (!cdnUrl) {
+    for (const [k, v] of Object.entries(MLBB_OFFICIAL_HERO_ICONS)) {
+      if (k.toLowerCase() === lower || k.toLowerCase() === alpha) {
+        cdnUrl = v;
+        break;
+      }
+    }
+  }
+
+  if (!cdnUrl) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(generateHeroFallbackSvg(clean));
+  }
+
+  // Check cache
+  const cached = imageBufferCache.get(cdnUrl);
+  if (cached && Date.now() - cached.timestamp < 7 * 24 * 3600 * 1000) {
+    res.setHeader('Content-Type', cached.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    return res.send(cached.buffer);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const upstreamRes = await fetch(cdnUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+    });
+    clearTimeout(timeout);
+
+    if (upstreamRes.ok) {
+      const contentType = upstreamRes.headers.get('content-type') || 'image/png';
+      const arrayBuffer = await upstreamRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (imageBufferCache.size >= MAX_PROXY_CACHE_ITEMS) {
+        const firstKey = imageBufferCache.keys().next().value;
+        if (firstKey) imageBufferCache.delete(firstKey);
+      }
+      imageBufferCache.set(cdnUrl, { buffer, contentType, timestamp: Date.now() });
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+      return res.send(buffer);
+    }
+  } catch (err) {
+    console.warn(`[Hero Icon Proxy] Fetch failed for ${clean}:`, err);
+  }
+
+  // Graceful fallback to crisp SVG avatar
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.send(generateHeroFallbackSvg(clean));
+};
+
+app.get('/api/hero-icon', handleHeroIconRequest);
+app.get('/api/hero-icon/:heroName', handleHeroIconRequest);
 
 // ----------------- LAGA AMAL SEASONS ROUTES -----------------
 // GET /api/laga-amal (Get all seasons with history)

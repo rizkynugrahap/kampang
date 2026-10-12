@@ -227,14 +227,32 @@ export default function App() {
 
   // Matches that belong to the currently selected Laga Amal season only.
   // Joined by season number (e.g. "S41") rather than an exact string match,
-  // since a match's `season` label ("Season 41") and a season's `title`
-  // ("KELASEMEN LAGA AMAL - S41") aren't written identically.
-  const seasonMatches = useMemo(() => {
+  // Matches belonging strictly to the official active season (for active season sync & roster)
+  const activeSeasonMatches = useMemo(() => {
     const extractSeasonNumber = (s?: string) => s?.match(/(\d+)/)?.[1];
     const activeNum = extractSeasonNumber(activeSeason.title) || extractSeasonNumber(activeSeason.id);
     if (!activeNum) return matches;
     return matches.filter((m) => extractSeasonNumber(m.season) === activeNum);
   }, [matches, activeSeason]);
+
+  // Selected season resolved object (defaults to activeSeason)
+  const effectiveSeason = useMemo(() => {
+    return (
+      (selectedSeasonId && seasons.find((s) => s.id === selectedSeasonId)) ||
+      activeSeason ||
+      seasons[0]
+    );
+  }, [selectedSeasonId, seasons, activeSeason]);
+
+  // Matches for the currently selected season viewed by the user
+  const selectedSeasonMatches = useMemo(() => {
+    const extractSeasonNumber = (s?: string) => s?.match(/(\d+)/)?.[1];
+    const targetNum = extractSeasonNumber(effectiveSeason?.title) || extractSeasonNumber(effectiveSeason?.id);
+    if (!targetNum) return matches;
+    return matches.filter((m) => extractSeasonNumber(m.season) === targetNum);
+  }, [matches, effectiveSeason]);
+
+  const seasonMatches = selectedSeasonMatches;
 
   // Modals & active selections
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -384,8 +402,8 @@ export default function App() {
 
   // Ensure active season player stats are synchronized with match history
   useEffect(() => {
-    if (seasonMatches.length > 0 && activeSeason && activeSeason.id) {
-      const rebuilt = rebuildSeasonFromMatches(activeSeason, seasonMatches);
+    if (activeSeasonMatches.length > 0 && activeSeason && activeSeason.id) {
+      const rebuilt = rebuildSeasonFromMatches(activeSeason, activeSeasonMatches);
       // Check if there are discrepancies between activeSeason and rebuilt
       let isMismatch = false;
       if (!activeSeason.players || rebuilt.players.length !== activeSeason.players.length) {
@@ -419,7 +437,7 @@ export default function App() {
         );
       }
     }
-  }, [seasonMatches, activeSeason?.id]);
+  }, [activeSeasonMatches, activeSeason?.id]);
 
   // Initial load from backend API, with automatic fallback directly to Supabase
   const loadData = async () => {
@@ -1943,10 +1961,10 @@ export default function App() {
             seasons={seasons}
             selectedSeasonId={selectedSeasonId}
             onSeasonChange={(id) => setSelectedSeasonId(id)}
-            activeSeason={activeSeason}
+            activeSeason={effectiveSeason}
             activeSeasonId={activeSeasonId}
             onSetActiveSeason={handleSetActiveSeason}
-            seasonMatches={seasonMatches}
+            seasonMatches={selectedSeasonMatches}
             players={players}
             heroes={heroes}
             onSelectPlayer={(pName) => handleViewPlayerProfile(pName)}
@@ -1960,10 +1978,10 @@ export default function App() {
             seasons={seasons}
             selectedSeasonId={selectedSeasonId}
             onSeasonChange={(id) => setSelectedSeasonId(id)}
-            activeSeason={activeSeason}
+            activeSeason={effectiveSeason}
             activeSeasonId={activeSeasonId}
             onSetActiveSeason={handleSetActiveSeason}
-            matches={seasonMatches}
+            matches={selectedSeasonMatches}
             onSelectMatch={(m) => setSelectedMatch(m)}
             onDeleteMatch={handleDeleteMatch}
             onEditMatch={handleEditMatch}
@@ -1999,13 +2017,13 @@ export default function App() {
             onOpenMatchDetail={(matchId) => {
               const found =
                 matches.find((m) => String(m.id) === String(matchId)) ||
-                seasonMatches.find((m) => String(m.id) === String(matchId));
+                selectedSeasonMatches.find((m) => String(m.id) === String(matchId));
               if (found) setSelectedMatch(found);
             }}
             onViewPlayerProfile={(nicknameOrId) => {
               handleViewPlayerProfile(nicknameOrId);
             }}
-            activeSeason={activeSeason}
+            activeSeason={effectiveSeason}
           />
         )}
 
@@ -2015,11 +2033,11 @@ export default function App() {
             players={players}
             selectedPlayerId={profilePlayerId}
             onSelectPlayer={(id) => setProfilePlayerId(id)}
-            activeSeason={activeSeason}
+            activeSeason={effectiveSeason}
             seasons={seasons}
             selectedSeasonId={selectedSeasonId}
             onSelectSeason={(seasonId) => setSelectedSeasonId(seasonId)}
-            matches={seasonMatches}
+            matches={selectedSeasonMatches}
             isAdmin={isAdmin}
             onUpdatePlayerAvatar={handleUpdatePlayerAvatar}
             onUpdatePlayerDetails={handleUpdatePlayerDetails}

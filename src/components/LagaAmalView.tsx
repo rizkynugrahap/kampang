@@ -67,7 +67,7 @@ function formatSeasonDateRange(startStr: string, endStr: string): string {
 
 const HERO_PICK_VISIBLE_LIMIT = 5;
 
-const HeroPickUserCard: React.FC<{ hp: HeroPickByUser }> = ({ hp }) => {
+const HeroPickUserCard: React.FC<{ hp: HeroPickByUser; onViewProfile?: (nickname: string) => void }> = ({ hp, onViewProfile }) => {
   const [expanded, setExpanded] = useState(false);
   const sortedHeroes = useMemo(
     () => [...(hp.heroes || [])].sort((a, b) => (b.percentage || 0) - (a.percentage || 0)),
@@ -82,13 +82,18 @@ const HeroPickUserCard: React.FC<{ hp: HeroPickByUser }> = ({ hp }) => {
       className="rounded-2xl border border-[#332C25] bg-[#1D1916] p-4 space-y-3 shadow-md"
     >
       <div className="flex items-center justify-between border-b border-[#332C25] pb-2.5">
-        <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => onViewProfile?.(hp.user)}
+          className="flex items-center gap-2.5 text-left cursor-pointer group hover:opacity-90 transition-opacity"
+          title={`Lihat profil ${hp.user}`}
+        >
           <PlayerAvatar name={hp.user} size="sm" />
           <div>
-            <h4 className="font-bold text-sm text-[#F2EDE4]">{hp.user}</h4>
+            <h4 className="font-bold text-sm text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors">{hp.user}</h4>
             <span className="text-[10px] text-[#9C948A]">{sortedHeroes.length} Hero Dimainkan</span>
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="space-y-2">
@@ -585,60 +590,196 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
           </div>
 
           {/* Top Coklat */}
-          <div className="rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#b8764a] uppercase tracking-wider mb-1.5">
-              <span>🍫 Top Coklat</span>
-            </div>
-            <PlayerAvatar name={currentSeason.topCoklat.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topCoklat.player}>
-              {currentSeason.topCoklat.player}
-            </span>
-            <span className="text-[10px] font-semibold text-[#b8764a] mt-0.5 block">
-              {currentSeason.topCoklat.count}x Coklat
-            </span>
-          </div>
+          {(() => {
+            const playerObj = (currentSeason.players || []).find(
+              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topCoklat.player || '').trim().toLowerCase()
+            );
+            const isValidPlayer = currentSeason.topCoklat.player && currentSeason.topCoklat.player !== '-';
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (isValidPlayer && onViewPlayerProfile) {
+                    onViewPlayerProfile(currentSeason.topCoklat.player);
+                  }
+                }}
+                className={`rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center flex flex-col items-center transition-all ${
+                  isValidPlayer ? 'cursor-pointer hover:border-[#b8764a] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
+                }`}
+                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topCoklat.player}` : undefined}
+              >
+                <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#b8764a] uppercase tracking-wider mb-1.5">
+                  <span>🍫 Top Coklat</span>
+                </div>
+                <PlayerAvatar
+                  name={currentSeason.topCoklat.player}
+                  avatarUrl={playerObj?.avatar_url}
+                  player={playerObj}
+                  size="sm"
+                  className="mb-1"
+                />
+                <span
+                  className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#b8764a] transition-colors block truncate w-full"
+                  title={currentSeason.topCoklat.player}
+                >
+                  {currentSeason.topCoklat.player}
+                </span>
+                <span className="text-[10px] font-semibold text-[#b8764a] mt-0.5 block">
+                  {currentSeason.topCoklat.count}x Coklat
+                </span>
+                {isValidPlayer && (
+                  <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+                    Lihat profil ➔
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Top Silver */}
-          <div className="rounded-xl border border-[#7D766D]/40 bg-[#1D1B19] p-3 text-center flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#B9B2A8] uppercase tracking-wider mb-1.5">
-              <span>🥈 Top Silver</span>
-            </div>
-            <PlayerAvatar name={currentSeason.topSilver.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topSilver.player}>
-              {currentSeason.topSilver.player}
-            </span>
-            <span className="text-[10px] font-semibold text-[#B9B2A8] mt-0.5 block">
-              {currentSeason.topSilver.count}x Silver
-            </span>
-          </div>
+          {(() => {
+            const playerObj = (currentSeason.players || []).find(
+              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topSilver.player || '').trim().toLowerCase()
+            );
+            const isValidPlayer = currentSeason.topSilver.player && currentSeason.topSilver.player !== '-';
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (isValidPlayer && onViewPlayerProfile) {
+                    onViewPlayerProfile(currentSeason.topSilver.player);
+                  }
+                }}
+                className={`rounded-xl border border-[#7D766D]/40 bg-[#1D1B19] p-3 text-center flex flex-col items-center transition-all ${
+                  isValidPlayer ? 'cursor-pointer hover:border-[#B9B2A8] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
+                }`}
+                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topSilver.player}` : undefined}
+              >
+                <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#B9B2A8] uppercase tracking-wider mb-1.5">
+                  <span>🥈 Top Silver</span>
+                </div>
+                <PlayerAvatar
+                  name={currentSeason.topSilver.player}
+                  avatarUrl={playerObj?.avatar_url}
+                  player={playerObj}
+                  size="sm"
+                  className="mb-1"
+                />
+                <span
+                  className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#B9B2A8] transition-colors block truncate w-full"
+                  title={currentSeason.topSilver.player}
+                >
+                  {currentSeason.topSilver.player}
+                </span>
+                <span className="text-[10px] font-semibold text-[#B9B2A8] mt-0.5 block">
+                  {currentSeason.topSilver.count}x Silver
+                </span>
+                {isValidPlayer && (
+                  <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+                    Lihat profil ➔
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Top Antam */}
-          <div className="rounded-xl border border-[#D8A93A]/40 bg-[#251E17] p-3 text-center flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#D8A93A] uppercase tracking-wider mb-1.5">
-              <span>🥇 Top Antam</span>
-            </div>
-            <PlayerAvatar name={currentSeason.topAntam.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topAntam.player}>
-              {currentSeason.topAntam.player}
-            </span>
-            <span className="text-[10px] font-semibold text-[#D8A93A] mt-0.5 block">
-              {currentSeason.topAntam.count}x Gold
-            </span>
-          </div>
+          {(() => {
+            const playerObj = (currentSeason.players || []).find(
+              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topAntam.player || '').trim().toLowerCase()
+            );
+            const isValidPlayer = currentSeason.topAntam.player && currentSeason.topAntam.player !== '-';
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (isValidPlayer && onViewPlayerProfile) {
+                    onViewPlayerProfile(currentSeason.topAntam.player);
+                  }
+                }}
+                className={`rounded-xl border border-[#D8A93A]/40 bg-[#251E17] p-3 text-center flex flex-col items-center transition-all ${
+                  isValidPlayer ? 'cursor-pointer hover:border-[#D8A93A] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
+                }`}
+                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topAntam.player}` : undefined}
+              >
+                <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#D8A93A] uppercase tracking-wider mb-1.5">
+                  <span>🥇 Top Antam</span>
+                </div>
+                <PlayerAvatar
+                  name={currentSeason.topAntam.player}
+                  avatarUrl={playerObj?.avatar_url}
+                  player={playerObj}
+                  size="sm"
+                  className="mb-1"
+                />
+                <span
+                  className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#D8A93A] transition-colors block truncate w-full"
+                  title={currentSeason.topAntam.player}
+                >
+                  {currentSeason.topAntam.player}
+                </span>
+                <span className="text-[10px] font-semibold text-[#D8A93A] mt-0.5 block">
+                  {currentSeason.topAntam.count}x Gold
+                </span>
+                {isValidPlayer && (
+                  <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+                    Lihat profil ➔
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Top MVP */}
-          <div className="rounded-xl border border-[#E8B33D]/40 bg-[#2A2218] p-3 text-center flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1.5">
-              <span>👑 Top MVP</span>
-            </div>
-            <PlayerAvatar name={currentSeason.topMvp.player} size="sm" className="mb-1" />
-            <span className="text-xs font-bold text-[#F2EDE4] block truncate w-full" title={currentSeason.topMvp.player}>
-              {currentSeason.topMvp.player}
-            </span>
-            <span className="text-[10px] font-semibold text-[#E8B33D] mt-0.5 block">
-              {currentSeason.topMvp.count}x MVP
-            </span>
-          </div>
+          {(() => {
+            const playerObj = (currentSeason.players || []).find(
+              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topMvp.player || '').trim().toLowerCase()
+            );
+            const isValidPlayer = currentSeason.topMvp.player && currentSeason.topMvp.player !== '-';
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (isValidPlayer && onViewPlayerProfile) {
+                    onViewPlayerProfile(currentSeason.topMvp.player);
+                  }
+                }}
+                className={`rounded-xl border border-[#E8B33D]/40 bg-[#2A2218] p-3 text-center flex flex-col items-center transition-all ${
+                  isValidPlayer ? 'cursor-pointer hover:border-[#E8B33D] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
+                }`}
+                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topMvp.player}` : undefined}
+              >
+                <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1.5">
+                  <span>👑 Top MVP</span>
+                </div>
+                <PlayerAvatar
+                  name={currentSeason.topMvp.player}
+                  avatarUrl={playerObj?.avatar_url}
+                  player={playerObj}
+                  size="sm"
+                  className="mb-1"
+                />
+                <span
+                  className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors block truncate w-full"
+                  title={currentSeason.topMvp.player}
+                >
+                  {currentSeason.topMvp.player}
+                </span>
+                <span className="text-[10px] font-semibold text-[#E8B33D] mt-0.5 block">
+                  {currentSeason.topMvp.count}x MVP
+                </span>
+                {isValidPlayer && (
+                  <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+                    Lihat profil ➔
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Total Matches */}
           <div className="rounded-xl border border-[#332C25] bg-[#191513] p-3 text-center">
@@ -1067,7 +1208,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredHeroPicks.map((hp, idx) => (
-              <HeroPickUserCard key={`hp-user-card-${hp.user}-${idx}`} hp={hp} />
+              <HeroPickUserCard key={`hp-user-card-${hp.user}-${idx}`} hp={hp} onViewProfile={onViewPlayerProfile} />
             ))}
           </div>
         </div>

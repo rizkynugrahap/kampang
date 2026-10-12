@@ -1246,18 +1246,14 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
               </span>
 
               <div className="flex flex-col items-center justify-center gap-2">
-                {displayHeroAvatar ? (
-                  <img
-                    src={displayHeroAvatar}
-                    alt={displayHero}
-                    referrerPolicy="no-referrer"
-                    className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full border-2 border-[#E8B33D] object-cover shadow-lg transition-transform duration-75 ${
-                      isSpinning ? 'rotate-12 scale-110' : 'scale-100'
-                    }`}
-                  />
-                ) : (
-                  <HeroAvatar heroName={displayHero} size="md" />
-                )}
+                <HeroAvatar
+                  heroName={displayHero}
+                  size="lg"
+                  shape="circle"
+                  className={`border-2 border-[#E8B33D] shadow-lg transition-transform duration-75 ${
+                    isSpinning ? 'rotate-12 scale-110' : 'scale-100'
+                  }`}
+                />
                 <span className="text-lg sm:text-xl font-black text-[#F2EDE4] tracking-wide">
                   {displayHero}
                 </span>
@@ -1404,14 +1400,7 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                               </span>
                             )}
                             <div className="flex items-center gap-1.5">
-                              {slot.heroAvatar && (
-                                <img
-                                  src={slot.heroAvatar}
-                                  alt={slot.hero}
-                                  referrerPolicy="no-referrer"
-                                  className="h-6 w-6 rounded-full border border-[#E8B33D]/50 object-cover"
-                                />
-                              )}
+                              <HeroAvatar heroName={slot.hero} size="xs" shape="circle" />
                               <span className="text-xs sm:text-sm font-bold text-[#F2EDE4]">
                                 {slot.hero}
                               </span>
@@ -1537,14 +1526,7 @@ export const GachaHeroPick: React.FC<GachaHeroPickProps> = ({
                               </span>
                             )}
                             <div className="flex items-center gap-1.5">
-                              {slot.heroAvatar && (
-                                <img
-                                  src={slot.heroAvatar}
-                                  alt={slot.hero}
-                                  referrerPolicy="no-referrer"
-                                  className="h-6 w-6 rounded-full border border-[#E8B33D]/50 object-cover"
-                                />
-                              )}
+                              <HeroAvatar heroName={slot.hero} size="xs" shape="circle" />
                               <span className="text-xs sm:text-sm font-bold text-[#F2EDE4]">
                                 {slot.hero}
                               </span>
