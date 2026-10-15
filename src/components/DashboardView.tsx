@@ -656,15 +656,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const totalCoklat = computedStats.reduce((a, b) => a + b.coklat, 0);
 
     return [
-      { name: 'MVP (Emas)', value: totalMvp, color: MEDAL_COLORS.MVP },
-      { name: 'Antam (Gold)', value: totalAntam, color: MEDAL_COLORS.Gold },
-      { name: 'Silver (Perak)', value: totalSilver, color: MEDAL_COLORS.Silver },
-      { name: 'Coklat (Perunggu)', value: totalCoklat, color: MEDAL_COLORS.Coklat },
+      {
+        name: 'MVP (Emas)',
+        shortName: 'MVP',
+        value: totalMvp,
+        color: MEDAL_COLORS.MVP,
+        points: '10.0',
+        topCollector: ribbonStats.topMvp,
+        desc: 'Pemain terbaik penentu kemenangan',
+      },
+      {
+        name: 'Antam (Gold)',
+        shortName: 'Gold',
+        value: totalAntam,
+        color: MEDAL_COLORS.Gold,
+        points: '8.5',
+        topCollector: ribbonStats.topAntam,
+        desc: 'Kontribusi kunci & performa solid',
+      },
+      {
+        name: 'Silver (Perak)',
+        shortName: 'Silver',
+        value: totalSilver,
+        color: MEDAL_COLORS.Silver,
+        points: '6.0',
+        topCollector: ribbonStats.topSilver,
+        desc: 'Penyeimbang lini tim & stabil',
+      },
+      {
+        name: 'Coklat (Perunggu)',
+        shortName: 'Coklat',
+        value: totalCoklat,
+        color: MEDAL_COLORS.Coklat,
+        points: '3.5',
+        topCollector: ribbonStats.topCoklat,
+        desc: 'Beban match / warga kelas semen',
+      },
     ];
-  }, [computedStats]);
+  }, [computedStats, ribbonStats]);
 
   const totalAllMedals = useMemo(() => {
     return medalPieData.reduce((a, b) => a + b.value, 0);
+  }, [medalPieData]);
+
+  const totalPositiveMedals = useMemo(() => {
+    const mvpItem = medalPieData.find((m) => m.shortName === 'MVP');
+    const goldItem = medalPieData.find((m) => m.shortName === 'Gold');
+    return (mvpItem?.value || 0) + (goldItem?.value || 0);
+  }, [medalPieData]);
+
+  const pctPositive = useMemo(() => {
+    return totalAllMedals > 0 ? ((totalPositiveMedals / totalAllMedals) * 100).toFixed(1) : '0';
+  }, [totalAllMedals, totalPositiveMedals]);
+
+  const totalMedalPoints = useMemo(() => {
+    return medalPieData.reduce((sum, item) => sum + item.value * parseFloat(item.points), 0);
   }, [medalPieData]);
 
   // Best Play (Top MVP) & Bad Play (Top Coklat) — only ever pick from
@@ -1044,15 +1090,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="h-64 sm:h-80 w-full pt-2 flex flex-col">
+          <div className="w-full pt-2 flex flex-col flex-1 justify-between">
             {totalAllMedals === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-[#9C948A]">
+              <div className="h-full flex items-center justify-center text-xs text-[#9C948A] py-16">
                 Belum ada perolehan medali untuk filter ini
               </div>
             ) : (
               <>
-                {/* Chart area — flex-1 biar mengisi sisa ruang setelah legend */}
-                <div className="flex-1 min-h-0">
+                {/* Donut Chart area */}
+                <div className="h-52 sm:h-56 w-full relative shrink-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                       <Pie
@@ -1063,8 +1109,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         cy="50%"
                         startAngle={90}
                         endAngle={-270}
-                        innerRadius="45%"
-                        outerRadius="75%"
+                        innerRadius="48%"
+                        outerRadius="78%"
                         paddingAngle={3}
                         stroke="#1D1916"
                         strokeWidth={2}
@@ -1082,12 +1128,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               ? ((Number(data.value) / totalAllMedals) * 100).toFixed(1)
                               : '0';
                           return (
-                            <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs">
-                              <div className="font-bold" style={{ color: data.payload.color }}>
-                                {data.name}
+                            <div className="rounded-xl border border-[#332C25] bg-[#161311] p-2.5 shadow-xl text-xs space-y-1">
+                              <div className="font-bold flex items-center gap-1.5" style={{ color: data.payload.color }}>
+                                <span
+                                  className="h-2 w-2 rounded-full inline-block"
+                                  style={{ backgroundColor: data.payload.color }}
+                                />
+                                <span>{data.name}</span>
                               </div>
-                              <div className="mt-1 text-[#F2EDE4]">
-                                Total: <span className="font-bold">{data.value} medali</span> ({pct}%)
+                              <div className="flex items-baseline justify-between gap-4 text-[#F2EDE4]">
+                                <span className="text-[#9C948A]">Porsi:</span>
+                                <span className="text-sm font-black" style={{ color: data.payload.color }}>
+                                  {pct}%
+                                </span>
+                              </div>
+                              <div className="flex items-baseline justify-between gap-4 text-xs text-[#9C948A] border-t border-[#332C25]/60 pt-1">
+                                <span>Total:</span>
+                                <span className="font-bold text-[#F2EDE4]">{data.value} medali</span>
                               </div>
                             </div>
                           );
@@ -1095,21 +1152,128 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       />
                     </PieChart>
                   </ResponsiveContainer>
+
+                  {/* Donut Center Label (Total Medali) */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+                    <span className="text-xl sm:text-2xl font-black text-[#F2EDE4] tracking-tight">
+                      {totalAllMedals}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-semibold text-[#9C948A] uppercase tracking-wider">
+                      Total Medali
+                    </span>
+                  </div>
                 </div>
 
-                {/* Legend manual di luar chart — posisi 100% terkontrol */}
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-3">
+                {/* Quick Legend Pills */}
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-3 w-full">
                   {medalPieData.map((entry) => (
-                    <div key={entry.name} className="flex items-center gap-1.5">
+                    <div
+                      key={entry.name}
+                      className="flex items-center gap-1.5 py-1 select-none shrink-0"
+                    >
                       <span
                         className="inline-block h-2 w-2 rounded-full shrink-0"
                         style={{ backgroundColor: entry.color }}
                       />
-                      <span className="text-[11px] sm:text-xs text-[#C5BCAD] whitespace-nowrap">
+                      <span className="text-[11px] sm:text-xs font-semibold text-[#9C948A] whitespace-nowrap">
                         {entry.name}
+                      </span>
+                      <span
+                        className="text-[11px] sm:text-xs font-black whitespace-nowrap ml-0.5"
+                        style={{ color: entry.color }}
+                      >
+                        {entry.value}
                       </span>
                     </div>
                   ))}
+                </div>
+
+
+
+                {/* KETERANGAN & RINCIAN DISTRIBUSI MEDALI (Mengisi area bawah agar tidak kosong melompong) */}
+                <div className="mt-5 pt-4 border-t border-[#332C25]/80 space-y-3.5 flex-1 flex flex-col justify-between">
+                  {/* Sub-Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#F2EDE4]">
+                      <Award size={14} className="text-[#E8B33D]" />
+                      <span>Rincian Medali & Kolektor Terbanyak</span>
+                    </div>
+                    <span className="text-[10px] text-[#9C948A]">
+                      Bobot Poin Klasemen
+                    </span>
+                  </div>
+
+                  {/* 4 Detail Cards in 2x2 Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {medalPieData.map((item) => {
+                      const pct = totalAllMedals > 0 ? ((item.value / totalAllMedals) * 100).toFixed(1) : '0';
+                      const hasLeader = item.topCollector && item.topCollector.player && item.topCollector.player !== '-';
+                      return (
+                        <div
+                          key={`kpi-detail-${item.name}`}
+                          className="rounded-xl border border-[#332C25] bg-[#161311]/90 p-3 flex flex-col justify-between gap-2 shadow-xs transition-colors hover:border-[#4A3F33]"
+                        >
+                          {/* Top: Medal name, Share %, Point weight */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span
+                                className="inline-block h-2 w-2 rounded-full shrink-0"
+                                style={{ backgroundColor: item.color }}
+                              />
+                              <span className="text-xs font-bold text-[#F2EDE4] truncate">
+                                {item.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span
+                                className="text-[10px] font-black px-1.5 py-0.5 rounded"
+                                style={{ color: item.color, backgroundColor: `${item.color}18` }}
+                              >
+                                {pct}%
+                              </span>
+                              <span className="text-[10px] text-[#9C948A] font-mono">
+                                +{item.points} pt
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Bottom: Count & Top Leader */}
+                          <div className="flex items-center justify-between gap-2 border-t border-[#26201B] pt-2">
+                            <div>
+                              <div className="text-[10px] text-[#9C948A]">Total Terbagi</div>
+                              <div className="text-sm font-black" style={{ color: item.color }}>
+                                {item.value} <span className="text-[10px] font-normal text-[#9C948A]">medali</span>
+                              </div>
+                            </div>
+
+                            {hasLeader && (
+                              <button
+                                type="button"
+                                onClick={() => onSelectPlayer?.(item.topCollector.player)}
+                                className="flex items-center gap-1.5 rounded-lg bg-[#241F1B] border border-[#3A322A] px-2 py-1 text-left cursor-pointer hover:border-[#E8B33D]/60 hover:bg-[#2D2621] transition-all group max-w-[140px]"
+                                title={`Lihat profil ${item.topCollector.player} (${item.topCollector.count}x)`}
+                              >
+                                <PlayerAvatar
+                                  name={item.topCollector.player}
+                                  avatarUrl={item.topCollector.avatar}
+                                  size="xs"
+                                />
+                                <div className="min-w-0">
+                                  <div className="text-[9px] text-[#9C948A] flex items-center gap-1">
+                                    <span>Top:</span>
+                                    <span className="font-bold text-[#F2EDE4]">{item.topCollector.count}x</span>
+                                  </div>
+                                  <div className="text-[10px] font-bold text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors truncate">
+                                    {item.topCollector.player}
+                                  </div>
+                                </div>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </>
             )}
