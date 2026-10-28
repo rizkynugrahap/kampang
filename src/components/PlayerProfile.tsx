@@ -89,8 +89,8 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   // Selected KPI medal for hero breakdown view
   const [selectedMedalFilter, setSelectedMedalFilter] = useState<MedalType | null>(null);
 
-  // Selector filters
-  const [selectorFilterTab, setSelectorFilterTab] = useState<'all' | 'cabutan'>('all');
+  // Selector filters: Default 'warga'
+  const [selectorFilterTab, setSelectorFilterTab] = useState<'warga' | 'all' | 'cabutan'>('warga');
   const [selectorSearch, setSelectorSearch] = useState<string>('');
 
   const activeId = selectedPlayerId !== undefined ? selectedPlayerId : internalSelectedId;
@@ -128,8 +128,8 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
   // 2. Rank in active season:
   // Standings are ordered strictly and sequentially by the official tournament rules:
   // (1) Total score desc, (2) MVP desc, (3) Antam desc, (4) Lowest Coklat asc, (5) Win rate desc, (6) AVG score desc, (7) Nickname asc
-  // Cabutan dengan 0 match TIDAK masuk ke data season.
-  // Hanya pemain dengan minimal 1 match yang memperoleh nomor urut peringkat resmi season.
+  // Default: Peringkat HANYA diperuntukkan bagi pemain Warga.
+  // Pemain Cabutan TIDAK masuk ke nomor urut peringkat resmi season.
   const rankedSeasonPlayers = React.useMemo(() => {
     if (!activeSeason?.players || activeSeason.players.length === 0) return [];
 
@@ -139,7 +139,8 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
       const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
       const matchesCount = Number(p.matches) || 0;
 
-      if (isCabutan && matchesCount < 1) return false;
+      // Pemain cabutan tidak masuk ke peringkat resmi season (hanya warga)
+      if (isCabutan) return false;
       return matchesCount > 0;
     });
 
@@ -535,11 +536,15 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
               <span className="text-[11px] text-[#9C948A]">
                 Klasemen {activeSeason?.title || 'Season'}:
               </span>
-              {hasSeasonMatches && seasonRank > 0 ? (
+              {player.status === 'Cabutan' || seasonPlayerStat?.status === 'Cabutan' ? (
+                <span className="font-bold text-xs text-purple-300 bg-purple-950/60 border border-purple-500/40 rounded px-1.5 py-0.5">
+                  Pemain Cabutan (Non-Peringkat)
+                </span>
+              ) : hasSeasonMatches && seasonRank > 0 ? (
                 <span className="font-black text-sm text-[#E8B33D]">
                   #{seasonRank}{' '}
                   <span className="text-[10px] font-normal text-[#9C948A]">
-                    / {rankedSeasonPlayers.length} Pemain
+                    / {rankedSeasonPlayers.length} Warga
                   </span>
                 </span>
               ) : (
@@ -549,7 +554,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
               )}
             </div>
             <span className="text-[9px] text-[#6E655C]">
-              *Mengikuti peringkat resmi season yang dipilih
+              *Peringkat resmi warga season yang dipilih (pemain cabutan tidak masuk peringkat)
             </span>
           </div>
         </div>
@@ -565,24 +570,43 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
             </span>
             <span className="text-[11px] text-[#9C948A]">
               {rankedSeasonPlayers.length > 0
-                ? `Berurutan #1 s/d #${rankedSeasonPlayers.length}`
+                ? `Berurutan #1 s/d #${rankedSeasonPlayers.length} Warga`
                 : 'Belum ada match'}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Filter Tabs */}
+            {/* Filter Tabs: Warga (Default) | Semua | Cabutan */}
             <div className="flex items-center rounded-lg bg-[#241F1B] border border-[#332C25] p-0.5 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setSelectorFilterTab('warga')}
+                className={`px-2.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                  selectorFilterTab === 'warga'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                }`}
+                title="Pemain Warga Resmi (Default)"
+              >
+                👑 Warga ({sortedVisiblePlayers.filter((p) => {
+                  const pNameLower = p.name.trim().toLowerCase();
+                  const seasonStat = activeSeason?.players?.find(
+                    (sp) => sp.nickname.trim().toLowerCase() === pNameLower
+                  );
+                  return p.status !== 'Cabutan' && seasonStat?.status !== 'Cabutan';
+                }).length})
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectorFilterTab('all')}
                 className={`px-2.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
                   selectorFilterTab === 'all'
-                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
                     : 'text-[#9C948A] hover:text-[#F2EDE4]'
                 }`}
+                title="Semua Pemain (Warga + Cabutan)"
               >
-                Semua ({sortedVisiblePlayers.length})
+                👥 Semua ({sortedVisiblePlayers.length})
               </button>
               {sortedVisiblePlayers.some((p) => {
                 const pNameLower = p.name.trim().toLowerCase();
@@ -596,12 +620,12 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
                   onClick={() => setSelectorFilterTab('cabutan')}
                   className={`px-2.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
                     selectorFilterTab === 'cabutan'
-                      ? 'bg-purple-600 text-white shadow-sm'
+                      ? 'bg-purple-600 text-white shadow-sm font-black'
                       : 'text-purple-300 hover:text-purple-200'
                   }`}
                   title="Pemain cabutan yang memiliki kontribusi minimal 1 match di season ini"
                 >
-                  Cabutan ({sortedVisiblePlayers.filter((p) => {
+                  🎟️ Cabutan ({sortedVisiblePlayers.filter((p) => {
                     const pNameLower = p.name.trim().toLowerCase();
                     const seasonStat = activeSeason?.players?.find(
                       (sp) => sp.nickname.trim().toLowerCase() === pNameLower
@@ -638,6 +662,7 @@ export const PlayerProfile: React.FC<PlayerProfileProps> = ({
               );
               const isCabutan = p.status === 'Cabutan' || seasonStat?.status === 'Cabutan';
 
+              if (selectorFilterTab === 'warga' && isCabutan) return false;
               if (selectorFilterTab === 'cabutan' && !isCabutan) return false;
 
               if (selectorSearch.trim()) {

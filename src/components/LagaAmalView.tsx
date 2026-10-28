@@ -208,19 +208,72 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
   // View mode for standings: 'table' is default, 'cards' is mobile-friendly card mode
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
+  // Status Filter for standings and KPI: Default 'warga' (exclude pemain cabutan by default)
+  const [statusFilter, setStatusFilter] = useState<'warga' | 'all' | 'cabutan'>('warga');
+
   // Seasons sorted in descending order (highest season first)
   const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
+  // Dynamic Ribbon KPI Stats calculated from currentSeason based on statusFilter (defaults to 'warga'!)
+  const ribbonKpiStats = useMemo(() => {
+    const list = (currentSeason.players || []).filter((p) => {
+      const isCabutan = p.status === 'Cabutan';
+      const matches = Number(p.matches) || 0;
+      if (statusFilter === 'warga') return !isCabutan;
+      if (statusFilter === 'cabutan') return isCabutan && matches >= 1;
+      if (isCabutan && matches < 1) return false;
+      return true;
+    });
+
+    let topCoklat = { player: '-', count: 0 };
+    let topSilver = { player: '-', count: 0 };
+    let topAntam = { player: '-', count: 0 };
+    let topMvp = { player: '-', count: 0 };
+
+    list.forEach((p) => {
+      if (p.coklat > topCoklat.count) topCoklat = { player: p.nickname, count: p.coklat };
+      if (p.silver > topSilver.count) topSilver = { player: p.nickname, count: p.silver };
+      if (p.antam > topAntam.count) topAntam = { player: p.nickname, count: p.antam };
+      if (p.mvp > topMvp.count) topMvp = { player: p.nickname, count: p.mvp };
+    });
+
+    if (topCoklat.count === 0 && list[0]) topCoklat = { player: list[0].nickname, count: 0 };
+    if (topSilver.count === 0 && list[0]) topSilver = { player: list[0].nickname, count: 0 };
+    if (topAntam.count === 0 && list[0]) topAntam = { player: list[0].nickname, count: 0 };
+    if (topMvp.count === 0 && list[0]) topMvp = { player: list[0].nickname, count: 0 };
+
+    const avgWinRate = list.length > 0
+      ? Math.round((list.reduce((acc, p) => acc + (Number(p.winRate) || 0), 0) / list.length) * 10) / 10
+      : (currentSeason.averageWinRate || 0);
+
+    const avgScore = list.length > 0
+      ? Math.round((list.reduce((acc, p) => acc + (Number(p.avgScore) || 0), 0) / list.length) * 100) / 100
+      : (currentSeason.averageScore || 0);
+
+    return {
+      activeCount: list.length,
+      topCoklat,
+      topSilver,
+      topAntam,
+      topMvp,
+      avgWinRate,
+      avgScore,
+    };
+  }, [currentSeason, statusFilter]);
+
   // Sort and filter players for standings:
-  // Aturan: Jika ada pemain cabutan dan pemain cabutan itu tidak bermain di season tersebut (0 match),
-  // maka tidak akan dimunculkan di data season yang dipilih.
-  // Pemain cabutan hanya akan muncul jika sudah ada kontribusi bermain minimal 1 match pada season tersebut.
+  // Aturan: Secara default hanya warga yang masuk ke KPI dan peringkat klasemen.
+  // Pemain cabutan tidak akan masuk ke peringkat warga secara default.
   const filteredPlayers = useMemo(() => {
     return (currentSeason.players || [])
       .filter((p) => {
         const isCabutan = p.status === 'Cabutan';
         const matchesCount = Number(p.matches) || 0;
         if (isCabutan && matchesCount < 1) return false;
+
+        if (statusFilter === 'warga' && isCabutan) return false;
+        if (statusFilter === 'cabutan' && !isCabutan) return false;
+
         return p.nickname.toLowerCase().includes(searchQuery.toLowerCase());
       })
       .sort((a, b) => {
@@ -262,7 +315,7 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
         }
         return sortAsc ? diff : -diff;
       });
-  }, [currentSeason.players, searchQuery, sortField, sortAsc]);
+  }, [currentSeason.players, searchQuery, sortField, sortAsc, statusFilter]);
 
   // Handle Sort Toggle
   const handleSort = (field: SortField) => {
@@ -577,43 +630,109 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
           </div>
         </div>
 
+        {/* Category Filter Bar for KPI & Klasemen */}
+        <div className="mt-4 pt-3 border-t border-[#332C25]/60 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#9C948A]">Kategori KPI &amp; Peringkat:</span>
+            <div className="flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 shadow-inner">
+              <button
+                id="filter-laga-warga"
+                type="button"
+                onClick={() => setStatusFilter('warga')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  statusFilter === 'warga'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+                title="Hanya Pemain Warga Resmi (Default)"
+              >
+                <span>👑 Warga (Default)</span>
+              </button>
+              <button
+                id="filter-laga-all"
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  statusFilter === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+                title="Tampilkan Semua (Warga + Cabutan)"
+              >
+                <span>👥 Semua</span>
+              </button>
+              <button
+                id="filter-laga-cabutan"
+                type="button"
+                onClick={() => setStatusFilter('cabutan')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  statusFilter === 'cabutan'
+                    ? 'bg-purple-600 text-white shadow-sm font-black'
+                    : 'text-purple-300 hover:text-purple-200 hover:bg-[#241F1B]'
+                }`}
+                title="Hanya Pemain Cabutan (Bukan Warga Tetap)"
+              >
+                <span>🎟️ Cabutan</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="text-[11px] text-[#9C948A]">
+            {statusFilter === 'warga' && (
+              <span className="text-[#E8B33D] font-semibold">
+                *KPI &amp; peringkat klasemen default: hanya warga resmi Pantos (pemain cabutan tidak masuk)
+              </span>
+            )}
+            {statusFilter === 'cabutan' && (
+              <span className="text-purple-400 font-semibold">
+                *Menampilkan pemain berstatus Cabutan saja
+              </span>
+            )}
+            {statusFilter === 'all' && (
+              <span>*Menampilkan gabungan warga dan pemain cabutan</span>
+            )}
+          </div>
+        </div>
+
         {/* 7 KPI Ribbon Cards */}
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           {/* Active Players */}
           <div className="rounded-xl border border-[#332C25] bg-[#191513] p-3 text-center">
             <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#9C948A] uppercase tracking-wider mb-1">
               <Users size={12} className="text-[#E8B33D]" />
               <span>Active Player</span>
             </div>
-            <span className="text-xl font-black text-[#F2EDE4]">{currentSeason.activePlayersCount}</span>
-            <span className="block text-[10px] text-[#9C948A] mt-0.5">Peserta Terdaftar</span>
+            <span className="text-xl font-black text-[#F2EDE4]">{ribbonKpiStats.activeCount}</span>
+            <span className="block text-[10px] text-[#9C948A] mt-0.5">
+              {statusFilter === 'warga' ? 'Warga Terdaftar' : statusFilter === 'cabutan' ? 'Cabutan Terdaftar' : 'Peserta Terdaftar'}
+            </span>
           </div>
 
           {/* Top Coklat */}
           {(() => {
             const playerObj = (currentSeason.players || []).find(
-              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topCoklat.player || '').trim().toLowerCase()
+              (p) => (p.nickname || '').trim().toLowerCase() === (ribbonKpiStats.topCoklat.player || '').trim().toLowerCase()
             );
-            const isValidPlayer = currentSeason.topCoklat.player && currentSeason.topCoklat.player !== '-';
+            const isValidPlayer = ribbonKpiStats.topCoklat.player && ribbonKpiStats.topCoklat.player !== '-';
             return (
               <div
                 role="button"
                 tabIndex={0}
                 onClick={() => {
                   if (isValidPlayer && onViewPlayerProfile) {
-                    onViewPlayerProfile(currentSeason.topCoklat.player);
+                    onViewPlayerProfile(ribbonKpiStats.topCoklat.player);
                   }
                 }}
                 className={`rounded-xl border border-[#6B4226]/40 bg-[#2A1D15] p-3 text-center flex flex-col items-center transition-all ${
                   isValidPlayer ? 'cursor-pointer hover:border-[#b8764a] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
                 }`}
-                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topCoklat.player}` : undefined}
+                title={isValidPlayer ? `Klik untuk melihat profil ${ribbonKpiStats.topCoklat.player}` : undefined}
               >
                 <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#b8764a] uppercase tracking-wider mb-1.5">
                   <span>🍫 Top Coklat</span>
                 </div>
                 <PlayerAvatar
-                  name={currentSeason.topCoklat.player}
+                  name={ribbonKpiStats.topCoklat.player}
                   avatarUrl={playerObj?.avatar_url}
                   player={playerObj}
                   size="sm"
@@ -621,12 +740,12 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                 />
                 <span
                   className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#b8764a] transition-colors block truncate w-full"
-                  title={currentSeason.topCoklat.player}
+                  title={ribbonKpiStats.topCoklat.player}
                 >
-                  {currentSeason.topCoklat.player}
+                  {ribbonKpiStats.topCoklat.player}
                 </span>
                 <span className="text-[10px] font-semibold text-[#b8764a] mt-0.5 block">
-                  {currentSeason.topCoklat.count}x Coklat
+                  {ribbonKpiStats.topCoklat.count}x Coklat
                 </span>
                 {isValidPlayer && (
                   <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
@@ -640,28 +759,28 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
           {/* Top Silver */}
           {(() => {
             const playerObj = (currentSeason.players || []).find(
-              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topSilver.player || '').trim().toLowerCase()
+              (p) => (p.nickname || '').trim().toLowerCase() === (ribbonKpiStats.topSilver.player || '').trim().toLowerCase()
             );
-            const isValidPlayer = currentSeason.topSilver.player && currentSeason.topSilver.player !== '-';
+            const isValidPlayer = ribbonKpiStats.topSilver.player && ribbonKpiStats.topSilver.player !== '-';
             return (
               <div
                 role="button"
                 tabIndex={0}
                 onClick={() => {
                   if (isValidPlayer && onViewPlayerProfile) {
-                    onViewPlayerProfile(currentSeason.topSilver.player);
+                    onViewPlayerProfile(ribbonKpiStats.topSilver.player);
                   }
                 }}
                 className={`rounded-xl border border-[#7D766D]/40 bg-[#1D1B19] p-3 text-center flex flex-col items-center transition-all ${
                   isValidPlayer ? 'cursor-pointer hover:border-[#B9B2A8] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
                 }`}
-                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topSilver.player}` : undefined}
+                title={isValidPlayer ? `Klik untuk melihat profil ${ribbonKpiStats.topSilver.player}` : undefined}
               >
                 <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#B9B2A8] uppercase tracking-wider mb-1.5">
                   <span>🥈 Top Silver</span>
                 </div>
                 <PlayerAvatar
-                  name={currentSeason.topSilver.player}
+                  name={ribbonKpiStats.topSilver.player}
                   avatarUrl={playerObj?.avatar_url}
                   player={playerObj}
                   size="sm"
@@ -669,12 +788,12 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                 />
                 <span
                   className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#B9B2A8] transition-colors block truncate w-full"
-                  title={currentSeason.topSilver.player}
+                  title={ribbonKpiStats.topSilver.player}
                 >
-                  {currentSeason.topSilver.player}
+                  {ribbonKpiStats.topSilver.player}
                 </span>
                 <span className="text-[10px] font-semibold text-[#B9B2A8] mt-0.5 block">
-                  {currentSeason.topSilver.count}x Silver
+                  {ribbonKpiStats.topSilver.count}x Silver
                 </span>
                 {isValidPlayer && (
                   <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
@@ -688,28 +807,28 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
           {/* Top Antam */}
           {(() => {
             const playerObj = (currentSeason.players || []).find(
-              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topAntam.player || '').trim().toLowerCase()
+              (p) => (p.nickname || '').trim().toLowerCase() === (ribbonKpiStats.topAntam.player || '').trim().toLowerCase()
             );
-            const isValidPlayer = currentSeason.topAntam.player && currentSeason.topAntam.player !== '-';
+            const isValidPlayer = ribbonKpiStats.topAntam.player && ribbonKpiStats.topAntam.player !== '-';
             return (
               <div
                 role="button"
                 tabIndex={0}
                 onClick={() => {
                   if (isValidPlayer && onViewPlayerProfile) {
-                    onViewPlayerProfile(currentSeason.topAntam.player);
+                    onViewPlayerProfile(ribbonKpiStats.topAntam.player);
                   }
                 }}
                 className={`rounded-xl border border-[#D8A93A]/40 bg-[#251E17] p-3 text-center flex flex-col items-center transition-all ${
                   isValidPlayer ? 'cursor-pointer hover:border-[#D8A93A] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
                 }`}
-                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topAntam.player}` : undefined}
+                title={isValidPlayer ? `Klik untuk melihat profil ${ribbonKpiStats.topAntam.player}` : undefined}
               >
                 <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#D8A93A] uppercase tracking-wider mb-1.5">
                   <span>🥇 Top Antam</span>
                 </div>
                 <PlayerAvatar
-                  name={currentSeason.topAntam.player}
+                  name={ribbonKpiStats.topAntam.player}
                   avatarUrl={playerObj?.avatar_url}
                   player={playerObj}
                   size="sm"
@@ -717,12 +836,12 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                 />
                 <span
                   className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#D8A93A] transition-colors block truncate w-full"
-                  title={currentSeason.topAntam.player}
+                  title={ribbonKpiStats.topAntam.player}
                 >
-                  {currentSeason.topAntam.player}
+                  {ribbonKpiStats.topAntam.player}
                 </span>
                 <span className="text-[10px] font-semibold text-[#D8A93A] mt-0.5 block">
-                  {currentSeason.topAntam.count}x Gold
+                  {ribbonKpiStats.topAntam.count}x Gold
                 </span>
                 {isValidPlayer && (
                   <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
@@ -736,28 +855,28 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
           {/* Top MVP */}
           {(() => {
             const playerObj = (currentSeason.players || []).find(
-              (p) => (p.nickname || '').trim().toLowerCase() === (currentSeason.topMvp.player || '').trim().toLowerCase()
+              (p) => (p.nickname || '').trim().toLowerCase() === (ribbonKpiStats.topMvp.player || '').trim().toLowerCase()
             );
-            const isValidPlayer = currentSeason.topMvp.player && currentSeason.topMvp.player !== '-';
+            const isValidPlayer = ribbonKpiStats.topMvp.player && ribbonKpiStats.topMvp.player !== '-';
             return (
               <div
                 role="button"
                 tabIndex={0}
                 onClick={() => {
                   if (isValidPlayer && onViewPlayerProfile) {
-                    onViewPlayerProfile(currentSeason.topMvp.player);
+                    onViewPlayerProfile(ribbonKpiStats.topMvp.player);
                   }
                 }}
                 className={`rounded-xl border border-[#E8B33D]/40 bg-[#2A2218] p-3 text-center flex flex-col items-center transition-all ${
                   isValidPlayer ? 'cursor-pointer hover:border-[#E8B33D] hover:scale-105 hover:shadow-lg active:scale-95 group' : ''
                 }`}
-                title={isValidPlayer ? `Klik untuk melihat profil ${currentSeason.topMvp.player}` : undefined}
+                title={isValidPlayer ? `Klik untuk melihat profil ${ribbonKpiStats.topMvp.player}` : undefined}
               >
                 <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-[#E8B33D] uppercase tracking-wider mb-1.5">
                   <span>👑 Top MVP</span>
                 </div>
                 <PlayerAvatar
-                  name={currentSeason.topMvp.player}
+                  name={ribbonKpiStats.topMvp.player}
                   avatarUrl={playerObj?.avatar_url}
                   player={playerObj}
                   size="sm"
@@ -765,12 +884,12 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
                 />
                 <span
                   className="text-xs font-bold text-[#F2EDE4] group-hover:text-[#E8B33D] transition-colors block truncate w-full"
-                  title={currentSeason.topMvp.player}
+                  title={ribbonKpiStats.topMvp.player}
                 >
-                  {currentSeason.topMvp.player}
+                  {ribbonKpiStats.topMvp.player}
                 </span>
                 <span className="text-[10px] font-semibold text-[#E8B33D] mt-0.5 block">
-                  {currentSeason.topMvp.count}x MVP
+                  {ribbonKpiStats.topMvp.count}x MVP
                 </span>
                 {isValidPlayer && (
                   <span className="text-[9px] text-[#9C948A] opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
@@ -797,8 +916,8 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
               <Trophy size={12} className="text-emerald-400" />
               <span>Rata-Rata</span>
             </div>
-            <span className="text-xl font-black text-emerald-400">{currentSeason.averageWinRate}%</span>
-            <span className="block text-[10px] text-[#9C948A] mt-0.5">Skor: {currentSeason.averageScore}</span>
+            <span className="text-xl font-black text-emerald-400">{ribbonKpiStats.avgWinRate}%</span>
+            <span className="block text-[10px] text-[#9C948A] mt-0.5">Skor: {ribbonKpiStats.avgScore}</span>
           </div>
         </div>
       </div>
@@ -860,17 +979,59 @@ export const LagaAmalView: React.FC<LagaAmalViewProps> = ({
       {/* SUB-TAB 1: STANDINGS */}
       {activeSubTab === 'standings' && (
         <div className="space-y-4">
-          {/* Search bar & View mode toggle toolbar */}
+          {/* Search bar & Category filter & View mode toggle toolbar */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="relative w-full sm:w-72">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari nickname pemain..."
-                className="w-full rounded-xl border border-[#332C25] bg-[#1D1916] pl-9 pr-4 py-2 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
-              />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9C948A]" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari nickname pemain..."
+                  className="w-full rounded-xl border border-[#332C25] bg-[#1D1916] pl-9 pr-4 py-2 text-xs text-[#F2EDE4] placeholder-[#9C948A] focus:border-[#E8B33D] focus:outline-none"
+                />
+              </div>
+
+              {/* Quick Category Filter in Standings */}
+              <div className="grid grid-cols-3 sm:flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('warga')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    statusFilter === 'warga'
+                      ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                      : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                  }`}
+                  title="Hanya Pemain Warga Resmi (Default)"
+                >
+                  👑 Warga
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    statusFilter === 'all'
+                      ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                      : 'text-[#9C948A] hover:text-[#F2EDE4]'
+                  }`}
+                  title="Tampilkan Semua (Warga + Cabutan)"
+                >
+                  👥 Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('cabutan')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    statusFilter === 'cabutan'
+                      ? 'bg-purple-600 text-white shadow-sm font-black'
+                      : 'text-purple-300 hover:text-purple-200'
+                  }`}
+                  title="Hanya Pemain Cabutan"
+                >
+                  🎟️ Cabutan
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">

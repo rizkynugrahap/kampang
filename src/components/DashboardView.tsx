@@ -35,6 +35,7 @@ import { GachaHeroPick } from './GachaHeroPick';
 import { sortSeasonsDescending } from '../utils/seasonCalculations';
 
 type TeamFilter = 'all' | 'Pohon' | 'Lobby';
+export type PlayerCategoryFilter = 'warga' | 'all' | 'cabutan';
 
 interface DashboardViewProps {
   seasons: LagaAmalSeasonData[];
@@ -222,18 +223,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onExportToAdmin,
 }) => {
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
+  const [playerCategoryFilter, setPlayerCategoryFilter] = useState<PlayerCategoryFilter>('warga');
   const [selectedKpiMetric, setSelectedKpiMetric] = useState<KpiMetricType>('score');
 
   // Seasons sorted in descending order (highest season first)
   const sortedSeasons = useMemo(() => sortSeasonsDescending(seasons), [seasons]);
 
-  // Compute player stats according to the selected season AND team filter
+  // Compute player stats according to the selected season, team filter, and player category filter (default 'warga')
   const computedStats = useMemo(() => {
     // Lookup dictionary from `players` state to get custom avatars, tier, and julukan
     const playerMetaMap = new Map<string, Player>();
     players.forEach((p) => {
       playerMetaMap.set(p.name.trim().toLowerCase(), p);
     });
+
+    const isCabutanPlayer = (nickname: string) => {
+      const norm = nickname.trim().toLowerCase();
+      const meta = playerMetaMap.get(norm);
+      const seasonPlayer = (activeSeason.players || []).find(
+        (sp) => sp.nickname.trim().toLowerCase() === norm
+      );
+      return meta?.status === 'Cabutan' || seasonPlayer?.status === 'Cabutan';
+    };
+
+    const shouldIncludePlayer = (nickname: string, matches: number) => {
+      const isCabutan = isCabutanPlayer(nickname);
+      // Default: 'warga' -> hanya pemain warga (bukan cabutan) yang masuk ke KPI dan peringkat
+      if (playerCategoryFilter === 'warga') {
+        return !isCabutan;
+      }
+      // 'cabutan' -> hanya pemain cabutan yang memiliki minimal 1 match
+      if (playerCategoryFilter === 'cabutan') {
+        return isCabutan && matches >= 1;
+      }
+      // 'all' -> semua pemain (cabutan hanya jika minimal 1 match)
+      if (isCabutan && matches < 1) return false;
+      return true;
+    };
 
     if (teamFilter === 'all') {
       if (seasonMatches.length > 0) {
@@ -295,9 +321,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         // Also add non-cabutan active players from activeSeason.players who have 0 matches in this season
         (activeSeason.players || []).forEach((p) => {
           const key = p.nickname.trim().toLowerCase();
-          const meta = playerMetaMap.get(key);
-          const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
-          if (!tallyMap.has(key) && !isCabutan) {
+          const isCabutan = isCabutanPlayer(p.nickname);
+          if (!tallyMap.has(key)) {
+            if (playerCategoryFilter === 'cabutan') return;
+            if (isCabutan) return;
             tallyMap.set(key, {
               nickname: p.nickname,
               matches: 0,
@@ -312,12 +339,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         });
 
         const list: PlayerStatsComputed[] = Array.from(tallyMap.values())
-          .filter((item) => {
-            const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
-            const isCabutan = meta?.status === 'Cabutan';
-            if (isCabutan && item.matches < 1) return false;
-            return true;
-          })
+          .filter((item) => shouldIncludePlayer(item.nickname, item.matches))
           .map((item) => {
             const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
             const totalScore = item.scores.reduce((a, b) => a + b, 0);
@@ -365,13 +387,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       // Fallback if season has no individual match records yet (split or estimated)
       const list: PlayerStatsComputed[] = (activeSeason.players || [])
-        .filter((p) => {
-          const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
-          const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
-          const matchesCount = Number(p.matches) || 0;
-          if (isCabutan && matchesCount < 1) return false;
-          return true;
-        })
+        .filter((p) => shouldIncludePlayer(p.nickname, Number(p.matches) || 0))
         .map((p) => {
         const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
         const julukan =
@@ -466,55 +482,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         });
       });
 
-      const list: PlayerStatsComputed[] = Array.from(tallyMap.values()).map((item) => {
-        const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
-        const totalScore = item.scores.reduce((a, b) => a + b, 0);
-        const avgScore = item.scores.length > 0 ? totalScore / item.scores.length : 0;
-        const winRate = item.matches > 0 ? (item.wins / item.matches) * 100 : 0;
+      const list: PlayerStatsComputed[] = Array.from(tallyMap.values())
+        .filter((item) => shouldIncludePlayer(item.nickname, item.matches))
+        .map((item) => {
+          const meta = playerMetaMap.get(item.nickname.trim().toLowerCase());
+          const totalScore = item.scores.reduce((a, b) => a + b, 0);
+          const avgScore = item.scores.length > 0 ? totalScore / item.scores.length : 0;
+          const winRate = item.matches > 0 ? (item.wins / item.matches) * 100 : 0;
 
-        const julukan =
-          meta?.julukan ||
-          generateHeuristicPlayerJulukan(
-            meta || {
-              id: item.nickname,
-              name: item.nickname,
-              status: 'Aktif',
-              tier: 'Legend',
-              total_match: item.matches,
-              medals: { MVP: item.mvp, Gold: item.antam, Silver: item.silver, Coklat: item.coklat },
-            },
-            { mvp: item.mvp, coklat: item.coklat, antam: item.antam, winRate }
-          );
+          const julukan =
+            meta?.julukan ||
+            generateHeuristicPlayerJulukan(
+              meta || {
+                id: item.nickname,
+                name: item.nickname,
+                status: 'Aktif',
+                tier: 'Legend',
+                total_match: item.matches,
+                medals: { MVP: item.mvp, Gold: item.antam, Silver: item.silver, Coklat: item.coklat },
+              },
+              { mvp: item.mvp, coklat: item.coklat, antam: item.antam, winRate }
+            );
 
-        return {
-          nickname: item.nickname,
-          avatar_url: meta?.avatar_url,
-          tier: meta?.tier || 'Legend',
-          julukan,
-          matches: item.matches,
-          mvp: item.mvp,
-          antam: item.antam,
-          silver: item.silver,
-          coklat: item.coklat,
-          score: Math.round(totalScore * 10) / 10,
-          avgScore: Math.round(avgScore * 100) / 100,
-          winRate: Math.round(winRate * 10) / 10,
-          teamAffinity: targetTeamFull,
-        };
-      });
+          return {
+            nickname: item.nickname,
+            avatar_url: meta?.avatar_url,
+            tier: meta?.tier || 'Legend',
+            julukan,
+            matches: item.matches,
+            mvp: item.mvp,
+            antam: item.antam,
+            silver: item.silver,
+            coklat: item.coklat,
+            score: Math.round(totalScore * 10) / 10,
+            avgScore: Math.round(avgScore * 100) / 100,
+            winRate: Math.round(winRate * 10) / 10,
+            teamAffinity: targetTeamFull,
+          };
+        });
 
       return list;
     }
 
     // Fallback if season has no individual match records yet (split or estimated)
     return (activeSeason.players || [])
-      .filter((p) => {
-        const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
-        const isCabutan = p.status === 'Cabutan' || meta?.status === 'Cabutan';
-        const matchesCount = Number(p.matches) || 0;
-        if (isCabutan && matchesCount < 1) return false;
-        return true;
-      })
+      .filter((p) => shouldIncludePlayer(p.nickname, Number(p.matches) || 0))
       .map((p) => {
       const meta = playerMetaMap.get(p.nickname.trim().toLowerCase());
       const julukan =
@@ -547,7 +559,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         teamAffinity: targetTeamFull,
       };
     });
-  }, [teamFilter, activeSeason, seasonMatches, players]);
+  }, [teamFilter, playerCategoryFilter, activeSeason, seasonMatches, players]);
 
   // 7 Quick Stat Ribbon Values
   const ribbonStats = useMemo(() => {
@@ -797,48 +809,94 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Right: Team Filter (Select All, Tim Pohon, Tim Lobby) - 3-column on mobile */}
-          <div className="grid grid-cols-3 sm:flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 shadow-inner w-full sm:w-auto">
-            <button
-              id="filter-team-all"
-              type="button"
-              onClick={() => setTeamFilter('all')}
-              className={`px-2 py-1.5 sm:px-3 text-center justify-center rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] flex items-center ${
-                teamFilter === 'all'
-                  ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
-                  : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
-              }`}
-            >
-              Semua Tim
-            </button>
+          {/* Right Controls: Player Category Filter (Warga default) & Team Filter */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            {/* Player Category Filter (👑 Warga (Default), 👥 Semua, 🎟️ Cabutan) */}
+            <div className="grid grid-cols-3 sm:flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 shadow-inner">
+              <button
+                id="filter-player-warga"
+                type="button"
+                onClick={() => setPlayerCategoryFilter('warga')}
+                className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+                  playerCategoryFilter === 'warga'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+                title="Hanya Pemain Warga Resmi (Default)"
+              >
+                <span>👑 Warga</span>
+              </button>
+              <button
+                id="filter-player-all"
+                type="button"
+                onClick={() => setPlayerCategoryFilter('all')}
+                className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+                  playerCategoryFilter === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+                title="Tampilkan Semua (Warga + Cabutan)"
+              >
+                <span>👥 Semua</span>
+              </button>
+              <button
+                id="filter-player-cabutan"
+                type="button"
+                onClick={() => setPlayerCategoryFilter('cabutan')}
+                className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+                  playerCategoryFilter === 'cabutan'
+                    ? 'bg-purple-600 text-white shadow-sm font-black'
+                    : 'text-purple-300 hover:text-purple-200 hover:bg-[#241F1B]'
+                }`}
+                title="Hanya Pemain Cabutan (Bukan Warga Tetap)"
+              >
+                <span>🎟️ Cabutan</span>
+              </button>
+            </div>
 
-            <button
-              id="filter-team-pohon"
-              type="button"
-              onClick={() => setTeamFilter('Pohon')}
-              className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
-                teamFilter === 'Pohon'
-                  ? 'bg-[#4F7942] text-white shadow-sm ring-1 ring-[#649455] font-black'
-                  : 'text-[#9C948A] hover:text-[#4F7942] hover:bg-[#241F1B]'
-              }`}
-            >
-              <span className="inline-block h-2 w-2 rounded-full bg-[#4F7942] shrink-0" />
-              <span className="truncate">Tim Kiri</span>
-            </button>
+            {/* Team Filter (Select All, Tim Pohon, Tim Lobby) - 3-column on mobile */}
+            <div className="grid grid-cols-3 sm:flex items-center gap-1 rounded-xl border border-[#332C25] bg-[#141210] p-1 shadow-inner">
+              <button
+                id="filter-team-all"
+                type="button"
+                onClick={() => setTeamFilter('all')}
+                className={`px-2 py-1.5 sm:px-3 text-center justify-center rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] flex items-center ${
+                  teamFilter === 'all'
+                    ? 'bg-[#E8B33D] text-[#161311] shadow-sm font-black'
+                    : 'text-[#9C948A] hover:text-[#F2EDE4] hover:bg-[#241F1B]'
+                }`}
+              >
+                Semua Tim
+              </button>
 
-            <button
-              id="filter-team-lobby"
-              type="button"
-              onClick={() => setTeamFilter('Lobby')}
-              className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
-                teamFilter === 'Lobby'
-                  ? 'bg-[#C97A3D] text-white shadow-sm ring-1 ring-[#e08f51] font-black'
-                  : 'text-[#9C948A] hover:text-[#C97A3D] hover:bg-[#241F1B]'
-              }`}
-            >
-              <span className="inline-block h-2 w-2 rounded-full bg-[#C97A3D] shrink-0" />
-              <span className="truncate">Tim Kanan</span>
-            </button>
+              <button
+                id="filter-team-pohon"
+                type="button"
+                onClick={() => setTeamFilter('Pohon')}
+                className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+                  teamFilter === 'Pohon'
+                    ? 'bg-[#4F7942] text-white shadow-sm ring-1 ring-[#649455] font-black'
+                    : 'text-[#9C948A] hover:text-[#4F7942] hover:bg-[#241F1B]'
+                }`}
+              >
+                <span className="inline-block h-2 w-2 rounded-full bg-[#4F7942] shrink-0" />
+                <span className="truncate">Tim Kiri</span>
+              </button>
+
+              <button
+                id="filter-team-lobby"
+                type="button"
+                onClick={() => setTeamFilter('Lobby')}
+                className={`flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+                  teamFilter === 'Lobby'
+                    ? 'bg-[#C97A3D] text-white shadow-sm ring-1 ring-[#e08f51] font-black'
+                    : 'text-[#9C948A] hover:text-[#C97A3D] hover:bg-[#241F1B]'
+                }`}
+              >
+                <span className="inline-block h-2 w-2 rounded-full bg-[#C97A3D] shrink-0" />
+                <span className="truncate">Tim Kanan</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -905,8 +963,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span>{currentMetricConfig.label}</span>
                   </span>
                 </div>
-                <p className="text-xs text-[#9C948A]">
-                  Grafik peringkat {currentMetricConfig.description} ({computedStats.length} pemain)
+                <p className="text-xs text-[#9C948A] flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    Grafik peringkat {currentMetricConfig.description} ({computedStats.length}{' '}
+                    {playerCategoryFilter === 'warga'
+                      ? 'warga'
+                      : playerCategoryFilter === 'cabutan'
+                      ? 'pemain cabutan'
+                      : 'pemain'}
+                    )
+                  </span>
+                  {playerCategoryFilter === 'warga' && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[#E8B33D]/15 border border-[#E8B33D]/40 px-1.5 py-0.5 text-[10px] font-bold text-[#E8B33D]">
+                      👑 Khusus Warga (Default)
+                    </span>
+                  )}
+                  {playerCategoryFilter === 'cabutan' && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-purple-950/60 border border-purple-500/40 px-1.5 py-0.5 text-[10px] font-bold text-purple-300">
+                      🎟️ Khusus Cabutan
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -1084,7 +1160,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <h3 className="font-bold text-sm sm:text-base text-[#F2EDE4]">KPI Total Medali</h3>
                 <p className="text-[11px] sm:text-xs text-[#9C948A]">
-                  Distribusi medali ({totalAllMedals} medali)
+                  Distribusi medali ({totalAllMedals} medali &bull;{' '}
+                  <span className="font-semibold text-[#E8B33D]">
+                    {playerCategoryFilter === 'warga'
+                      ? '👑 Warga Saja (Default)'
+                      : playerCategoryFilter === 'cabutan'
+                      ? '🎟️ Cabutan Saja'
+                      : '👥 Semua Pemain'}
+                  </span>
+                  )
                 </p>
               </div>
             </div>

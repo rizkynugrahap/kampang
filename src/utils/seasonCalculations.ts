@@ -429,22 +429,27 @@ export function deriveHeroPoolFromPicks(heroPicksByUser: LagaAmalHeroPick[] = []
 export function recalculateSeasonStats(season: LagaAmalSeasonData): LagaAmalSeasonData {
   const updated = { ...season };
   const players = [...(updated.players || [])];
+  // Default KPI: Pemain cabutan tidak masuk ke pencatatan top medali utama (khusus warga)
+  const candidatePlayers = players.filter((p) => p.status !== 'Cabutan');
+  const medalPool = candidatePlayers.length > 0 ? candidatePlayers : players;
 
-  let topCoklat = { player: players[0]?.nickname || '-', count: 0 };
-  let topSilver = { player: players[0]?.nickname || '-', count: 0 };
-  let topAntam = { player: players[0]?.nickname || '-', count: 0 };
-  let topMvp = { player: players[0]?.nickname || '-', count: 0 };
+  let topCoklat = { player: medalPool[0]?.nickname || '-', count: 0 };
+  let topSilver = { player: medalPool[0]?.nickname || '-', count: 0 };
+  let topAntam = { player: medalPool[0]?.nickname || '-', count: 0 };
+  let topMvp = { player: medalPool[0]?.nickname || '-', count: 0 };
 
   let totalScore = 0;
   let totalWinRate = 0;
   let maxMatches = 0;
 
-  players.forEach((p) => {
+  medalPool.forEach((p) => {
     if (p.coklat > topCoklat.count) topCoklat = { player: p.nickname, count: p.coklat };
     if (p.silver > topSilver.count) topSilver = { player: p.nickname, count: p.silver };
     if (p.antam > topAntam.count) topAntam = { player: p.nickname, count: p.antam };
     if (p.mvp > topMvp.count) topMvp = { player: p.nickname, count: p.mvp };
+  });
 
+  players.forEach((p) => {
     totalScore += p.score;
     totalWinRate += p.winRate;
     if (p.matches > maxMatches) maxMatches = p.matches;
