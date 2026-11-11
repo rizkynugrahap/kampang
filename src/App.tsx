@@ -52,7 +52,9 @@ import {
   syncActiveSeasonToSupabase,
   syncPlayerToSupabase,
   syncMatchToSupabase,
+  syncMatchesBatchToSupabase,
   syncLagaAmalToSupabase,
+  syncSeasonsBatchToSupabase,
   syncPlayersBatchToSupabase,
   deleteLagaAmalFromSupabase,
   deleteMatchFromSupabase,
@@ -1422,87 +1424,218 @@ export default function App() {
       );
       if (!targetPlayer) return false;
 
-      const updatedPlayer: Player = { ...targetPlayer, ...updates };
+      const oldName = targetPlayer.name.trim();
+      const newName = updates.name ? updates.name.trim() : oldName;
+      const isRenaming = Boolean(newName && newName.toLowerCase() !== oldName.toLowerCase());
 
-      // 1. Update state immediately
+      const updatedPlayer: Player = { ...targetPlayer, ...updates, ...(isRenaming && { name: newName }) };
+
+      // 1. If renaming, update all matches in state where the player participated
+      let matchesToSync: Match[] = [];
+      if (isRenaming) {
+        const matchMap = new Map<string | number, Match>();
+        const updatedMatches = matches.map((m) => {
+          let changed = false;
+          const updatedPohon = (m.pohon || []).map((p) => {
+            if (p.player_name.trim().toLowerCase() === oldName.toLowerCase()) {
+              changed = true;
+              return { ...p, player_name: newName };
+            }
+            return p;
+          });
+          const updatedLobby = (m.lobby || []).map((p) => {
+            if (p.player_name.trim().toLowerCase() === oldName.toLowerCase()) {
+              changed = true;
+              return { ...p, player_name: newName };
+            }
+            return p;
+          });
+
+          const rawM = m as any;
+          let updatedPohonMvp = rawM.pohonMvp;
+          if (rawM.pohonMvp && String(rawM.pohonMvp).trim().toLowerCase() === oldName.toLowerCase()) {
+            updatedPohonMvp = newName;
+            changed = true;
+          }
+          let updatedLobbyMvp = rawM.lobbyMvp;
+          if (rawM.lobbyMvp && String(rawM.lobbyMvp).trim().toLowerCase() === oldName.toLowerCase()) {
+            updatedLobbyMvp = newName;
+            changed = true;
+          }
+          let updatedWinnerMvp = rawM.winner_mvp;
+          if (rawM.winner_mvp && String(rawM.winner_mvp).trim().toLowerCase() === oldName.toLowerCase()) {
+            updatedWinnerMvp = newName;
+            changed = true;
+          }
+
+          if (changed) {
+            const updatedM: Match = {
+              ...m,
+              pohon: updatedPohon,
+              lobby: updatedLobby,
+              ...(updatedPohonMvp && { pohonMvp: updatedPohonMvp }),
+              ...(updatedLobbyMvp && { lobbyMvp: updatedLobbyMvp }),
+              ...(updatedWinnerMvp && { winner_mvp: updatedWinnerMvp }),
+            } as Match;
+            matchMap.set(m.id, updatedM);
+            return updatedM;
+          }
+          return m;
+        });
+        matchesToSync = Array.from(matchMap.values());
+        setMatches(updatedMatches);
+        safeSetItem('pantos_matches_cache', JSON.stringify(updatedMatches));
+      }
+
+      // 2. Update players state immediately
       setPlayers((prev) =>
         prev.map((p) =>
-          String(p.id) === String(playerId) || p.name.toLowerCase() === targetPlayer.name.toLowerCase()
+          String(p.id) === String(playerId) || p.name.toLowerCase() === oldName.toLowerCase()
             ? updatedPlayer
             : p
         )
       );
 
-      // 2. Update seasons and localStorage cache so cross-device sync and page reloads never revert badge/tier!
-      setSeasons((prev) => {
-        const updated = prev.map((s) => ({
+      // 3. Update all seasons and localStorage cache so cross-device sync and page reloads keep all history!
+      const seasonMap = new Map<string, LagaAmalSeasonData>();
+      const updatedSeasons = seasons.map((s) => {
+        const updatedPlayers = (s.players || []).map((p) => {
+          if (p.nickname.toLowerCase() === oldName.toLowerCase()) {
+            return {
+              ...p,
+              ...(isRenaming && { nickname: newName }),
+              ...(updates.status !== undefined && { status: updates.status }),
+              ...(updates.tier !== undefined && { tier: updates.tier }),
+              ...(updates.avatar_url !== undefined && { avatar_url: updates.avatar_url }),
+            };
+          }
+          return p;
+        });
+
+        // If renaming, also rename in heroPicksByUser, heroPicks, matchLogs, matchRows
+        let updatedHeroPicksByUser = s.heroPicksByUser;
+        if (isRenaming && s.heroPicksByUser) {
+          updatedHeroPicksByUser = s.heroPicksByUser.map((hp) =>
+            hp.player.toLowerCase() === oldName.toLowerCase() ? { ...hp, player: newName } : hp
+          );
+        }
+
+        let updatedHeroPicks = s.heroPicks;
+        if (isRenaming && s.heroPicks) {
+          updatedHeroPicks = s.heroPicks.map((hp) =>
+            hp.user.toLowerCase() === oldName.toLowerCase() ? { ...hp, user: newName } : hp
+          );
+        }
+
+        let updatedMatchLogs = s.matchLogs;
+        if (isRenaming && s.matchLogs) {
+          updatedMatchLogs = s.matchLogs.map((ml) => ({
+            ...ml,
+            pohonMvp: ml.pohonMvp?.toLowerCase() === oldName.toLowerCase() ? newName : ml.pohonMvp,
+            lobbyMvp: ml.lobbyMvp?.toLowerCase() === oldName.toLowerCase() ? newName : ml.lobbyMvp,
+          }));
+        }
+
+        let updatedMatchRows = s.matchRows;
+        if (isRenaming && s.matchRows) {
+          updatedMatchRows = s.matchRows.map((mr) =>
+            mr.nickname?.toLowerCase() === oldName.toLowerCase() ? { ...mr, nickname: newName } : mr
+          );
+        }
+
+        // Top performers rename if they matched old name
+        let topCoklat = s.topCoklat;
+        if (isRenaming && topCoklat && topCoklat.player.toLowerCase() === oldName.toLowerCase()) {
+          topCoklat = { ...topCoklat, player: newName };
+        }
+        let topSilver = s.topSilver;
+        if (isRenaming && topSilver && topSilver.player.toLowerCase() === oldName.toLowerCase()) {
+          topSilver = { ...topSilver, player: newName };
+        }
+        let topAntam = s.topAntam;
+        if (isRenaming && topAntam && topAntam.player.toLowerCase() === oldName.toLowerCase()) {
+          topAntam = { ...topAntam, player: newName };
+        }
+        let topMvp = s.topMvp;
+        if (isRenaming && topMvp && topMvp.player.toLowerCase() === oldName.toLowerCase()) {
+          topMvp = { ...topMvp, player: newName };
+        }
+
+        const updatedSeasonObj: LagaAmalSeasonData = {
           ...s,
-          players: s.players.map((p) =>
-            p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
-              ? {
-                  ...p,
-                  ...(updates.status !== undefined && { status: updates.status }),
-                  ...(updates.tier !== undefined && { tier: updates.tier }),
-                  ...(updates.avatar_url !== undefined && { avatar_url: updates.avatar_url }),
-                  // julukan is NOT applied across every season here — see the
-                  // active-season-only update further below, which is the
-                  // only season a manual julukan edit should ever touch.
-                }
-              : p
-          ),
-        }));
-        safeSetItem('pantos_seasons_cache', JSON.stringify(updated));
-        return updated;
+          players: updatedPlayers,
+          ...(updatedHeroPicksByUser && { heroPicksByUser: updatedHeroPicksByUser }),
+          ...(updatedHeroPicks && { heroPicks: updatedHeroPicks }),
+          ...(updatedMatchLogs && { matchLogs: updatedMatchLogs }),
+          ...(updatedMatchRows && { matchRows: updatedMatchRows }),
+          ...(topCoklat && { topCoklat }),
+          ...(topSilver && { topSilver }),
+          ...(topAntam && { topAntam }),
+          ...(topMvp && { topMvp }),
+        };
+
+        const recalculated = recalculateSeasonStats(updatedSeasonObj);
+        seasonMap.set(String(s.id), recalculated);
+        return recalculated;
       });
 
-      // Update localStorage players cache
+      const seasonsToSync = Array.from(seasonMap.values());
+      setSeasons(updatedSeasons);
+      safeSetItem('pantos_seasons_cache', JSON.stringify(updatedSeasons));
+
+      // 4. Update localStorage players cache
       const cached = safeGetItem('pantos_players_cache');
       let updatedCacheList: Player[] = [];
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) {
-            updatedCacheList = parsed.map((p: Player) =>
-              p.name.toLowerCase() === targetPlayer.name.toLowerCase() ? updatedPlayer : p
-            );
+            updatedCacheList = parsed
+              .filter((p: Player) => isRenaming ? p.name.toLowerCase() !== oldName.toLowerCase() : true)
+              .map((p: Player) =>
+                p.name.toLowerCase() === oldName.toLowerCase() ? updatedPlayer : p
+              );
           }
         } catch {}
       }
-      if (!updatedCacheList.some((p) => p.name.toLowerCase() === targetPlayer.name.toLowerCase())) {
+      if (!updatedCacheList.some((p) => p.name.toLowerCase() === updatedPlayer.name.toLowerCase())) {
         updatedCacheList.push(updatedPlayer);
       }
       safeSetItem('pantos_players_cache', JSON.stringify(updatedCacheList));
 
-      // 3. Persist to server API
+      // 5. Persist to server API
       try {
         await fetch(`/api/players/${encodeURIComponent(String(playerId))}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: targetPlayer.name, ...updates }),
+          body: JSON.stringify({ oldName, name: newName, ...updates }),
         });
       } catch (err) {
         console.warn('Failed to update player details on backend:', err);
       }
 
-      // 4. Persist to Supabase (both player document and active season)
+      // 6. Persist to Supabase:
+      // If renaming, remove old player document so it doesn't leave an orphaned duplicate
+      if (isRenaming) {
+        try {
+          await deletePlayerFromSupabase(playerId, oldName);
+        } catch (delErr) {
+          console.warn('Could not delete old player document from Supabase:', delErr);
+        }
+      }
+
+      // Save updated player document under new slug
       await syncPlayerToSupabase(updatedPlayer);
 
-      const currentSeasonCopy = {
-        ...activeSeason,
-        players: activeSeason.players.map((p) =>
-          p.nickname.toLowerCase() === targetPlayer.name.toLowerCase()
-            ? {
-                ...p,
-                ...(updates.status !== undefined && { status: updates.status }),
-                ...(updates.tier !== undefined && { tier: updates.tier }),
-                ...(updates.avatar_url !== undefined && { avatar_url: updates.avatar_url }),
-                ...(updates.julukan !== undefined && { julukan: updates.julukan }),
-                ...(updates.julukan_updated_at !== undefined && { julukan_updated_at: updates.julukan_updated_at }),
-              }
-            : p
-        ),
-      };
-      await syncLagaAmalToSupabase(recalculateSeasonStats(currentSeasonCopy));
+      // Save all updated seasons to Supabase
+      if (seasonsToSync.length > 0) {
+        await syncSeasonsBatchToSupabase(seasonsToSync);
+      }
+
+      // Save updated matches to Supabase
+      if (matchesToSync.length > 0) {
+        await syncMatchesBatchToSupabase(matchesToSync);
+      }
 
       return true;
     } catch (err: any) {

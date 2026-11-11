@@ -511,33 +511,69 @@ app.put('/api/players/:id', (req, res) => {
       });
     }
   }
+  const oldName = (req.body.oldName && typeof req.body.oldName === 'string' ? req.body.oldName : existing.name).trim();
+  const newName = (name && typeof name === 'string' && name.trim()) ? name.trim() : oldName;
+  const isRenaming = oldName.toLowerCase() !== newName.toLowerCase();
+
   const updatedPlayer: Player = {
     ...existing,
     ...(avatar_url !== undefined && { avatar_url }),
     ...(status && { status }),
     ...(tier && { tier }),
-    ...(name && { name: name.trim() }),
+    name: newName,
     ...(julukan !== undefined && { julukan }),
     ...(julukan_updated_at !== undefined && { julukan_updated_at }),
   };
 
   store.players[playerIndex] = updatedPlayer;
 
-  // Sync avatar_url, status, and tier across all seasons for this player.
-  // julukan is intentionally EXCLUDED from this cross-season sync — it is
-  // auto-generated per season from that season's own match results (see
-  // applyMatchToSeason) and must never be copied from one season to
-  // another, or the "julukan" would stop being season-specific.
+  // Sync avatar_url, status, tier, and name across all seasons for this player.
   if (store.lagaAmalSeasons && store.lagaAmalSeasons.length > 0) {
     store.lagaAmalSeasons.forEach((season) => {
       const sp = season.players.find(
-        (p) => p.nickname.toLowerCase() === updatedPlayer.name.toLowerCase()
+        (p) => p.nickname.toLowerCase() === oldName.toLowerCase() || p.nickname.toLowerCase() === newName.toLowerCase()
       );
       if (sp) {
+        if (isRenaming) sp.nickname = newName;
         if (avatar_url !== undefined) sp.avatar_url = avatar_url;
         if (status !== undefined) sp.status = status;
         if (tier !== undefined) sp.tier = tier;
       }
+      if (isRenaming) {
+        if (season.heroPicksByUser) {
+          season.heroPicksByUser.forEach((hp) => {
+            if (hp.player.toLowerCase() === oldName.toLowerCase()) hp.player = newName;
+          });
+        }
+        if (season.heroPicks) {
+          season.heroPicks.forEach((hp) => {
+            if (hp.user.toLowerCase() === oldName.toLowerCase()) hp.user = newName;
+          });
+        }
+        if (season.matchLogs) {
+          season.matchLogs.forEach((ml) => {
+            if (ml.pohonMvp?.toLowerCase() === oldName.toLowerCase()) ml.pohonMvp = newName;
+            if (ml.lobbyMvp?.toLowerCase() === oldName.toLowerCase()) ml.lobbyMvp = newName;
+          });
+        }
+        if (season.matchRows) {
+          season.matchRows.forEach((mr) => {
+            if (mr.nickname?.toLowerCase() === oldName.toLowerCase()) mr.nickname = newName;
+          });
+        }
+      }
+    });
+  }
+
+  // Also rename in store.matches if renaming
+  if (isRenaming && store.matches && store.matches.length > 0) {
+    store.matches.forEach((m) => {
+      (m.pohon || []).forEach((p) => {
+        if (p.player_name.trim().toLowerCase() === oldName.toLowerCase()) p.player_name = newName;
+      });
+      (m.lobby || []).forEach((p) => {
+        if (p.player_name.trim().toLowerCase() === oldName.toLowerCase()) p.player_name = newName;
+      });
     });
   }
 

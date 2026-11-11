@@ -106,13 +106,20 @@ export function subscribeToMatches(
       if (!isMounted) return;
 
       if (data && data.length > 0) {
-        const matchesList: Match[] = data.map((row) => {
+        const matchMap = new Map<string, Match>();
+        data.forEach((row) => {
           const raw = row.data as Match;
-          return {
+          const matchObj: Match = {
             ...raw,
             id: raw?.id !== undefined ? raw.id : Number(row.id),
           };
+          const rowKey = buildMatchRowId(matchObj);
+          // Prefer namespaced row id if both exist
+          if (!matchMap.has(rowKey) || String(row.id).includes('-')) {
+            matchMap.set(rowKey, matchObj);
+          }
         });
+        const matchesList: Match[] = Array.from(matchMap.values());
         matchesList.sort((a, b) => Number(b.id) - Number(a.id));
         onUpdate(matchesList);
       } else {
@@ -355,12 +362,16 @@ export async function syncPlayerToSupabase(player: Player): Promise<void> {
 
 export async function syncPlayersBatchToSupabase(players: Player[]): Promise<void> {
   if (!players || players.length === 0) return;
-  const rows = players.map((p) => ({
-    id: getPlayerDocId(p),
-    data: p,
-    updated_at: new Date().toISOString(),
-  }));
-
+  const rowMap = new Map<string, { id: string; data: Player; updated_at: string }>();
+  players.forEach((p) => {
+    const docId = getPlayerDocId(p);
+    rowMap.set(docId, {
+      id: docId,
+      data: p,
+      updated_at: new Date().toISOString(),
+    });
+  });
+  const rows = Array.from(rowMap.values());
   const { error } = await supabase.from('players').upsert(rows);
   if (error) throw error;
 }
@@ -371,6 +382,22 @@ export async function syncMatchToSupabase(match: Match): Promise<void> {
     data: match,
     updated_at: new Date().toISOString(),
   });
+  if (error) throw error;
+}
+
+export async function syncMatchesBatchToSupabase(matches: Match[]): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const rowMap = new Map<string, { id: string; data: Match; updated_at: string }>();
+  matches.forEach((m) => {
+    const rowId = buildMatchRowId(m);
+    rowMap.set(rowId, {
+      id: rowId,
+      data: m,
+      updated_at: new Date().toISOString(),
+    });
+  });
+  const rows = Array.from(rowMap.values());
+  const { error } = await supabase.from('matches').upsert(rows);
   if (error) throw error;
 }
 
@@ -385,12 +412,16 @@ export async function syncLagaAmalToSupabase(season: LagaAmalSeasonData): Promis
 
 export async function syncSeasonsBatchToSupabase(seasons: LagaAmalSeasonData[]): Promise<void> {
   if (!seasons || seasons.length === 0) return;
-  const rows = seasons.map((s) => ({
-    id: String(s.id),
-    data: s,
-    updated_at: new Date().toISOString(),
-  }));
-
+  const rowMap = new Map<string, { id: string; data: LagaAmalSeasonData; updated_at: string }>();
+  seasons.forEach((s) => {
+    const sId = String(s.id);
+    rowMap.set(sId, {
+      id: sId,
+      data: s,
+      updated_at: new Date().toISOString(),
+    });
+  });
+  const rows = Array.from(rowMap.values());
   const { error } = await supabase.from('laga_amal_seasons').upsert(rows);
   if (error) throw error;
 }
@@ -564,13 +595,7 @@ export async function forceSyncAllToSupabase(data: {
     }
 
     if (data.matches && data.matches.length > 0) {
-      const matchRows = data.matches.map((m) => ({
-        id: String(m.id),
-        data: m,
-        updated_at: new Date().toISOString(),
-      }));
-      const { error: matchErr } = await supabase.from('matches').upsert(matchRows);
-      if (matchErr) throw matchErr;
+      await syncMatchesBatchToSupabase(data.matches);
     }
 
     if (data.seasons && data.seasons.length > 0) {
@@ -588,6 +613,7 @@ export async function forceSyncAllToSupabase(data: {
 export const syncPlayerToFirestore = syncPlayerToSupabase;
 export const syncPlayersBatchToFirestore = syncPlayersBatchToSupabase;
 export const syncMatchToFirestore = syncMatchToSupabase;
+export const syncMatchesBatchToFirestore = syncMatchesBatchToSupabase;
 export const syncLagaAmalToFirestore = syncLagaAmalToSupabase;
 export const syncSeasonsBatchToFirestore = syncSeasonsBatchToSupabase;
 export const deletePlayerFromFirestore = deletePlayerFromSupabase;
