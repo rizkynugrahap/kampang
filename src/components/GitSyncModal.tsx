@@ -203,7 +203,7 @@ export const GitSyncModal: React.FC<GitSyncModalProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <Database size={12} className="text-[#E8B33D]" />
-            <span>Firestore + Supabase Synced</span>
+            <span>Firestore Synced</span>
           </div>
         </div>
       </div>

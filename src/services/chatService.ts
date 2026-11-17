@@ -4,6 +4,9 @@ import {
   setDoc,
   getDoc,
   deleteDoc,
+  getDocs,
+  where,
+  writeBatch,
   onSnapshot,
   query,
   orderBy,
@@ -12,7 +15,6 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { supabase } from '../lib/supabase';
 import { ChatMessage, ChatReaction, Match } from '../types';
 import { getPlayerDocId } from '../utils/playerId';
 import { safeSetItem, safeGetItem } from '../utils/storage';
@@ -63,7 +65,7 @@ function saveLocalPin(docId: string, pin: string): void {
 
 /**
  * Subscribe to Lobby Chat messages in real-time.
- * Synchronizes with Supabase Realtime, Firestore, and localStorage.
+ * Synchronizes with Firestore (real-time) and a localStorage cache.
  */
 export function subscribeToChatMessages(
   onUpdate: (messages: ChatMessage[]) => void,
@@ -77,52 +79,7 @@ export function subscribeToChatMessages(
 
   let isSubscribed = true;
 
-  // Function to fetch latest messages from Supabase
-  const fetchFromSupabase = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .order('created_at', { ascending: true })
-        .limit(200);
-
-      if (!error && data && data.length > 0 && isSubscribed) {
-        const msgs: ChatMessage[] = data.map((row: any) => {
-          const raw = row.data as ChatMessage;
-          return {
-            ...raw,
-            id: raw?.id || row.id,
-          };
-        });
-        msgs.sort((a, b) => a.timestamp - b.timestamp);
-        saveLocalMessages(msgs);
-        onUpdate(msgs);
-      }
-    } catch (e) {
-      // ignore if Supabase table not created yet
-    }
-  };
-
-  fetchFromSupabase();
-
-  // 2. Supabase Realtime channel
-  let supabaseChannel: any = null;
-  try {
-    supabaseChannel = supabase
-      .channel('supabase-chat-channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'chat_messages' },
-        () => {
-          fetchFromSupabase();
-        }
-      )
-      .subscribe();
-  } catch (e) {
-    // ignore
-  }
-
-  // 3. Firestore fallback / sync listener
+  // Firestore real-time listener
   let firestoreUnsub: Unsubscribe = () => {};
   try {
     const colRef = collection(db, 'chat_messages');
@@ -157,9 +114,6 @@ export function subscribeToChatMessages(
 
   return () => {
     isSubscribed = false;
-    if (supabaseChannel) {
-      supabase.removeChannel(supabaseChannel);
-    }
     firestoreUnsub();
   };
 }
@@ -185,19 +139,6 @@ export async function sendChatMessage(
   const current = getLocalMessages();
   const updated = [...current, fullMessage];
   saveLocalMessages(updated);
-
-  // Sync to Supabase
-  try {
-    await supabase.from('chat_messages').upsert({
-      id: messageId,
-      sender_name: fullMessage.senderName,
-      content: fullMessage.content,
-      data: fullMessage,
-      created_at: fullMessage.createdAt,
-    });
-  } catch (err) {
-    console.warn('Could not sync chat message to Supabase:', err);
-  }
 
   // Sync to Firestore
   try {
@@ -307,23 +248,6 @@ export async function updateMatchResultSystemMessage(
       },
     };
 
-    // Update in Supabase
-    try {
-      supabase
-        .from('chat_messages')
-        .update({
-          content: updatedMsg.content,
-          data: updatedMsg,
-        })
-        .eq('id', msg.id)
-        .then(
-          () => {},
-          (e) => console.warn('Supabase update chat msg error:', e)
-        );
-    } catch (err) {
-      // ignore
-    }
-
     // Update in Firestore
     try {
       const docRef = doc(db, 'chat_messages', msg.id);
@@ -344,46 +268,35 @@ export async function updateMatchResultSystemMessage(
     }
   }
 
-  // Also query Supabase rows directly to ensure messages outside local window are updated
+  // Also query Firestore directly to ensure messages outside the local window are updated
   try {
-    const { data } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (data && data.length > 0) {
-      for (const row of data) {
-        const raw = row.data as ChatMessage;
-        if (
-          raw?.isSystem &&
-          raw?.systemType === 'match_result' &&
-          (String(raw?.matchData?.matchId) === String(targetId) ||
-            String(raw?.matchData?.matchId) === String(updatedMatch.id))
-        ) {
-          const updatedMsg: ChatMessage = {
-            ...raw,
-            content,
-            matchData: {
-              ...raw.matchData,
-              matchId: updatedMatch.id,
-              seasonName: seasonTitle || updatedMatch.season || raw.matchData?.seasonName,
-              winner,
-              mvpPlayer: mvpName,
-              mvpHero,
-            },
-          };
-          await supabase
-            .from('chat_messages')
-            .update({ content, data: updatedMsg })
-            .eq('id', row.id);
-
-          try {
-            const docRef = doc(db, 'chat_messages', row.id);
-            await updateDoc(docRef, JSON.parse(JSON.stringify(updatedMsg)));
-          } catch (e) {
-            // ignore
-          }
+    const snap = await getDocs(
+      query(collection(db, 'chat_messages'), orderBy('timestamp', 'desc'), limit(100))
+    );
+    for (const row of snap.docs) {
+      const raw = row.data() as ChatMessage;
+      if (
+        raw?.isSystem &&
+        raw?.systemType === 'match_result' &&
+        (String(raw?.matchData?.matchId) === String(targetId) ||
+          String(raw?.matchData?.matchId) === String(updatedMatch.id))
+      ) {
+        const updatedMsg: ChatMessage = {
+          ...raw,
+          content,
+          matchData: {
+            ...raw.matchData,
+            matchId: updatedMatch.id,
+            seasonName: seasonTitle || updatedMatch.season || raw.matchData?.seasonName,
+            winner,
+            mvpPlayer: mvpName,
+            mvpHero,
+          },
+        };
+        try {
+          await updateDoc(doc(db, 'chat_messages', row.id), JSON.parse(JSON.stringify(updatedMsg)));
+        } catch (e) {
+          // ignore
         }
       }
     }
@@ -478,16 +391,8 @@ export async function syncAllMatchSystemMessages(matches: Match[]): Promise<void
       },
     };
 
-    // Update in Supabase & Firestore
+    // Update in Firestore
     try {
-      supabase
-        .from('chat_messages')
-        .update({ content, data: updatedMsg })
-        .eq('id', msg.id)
-        .then(
-          () => {},
-          () => {}
-        );
       const docRef = doc(db, 'chat_messages', msg.id);
       updateDoc(docRef, JSON.parse(JSON.stringify(updatedMsg))).catch(() => {});
     } catch (e) {
@@ -544,18 +449,6 @@ export async function toggleEmojiReaction(
   currentMessages[msgIndex] = targetMsg;
   saveLocalMessages(currentMessages);
 
-  // Sync to Supabase
-  try {
-    await supabase.from('chat_messages').upsert({
-      id: messageId,
-      sender_name: targetMsg.senderName,
-      content: targetMsg.content,
-      data: targetMsg,
-    });
-  } catch (err) {
-    // ignore
-  }
-
   // Sync to Firestore
   try {
     const docRef = doc(db, 'chat_messages', messageId);
@@ -591,22 +484,6 @@ export async function pinChatMessage(
   });
   saveLocalMessages(updated);
 
-  const targetMsg = updated.find((m) => m.id === messageId);
-
-  // Sync to Supabase
-  if (targetMsg) {
-    try {
-      await supabase.from('chat_messages').upsert({
-        id: messageId,
-        sender_name: targetMsg.senderName,
-        content: targetMsg.content,
-        data: targetMsg,
-      });
-    } catch (err) {
-      // ignore
-    }
-  }
-
   // Sync to Firestore
   try {
     const docRef = doc(db, 'chat_messages', messageId);
@@ -627,13 +504,6 @@ export async function deleteChatMessage(messageId: string): Promise<void> {
   const currentMessages = getLocalMessages();
   const updated = currentMessages.filter((m) => m.id !== messageId);
   saveLocalMessages(updated);
-
-  // Delete from Supabase
-  try {
-    await supabase.from('chat_messages').delete().eq('id', messageId);
-  } catch (err) {
-    // ignore
-  }
 
   // Delete from Firestore
   try {
@@ -663,38 +533,7 @@ export async function verifyOrSetPlayerPin(
 
   const docId = getPlayerDocId({ name: playerName });
 
-  // 1. Try Supabase first
-  try {
-    const { data, error } = await supabase
-      .from('player_pins')
-      .select('*')
-      .eq('id', docId)
-      .maybeSingle();
-
-    if (!error && data) {
-      if (data.pin === cleanPin) {
-        saveLocalPin(docId, cleanPin);
-        return { success: true, isNewPin: false };
-      } else {
-        return { success: false, error: 'PIN salah. Silakan coba lagi.' };
-      }
-    } else if (!error && !data) {
-      // New PIN in Supabase
-      await supabase.from('player_pins').upsert({
-        id: docId,
-        player_name: playerName.trim(),
-        pin: cleanPin,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-      saveLocalPin(docId, cleanPin);
-      return { success: true, isNewPin: true };
-    }
-  } catch (err) {
-    // ignore if table not set up yet
-  }
-
-  // 2. Fallback to Firestore
+  // 1. Firestore (source of truth), falling back to the local cache if offline
   try {
     const docRef = doc(db, 'player_pins', docId);
     const docSnap = await getDoc(docRef);
@@ -718,7 +557,7 @@ export async function verifyOrSetPlayerPin(
       return { success: false, error: 'PIN salah. Silakan coba lagi.' };
     }
   } catch (err) {
-    // 3. Fallback to local storage cache
+    // 2. Fallback to local storage cache
     const localPins = getLocalPins();
     if (localPins[docId]) {
       if (localPins[docId] === cleanPin) {
@@ -752,18 +591,6 @@ export async function changePlayerPin(
 
   const docId = getPlayerDocId({ name: playerName });
 
-  // Update in Supabase
-  try {
-    await supabase.from('player_pins').upsert({
-      id: docId,
-      player_name: playerName.trim(),
-      pin: cleanNew,
-      updated_at: new Date().toISOString(),
-    });
-  } catch (e) {
-    // ignore
-  }
-
   // Update in Firestore
   try {
     const docRef = doc(db, 'player_pins', docId);
@@ -790,19 +617,7 @@ export async function changePlayerPin(
 export async function checkHasPin(playerName: string): Promise<boolean> {
   const docId = getPlayerDocId({ name: playerName });
 
-  // 1. Check Supabase
-  try {
-    const { data } = await supabase
-      .from('player_pins')
-      .select('id')
-      .eq('id', docId)
-      .maybeSingle();
-    if (data) return true;
-  } catch (e) {
-    // ignore
-  }
-
-  // 2. Check Firestore
+  // 1. Check Firestore
   try {
     const docRef = doc(db, 'player_pins', docId);
     const snap = await getDoc(docRef);
@@ -811,7 +626,68 @@ export async function checkHasPin(playerName: string): Promise<boolean> {
     // ignore
   }
 
-  // 3. Check local
+  // 2. Check local
   const localPins = getLocalPins();
   return !!localPins[docId];
+}
+
+// ----------------- PLAYER RENAME: CARRY IDENTITY OVER -----------------
+
+export const PLAYER_RENAMED_EVENT = 'pantos_player_renamed';
+
+/**
+ * A player's login (PIN) is keyed by a slug of their name, and chat messages
+ * store the sender's name. Renaming a player must therefore carry those over,
+ * otherwise the new name looks like a brand-new account (new PIN) while the old
+ * PIN document is left behind.
+ *
+ * - PIN: moved old slug -> new slug. If the new slug already has its own PIN it
+ *   is kept as-is and the old PIN is left untouched (never overwrite a PIN).
+ * - Chat: every message sent under the old name gets the new name.
+ * - Local session: a logged-in session under the old name is renamed too.
+ */
+export async function migratePlayerIdentity(oldName: string, newName: string): Promise<void> {
+  const from = oldName.trim();
+  const to = newName.trim();
+  if (!from || !to || from === to) return;
+
+  const oldId = getPlayerDocId({ name: from });
+  const newId = getPlayerDocId({ name: to });
+
+  if (oldId !== newId) {
+    try {
+      const oldRef = doc(db, 'player_pins', oldId);
+      const newRef = doc(db, 'player_pins', newId);
+      const [oldSnap, newSnap] = await Promise.all([getDoc(oldRef), getDoc(newRef)]);
+      if (oldSnap.exists() && !newSnap.exists()) {
+        await setDoc(newRef, {
+          ...oldSnap.data(),
+          playerName: to,
+          updatedAt: new Date().toISOString(),
+        });
+        await deleteDoc(oldRef);
+      }
+      const pins = getLocalPins();
+      if (pins[oldId] && !pins[newId]) {
+        saveLocalPin(newId, pins[oldId]);
+      }
+    } catch (err) {
+      console.warn('Could not migrate player PIN on rename:', err);
+    }
+  }
+
+  try {
+    const snap = await getDocs(query(collection(db, 'chat_messages'), where('senderName', '==', from)));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => batch.update(d.ref, { senderName: to }));
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('Could not rename chat messages on player rename:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PLAYER_RENAMED_EVENT, { detail: { oldName: from, newName: to } }));
+  }
 }

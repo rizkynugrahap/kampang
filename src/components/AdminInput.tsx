@@ -368,7 +368,7 @@ export const AdminInput: React.FC<AdminInputProps> = ({
 
     // Storage-key collision check — a name that only differs by
     // spaces/punctuation from an existing player would overwrite that
-    // player's data in Supabase (the storage key is a slug of the name).
+    // player's data in Firestore (the storage key is a slug of the name).
     const newSlug = getPlayerDocId({ name: cleanNewName, id: 0 } as Player);
     const slugConflict = players.find((p) => getPlayerDocId(p) === newSlug);
     if (slugConflict) {

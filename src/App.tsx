@@ -25,7 +25,7 @@ import { PlayerProfile } from './components/PlayerProfile';
 import { PlayerCrudManager } from './components/PlayerCrudManager';
 import { LagaAmalView } from './components/LagaAmalView';
 import { AdminLoginModal } from './components/AdminLoginModal';
-import { SupabaseStatusBadge } from './components/SupabaseStatusBadge';
+import { FirestoreStatusBadge } from './components/FirestoreStatusBadge';
 import { CommunityChat } from './components/CommunityChat';
 import { PlayerAuthProvider } from './contexts/PlayerAuthContext';
 import { PlayerAccountMenu } from './components/PlayerAccountMenu';
@@ -34,6 +34,7 @@ import {
   updateMatchResultSystemMessage,
   removeMatchResultSystemMessage,
   syncAllMatchSystemMessages,
+  migratePlayerIdentity,
 } from './services/chatService';
 import {
   BackgroundSettingsModal,
@@ -46,21 +47,22 @@ import {
   subscribeToMatches,
   subscribeToLagaAmal,
   seedAdminIfEmpty,
+  fetchAllOnce,
   subscribeToBackgroundSettings,
-  syncBackgroundSettingsToSupabase,
+  syncBackgroundSettingsToFirestore,
   subscribeToActiveSeason,
-  syncActiveSeasonToSupabase,
-  syncPlayerToSupabase,
-  syncMatchToSupabase,
-  syncMatchesBatchToSupabase,
-  syncLagaAmalToSupabase,
-  syncSeasonsBatchToSupabase,
-  syncPlayersBatchToSupabase,
-  deleteLagaAmalFromSupabase,
-  deleteMatchFromSupabase,
-  deleteMatchesBatchFromSupabase,
-  deletePlayerFromSupabase,
-} from './services/supabaseSync';
+  syncActiveSeasonToFirestore,
+  syncPlayerToFirestore,
+  syncMatchToFirestore,
+  syncMatchesBatchToFirestore,
+  syncLagaAmalToFirestore,
+  syncSeasonsBatchToFirestore,
+  syncPlayersBatchToFirestore,
+  deleteLagaAmalFromFirestore,
+  deleteMatchFromFirestore,
+  deleteMatchesBatchFromFirestore,
+  deletePlayerFromFirestore,
+} from './services/firestoreSync';
 import { MLBB_HEROES } from './constants/heroes';
 import {
   buildPlayersFromSeason,
@@ -76,8 +78,8 @@ import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
 import { sanitizeMatches } from './utils/matchSequence';
+import { buildMatchRowId } from './utils/matchRowId';
 import { safeSetItem, safeGetItem, safeRemoveItem } from './utils/storage';
-import { supabase } from './lib/supabase';
 
 type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'chat' | 'admin' | 'profile' | 'players';
 
@@ -301,7 +303,7 @@ export default function App() {
       setTab('dashboard');
     }
   }, [isAdmin, tab]);
-  const [isSupabaseConnected, setIsSupabaseConnected] = useState(true);
+  const [isFirestoreConnected, setIsFirestoreConnected] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
   const [syncNotice, setSyncNotice] = useState<{ message: string; isError?: boolean } | null>(null);
 
@@ -313,7 +315,7 @@ export default function App() {
   };
 
   // Theme and Branding state (Background, Opacity, Logo, Brand Name, Slogan, Header & Button Colors)
-  // Cached instantly from localStorage and synced live to Supabase across all devices
+  // Cached instantly from localStorage and synced live to Firestore across all devices
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
     const saved = safeGetItem('pantos_theme_settings');
     if (saved) {
@@ -347,7 +349,7 @@ export default function App() {
     safeSetItem('pantos_custom_bg', newConfig.bgUrl);
     safeSetItem('pantos_bg_opacity', String(newConfig.bgOpacity));
 
-    syncBackgroundSettingsToSupabase({
+    syncBackgroundSettingsToFirestore({
       bgUrl: newConfig.bgUrl,
       bgOpacity: newConfig.bgOpacity,
       logoType: newConfig.logoType,
@@ -362,7 +364,7 @@ export default function App() {
       activeButtonColor: newConfig.activeButtonColor,
       activeButtonTextColor: newConfig.activeButtonTextColor,
     }).catch((e) =>
-      console.warn('Gagal menyimpan pengaturan tema ke Supabase:', e)
+      console.warn('Gagal menyimpan pengaturan tema ke Firestore:', e)
     );
   };
 
@@ -433,15 +435,15 @@ export default function App() {
         setSeasons((prevSeasons) =>
           prevSeasons.map((s) => (s.id === activeSeason.id ? rebuilt : s))
         );
-        // Persist the repaired season to Supabase asynchronously
-        syncLagaAmalToSupabase(rebuilt).catch((err) =>
+        // Persist the repaired season to Firestore asynchronously
+        syncLagaAmalToFirestore(rebuilt).catch((err) =>
           console.warn('Auto-sync repaired season error:', err)
         );
       }
     }
   }, [activeSeasonMatches, activeSeason?.id]);
 
-  // Initial load from backend API, with automatic fallback directly to Supabase
+  // Initial load from backend API, with automatic fallback directly to Firestore
   const loadData = async () => {
     try {
       setIsLoading(true);
@@ -478,8 +480,8 @@ export default function App() {
                 const corrected = sanitized.find((m) => m.id === newId);
                 if (corrected) {
                   try {
-                    await syncMatchToSupabase(corrected);
-                    await deleteMatchFromSupabase(oldId);
+                    await syncMatchToFirestore(corrected);
+                    await deleteMatchFromFirestore(oldId);
                   } catch (e) {
                     console.warn('Match ID remapping sync error:', e);
                   }
@@ -506,45 +508,32 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn('Backend API fetch error, switching to direct Supabase query:', err);
+        console.warn('Backend API fetch error, switching to direct Firestore query:', err);
       }
 
       // If backend API returned 404 or empty (e.g. running on Vercel as a static SPA)
-      // fetch directly from Supabase!
+      // read directly from Firestore!
       if (!seasonsLoaded || !matchesLoaded || !playersLoaded) {
         try {
-          const [supaSeasons, supaMatches, supaPlayers] = await Promise.all([
-            !seasonsLoaded ? supabase.from('laga_amal_seasons').select('*') : Promise.resolve({ data: null, error: null }),
-            !matchesLoaded ? supabase.from('matches').select('*') : Promise.resolve({ data: null, error: null }),
-            !playersLoaded ? supabase.from('players').select('*') : Promise.resolve({ data: null, error: null }),
-          ]);
+          const remote = await fetchAllOnce();
 
-          if (supaSeasons.data && supaSeasons.data.length > 0) {
-            const parsed = supaSeasons.data.map((r: any) => r.data).filter(Boolean);
-            if (parsed.length > 0) {
-              const sorted = sortSeasonsDescending(parsed);
-              setSeasons(sorted);
-              safeSetItem('pantos_seasons_cache', JSON.stringify(sorted));
-            }
+          if (!seasonsLoaded && remote.seasons.length > 0) {
+            const sorted = sortSeasonsDescending(remote.seasons);
+            setSeasons(sorted);
+            safeSetItem('pantos_seasons_cache', JSON.stringify(sorted));
           }
 
-          if (supaMatches.data && supaMatches.data.length > 0) {
-            const parsedMatches = supaMatches.data.map((r: any) => r.data).filter(Boolean);
-            if (parsedMatches.length > 0) {
-              const { sanitized } = sanitizeMatches(parsedMatches);
-              setMatches(sanitized);
-              safeSetItem('pantos_matches_cache', JSON.stringify(sanitized));
-            }
+          if (!matchesLoaded && remote.matches.length > 0) {
+            const { sanitized } = sanitizeMatches(remote.matches);
+            setMatches(sanitized);
+            safeSetItem('pantos_matches_cache', JSON.stringify(sanitized));
           }
 
-          if (supaPlayers.data && supaPlayers.data.length > 0) {
-            const parsedPlayers = supaPlayers.data.map((r: any) => r.data).filter(Boolean);
-            if (parsedPlayers.length > 0) {
-              setPlayers((prev) => mergePlayerOverrides(prev, parsedPlayers));
-            }
+          if (!playersLoaded && remote.players.length > 0) {
+            setPlayers((prev) => mergePlayerOverrides(prev, remote.players));
           }
-        } catch (supaErr) {
-          console.warn('Direct Supabase fetch fallback error:', supaErr);
+        } catch (fsErr) {
+          console.warn('Direct Firestore fetch fallback error:', fsErr);
         }
       }
     } catch (err) {
@@ -554,12 +543,12 @@ export default function App() {
     }
   };
 
-  // Real-time Supabase Subscriptions
+  // Real-time Firestore Subscriptions
   useEffect(() => {
     loadData();
 
-    // Auto-seed the default admin login account in Supabase if none exists yet
-    seedAdminIfEmpty().catch((e) => console.warn('Supabase admin seeding check:', e));
+    // Auto-seed the default admin login account in Firestore if none exists yet
+    seedAdminIfEmpty().catch((e) => console.warn('Firestore admin seeding check:', e));
 
     const unsubLagaAmal = subscribeToLagaAmal(
       (remoteSeasons) => {
@@ -568,10 +557,10 @@ export default function App() {
           setSeasons(sorted);
           safeSetItem('pantos_seasons_cache', JSON.stringify(sorted));
           setLastSyncedAt(new Date());
-          setIsSupabaseConnected(true);
+          setIsFirestoreConnected(true);
         }
       },
-      () => setIsSupabaseConnected(false)
+      () => setIsFirestoreConnected(false)
     );
 
     const unsubMatches = subscribeToMatches(
@@ -581,14 +570,14 @@ export default function App() {
           setMatches(sanitized);
           safeSetItem('pantos_matches_cache', JSON.stringify(sanitized));
           setLastSyncedAt(new Date());
-          setIsSupabaseConnected(true);
+          setIsFirestoreConnected(true);
           if (remapped.length > 0) {
             remapped.forEach(async ({ oldId, newId }) => {
               const corrected = sanitized.find((m) => m.id === newId);
               if (corrected) {
                 try {
-                  await syncMatchToSupabase(corrected);
-                  await deleteMatchFromSupabase(oldId);
+                  await syncMatchToFirestore(corrected);
+                  await deleteMatchFromFirestore(oldId);
                 } catch (e) {
                   console.warn('Match ID remapping sync error:', e);
                 }
@@ -597,7 +586,7 @@ export default function App() {
           }
         }
       },
-      () => setIsSupabaseConnected(false)
+      () => setIsFirestoreConnected(false)
     );
 
     // Live-sync admin-set player fields (badge/status, tier, julukan,
@@ -651,10 +640,10 @@ export default function App() {
           });
 
           setLastSyncedAt(new Date());
-          setIsSupabaseConnected(true);
+          setIsFirestoreConnected(true);
         }
       },
-      () => setIsSupabaseConnected(false)
+      () => setIsFirestoreConnected(false)
     );
 
     // Keep theme, branding, colors & background permanently in sync across every device
@@ -720,19 +709,19 @@ export default function App() {
     safeSetItem('pantos_seasons_cache', JSON.stringify(updatedSeasons));
 
     try {
-      await syncActiveSeasonToSupabase(seasonId);
-      await syncLagaAmalToSupabase({ ...targetSeason, isActive: true });
+      await syncActiveSeasonToFirestore(seasonId);
+      await syncLagaAmalToFirestore({ ...targetSeason, isActive: true });
       showSyncNotice(`Season "${targetSeason.title}" berhasil diaktifkan sebagai Active Season!`, false);
     } catch (e: any) {
-      console.warn('Gagal sinkronisasi active season ke Supabase:', e);
+      console.warn('Gagal sinkronisasi active season ke Firestore:', e);
       showSyncNotice(
-        `Season "${targetSeason.title}" diaktifkan secara lokal. Supabase sync: ${e?.message || 'Tertunda'}`,
+        `Season "${targetSeason.title}" diaktifkan secara lokal. Firestore sync: ${e?.message || 'Tertunda'}`,
         false
       );
     }
   };
 
-  // Update a season (both local, cache, backend & Supabase)
+  // Update a season (both local, cache, backend & Firestore)
   const handleUpdateSeason = async (updatedSeason: LagaAmalSeasonData) => {
     const recalc = recalculateSeasonStats(updatedSeason);
     setSeasons((prev) => {
@@ -747,18 +736,18 @@ export default function App() {
       return next;
     });
 
-    // Sync to Supabase & API
+    // Sync to Firestore & API
     try {
-      await syncLagaAmalToSupabase(recalc);
+      await syncLagaAmalToFirestore(recalc);
       fetch('/api/laga-amal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(recalc),
       }).catch((e) => console.warn('API sync season:', e));
     } catch (err: any) {
-      console.error('Sync season to Supabase failed:', err);
+      console.error('Sync season to Firestore failed:', err);
       showSyncNotice(
-        `Perubahan klasemen tersimpan lokal, namun gagal disinkronkan ke Supabase: ${err?.message || 'Koneksi terputus'}.`
+        `Perubahan klasemen tersimpan lokal, namun gagal disinkronkan ke Firestore: ${err?.message || 'Koneksi terputus'}.`
       );
     }
   };
@@ -831,16 +820,16 @@ export default function App() {
     const updatedPlayers = mergePlayerOverrides(buildPlayersFromSeason(updatedSeason), players);
     setPlayers(updatedPlayers);
 
-    // Sync match and players to Supabase — kept in its OWN try/catch so a
+    // Sync match and players to Firestore — kept in its OWN try/catch so a
     // network failure doesn't get mistaken for "backend unreachable".
     try {
-      await syncMatchToSupabase(savedMatch);
-      await syncPlayersBatchToSupabase(updatedPlayers);
+      await syncMatchToFirestore(savedMatch);
+      await syncPlayersBatchToFirestore(updatedPlayers);
       setLastSyncedAt(new Date());
     } catch (syncErr: any) {
-      console.error('Error syncing match to Supabase:', syncErr);
+      console.error('Error syncing match to Firestore:', syncErr);
       showSyncNotice(
-        `Pertandingan tersimpan lokal, namun gagal disinkronkan ke Supabase: ${syncErr?.message || 'Koneksi terputus'}.`
+        `Pertandingan tersimpan lokal, namun gagal disinkronkan ke Firestore: ${syncErr?.message || 'Koneksi terputus'}.`
       );
     }
 
@@ -928,12 +917,12 @@ export default function App() {
         }
         return deduplicatePlayers([...cleanPrev, addedPlayer]);
       });
-      await syncPlayerToSupabase(addedPlayer);
+      await syncPlayerToFirestore(addedPlayer);
       return true;
     } catch (err: any) {
       console.error('Error adding player:', err);
       showSyncNotice(
-        `Pemain baru tersimpan lokal, namun gagal ke Supabase: ${err?.message || 'Koneksi terputus'}.`
+        `Pemain baru tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Koneksi terputus'}.`
       );
       return false;
     }
@@ -950,11 +939,11 @@ export default function App() {
       setIsLoading(true);
 
       // Find the match first — its season is needed to locate the right
-      // season-namespaced Supabase row (see buildMatchRowId).
+      // season-namespaced Firestore row (see buildMatchRowId).
       const deletedMatch = matches.find((m) => m.id === matchId);
 
-      // 1. Delete from Supabase so it doesn't reappear on snapshot/refresh
-      await deleteMatchFromSupabase(deletedMatch || matchId);
+      // 1. Delete from Firestore so it doesn't reappear on snapshot/refresh
+      await deleteMatchFromFirestore(deletedMatch || matchId);
 
       // 2. Delete from backend server
       fetch(`/api/matches/${matchId}`, { method: 'DELETE' }).catch((e) =>
@@ -992,11 +981,11 @@ export default function App() {
 
             if (isTargetSeason) {
               const reverted = revertMatchFromSeason(s, deletedMatch);
-              // sync reverted season to Supabase & API
-              syncLagaAmalToSupabase(reverted).catch((err) => {
+              // sync reverted season to Firestore & API
+              syncLagaAmalToFirestore(reverted).catch((err) => {
                 console.error('Sync reverted season:', err);
                 showSyncNotice(
-                  `Statistik klasemen tersimpan lokal, namun gagal ke Supabase: ${err?.message || 'Koneksi terputus'}.`
+                  `Statistik klasemen tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Koneksi terputus'}.`
                 );
               });
               return reverted;
@@ -1010,7 +999,7 @@ export default function App() {
     } catch (err: any) {
       console.error('Error deleting match:', err);
       showSyncNotice(
-        `Pertandingan dihapus dari tampilan, namun gagal di Supabase: ${err?.message || 'Koneksi terputus'}.`
+        `Pertandingan dihapus dari tampilan, namun gagal di Firestore: ${err?.message || 'Koneksi terputus'}.`
       );
       setMatches((prev) => {
         const next = prev.filter((m) => m.id !== matchId);
@@ -1073,9 +1062,9 @@ export default function App() {
             prev ? { ...prev, ai_analysis: data.ai_analysis, is_generating_analysis: false } : null
           );
         }
-        // Persist the regenerated analysis to Supabase too
+        // Persist the regenerated analysis to Firestore too
         if (updatedMatch) {
-          await syncMatchToSupabase(updatedMatch);
+          await syncMatchToFirestore(updatedMatch);
         }
         return;
       }
@@ -1099,9 +1088,9 @@ export default function App() {
         setSelectedMatch(updatedMatch);
       }
       try {
-        await syncMatchToSupabase(updatedMatch);
+        await syncMatchToFirestore(updatedMatch);
       } catch (syncErr) {
-        console.warn('Error syncing fallback analysis to Supabase:', syncErr);
+        console.warn('Error syncing fallback analysis to Firestore:', syncErr);
       }
     }
   };
@@ -1113,7 +1102,7 @@ export default function App() {
   // building block used for match deletion, so hero picks/pool, player
   // medals/score/winRate, matchRows and matchLogs all stay consistent. If
   // the season changed, the OLD season loses the match's contribution and
-  // the NEW season gains it, and the match is re-keyed in Supabase (its
+  // the NEW season gains it, and the match is re-keyed in Firestore (its
   // row id is namespaced by season, see buildMatchRowId) so it can never
   // collide with an existing match already in the target season.
   const handleEditMatch = async (
@@ -1177,19 +1166,19 @@ export default function App() {
             // Same season — revert then re-apply the edited version in one go.
             const reapplied = applyMatchToSeason(reverted, updatedMatch);
             next = next.map((s) => (s.id === oldSeason.id ? reapplied : s));
-            syncLagaAmalToSupabase(reapplied).catch((e) =>
-              console.warn('Error syncing edited match season to Supabase:', e)
+            syncLagaAmalToFirestore(reapplied).catch((e) =>
+              console.warn('Error syncing edited match season to Firestore:', e)
             );
           } else {
             // Moved to a different season — old season only loses it.
             next = next.map((s) => (s.id === oldSeason.id ? reverted : s));
-            syncLagaAmalToSupabase(reverted).catch((e) =>
+            syncLagaAmalToFirestore(reverted).catch((e) =>
               console.warn('Error syncing old season after match move:', e)
             );
             if (newSeason) {
               const applied = applyMatchToSeason(newSeason, updatedMatch);
               next = next.map((s) => (s.id === newSeason.id ? applied : s));
-              syncLagaAmalToSupabase(applied).catch((e) =>
+              syncLagaAmalToFirestore(applied).catch((e) =>
                 console.warn('Error syncing new season after match move:', e)
               );
             }
@@ -1213,21 +1202,21 @@ export default function App() {
         setSelectedMatch(updatedMatch);
       }
 
-      // The match's Supabase row key includes its season+id, so if either
+      // The match's Firestore row key includes its season+id, so if either
       // changed the old row is now orphaned — clean it up before writing
       // the new one so we never leave a stale duplicate behind.
       if (seasonChanged || idChanged) {
         try {
-          await deleteMatchFromSupabase(originalMatch);
+          await deleteMatchFromFirestore(originalMatch);
         } catch (cleanupErr) {
           console.warn('Error cleaning up old match row after edit:', cleanupErr);
         }
       }
 
       try {
-        await syncMatchToSupabase(updatedMatch);
+        await syncMatchToFirestore(updatedMatch);
       } catch (syncErr: any) {
-        console.error('Error syncing edited match to Supabase:', syncErr);
+        console.error('Error syncing edited match to Firestore:', syncErr);
         showSyncNotice(
           `Perubahan pada Match #${updatedMatch.matchNumber || updatedMatch.id} tersimpan di perangkat ini, tapi gagal disinkronkan ke server: ${syncErr?.message || 'Koneksi terputus'}.`
         );
@@ -1266,7 +1255,7 @@ export default function App() {
   };
 
   // Delete an entire season/klasemen — admin only. This removes it from
-  // Supabase (the real-time source of truth), the local backend store,
+  // Firestore (the real-time source of truth), the local backend store,
   // and local state, along with all associated matches. At least one season must always remain.
   const handleDeleteSeason = async (seasonId: string) => {
     if (!isAdmin) {
@@ -1296,12 +1285,12 @@ export default function App() {
     try {
       setIsLoading(true);
 
-      // 1. Delete season doc from Supabase
-      await deleteLagaAmalFromSupabase(seasonId);
+      // 1. Delete season doc from Firestore
+      await deleteLagaAmalFromFirestore(seasonId);
 
-      // 2. Cascade delete all matching matches from Supabase
+      // 2. Cascade delete all matching matches from Firestore
       if (matchesToDelete.length > 0) {
-        await deleteMatchesBatchFromSupabase(matchesToDelete);
+        await deleteMatchesBatchFromFirestore(matchesToDelete);
       }
 
       // 3. Delete from backend server
@@ -1330,7 +1319,7 @@ export default function App() {
     } catch (err: any) {
       console.error('Error deleting season:', err);
       showSyncNotice(
-        `Klasemen dihapus dari tampilan, namun gagal di Supabase: ${err?.message || 'Koneksi terputus'}.`
+        `Klasemen dihapus dari tampilan, namun gagal di Firestore: ${err?.message || 'Koneksi terputus'}.`
       );
     } finally {
       setIsLoading(false);
@@ -1384,7 +1373,7 @@ export default function App() {
         console.warn('Could not reach backend player update, local cache preserved:', err);
       }
 
-      // 6. Persist to Supabase — this is the shared source of truth other
+      // 6. Persist to Firestore — this is the shared source of truth other
       // devices/sessions read from. Steps 2-4 above already updated this
       // device's local state + localStorage optimistically, so if this
       // step silently fails, this device would keep showing the new photo
@@ -1393,12 +1382,12 @@ export default function App() {
       // instead of swallowing it.
       if (targetPlayer) {
         try {
-          await syncPlayerToSupabase({
+          await syncPlayerToFirestore({
             ...targetPlayer,
             avatar_url: cleanUrl,
           });
         } catch (syncErr: any) {
-          console.error('Error syncing avatar to Supabase:', syncErr);
+          console.error('Error syncing avatar to Firestore:', syncErr);
           showSyncNotice(
             `Foto profil ${pName} tersimpan di perangkat ini, tapi gagal disinkronkan ke server: ${syncErr?.message || 'Koneksi terputus'}. Perangkat/pengguna lain mungkin belum melihat foto baru ini.`
           );
@@ -1433,7 +1422,8 @@ export default function App() {
       // 1. If renaming, update all matches in state where the player participated
       let matchesToSync: Match[] = [];
       if (isRenaming) {
-        const matchMap = new Map<string | number, Match>();
+        // Keyed by season + id: a match number is only unique WITHIN one season.
+        const matchMap = new Map<string, Match>();
         const updatedMatches = matches.map((m) => {
           let changed = false;
           const updatedPohon = (m.pohon || []).map((p) => {
@@ -1477,7 +1467,7 @@ export default function App() {
               ...(updatedLobbyMvp && { lobbyMvp: updatedLobbyMvp }),
               ...(updatedWinnerMvp && { winner_mvp: updatedWinnerMvp }),
             } as Match;
-            matchMap.set(m.id, updatedM);
+            matchMap.set(buildMatchRowId(m), updatedM);
             return updatedM;
           }
           return m;
@@ -1538,9 +1528,17 @@ export default function App() {
 
         let updatedMatchRows = s.matchRows;
         if (isRenaming && s.matchRows) {
-          updatedMatchRows = s.matchRows.map((mr) =>
-            mr.nickname?.toLowerCase() === oldName.toLowerCase() ? { ...mr, nickname: newName } : mr
-          );
+          // Row ids look like `match-<n>-<nickname>` and are used to find the row
+          // again when a match is reverted/deleted, so the id must follow the rename too.
+          const oldIdSuffix = `-${oldName}`;
+          updatedMatchRows = s.matchRows.map((mr) => {
+            if (mr.nickname?.toLowerCase() !== oldName.toLowerCase()) return mr;
+            const id =
+              typeof mr.id === 'string' && mr.id.endsWith(oldIdSuffix)
+                ? mr.id.slice(0, -oldIdSuffix.length) + `-${newName}`
+                : mr.id;
+            return { ...mr, nickname: newName, id };
+          });
         }
 
         // Top performers rename if they matched old name
@@ -1614,34 +1612,39 @@ export default function App() {
         console.warn('Failed to update player details on backend:', err);
       }
 
-      // 6. Persist to Supabase:
+      // 6. Persist to Firestore:
       // If renaming, remove old player document so it doesn't leave an orphaned duplicate
       if (isRenaming) {
         try {
-          await deletePlayerFromSupabase(playerId, oldName);
+          await deletePlayerFromFirestore(playerId, oldName);
         } catch (delErr) {
-          console.warn('Could not delete old player document from Supabase:', delErr);
+          console.warn('Could not delete old player document from Firestore:', delErr);
         }
       }
 
       // Save updated player document under new slug
-      await syncPlayerToSupabase(updatedPlayer);
+      await syncPlayerToFirestore(updatedPlayer);
 
-      // Save all updated seasons to Supabase
+      // Save all updated seasons to Firestore
       if (seasonsToSync.length > 0) {
-        await syncSeasonsBatchToSupabase(seasonsToSync);
+        await syncSeasonsBatchToFirestore(seasonsToSync);
       }
 
-      // Save updated matches to Supabase
+      // Save updated matches to Firestore
       if (matchesToSync.length > 0) {
-        await syncMatchesBatchToSupabase(matchesToSync);
+        await syncMatchesBatchToFirestore(matchesToSync);
+      }
+
+      // Carry the player's login PIN, chat history and session over to the new name
+      if (isRenaming) {
+        await migratePlayerIdentity(oldName, newName);
       }
 
       return true;
     } catch (err: any) {
       console.error('Error updating player details:', err);
       showSyncNotice(
-        `Perubahan pemain tersimpan lokal, namun gagal ke Supabase: ${err?.message || 'Koneksi terputus'}.`
+        `Perubahan pemain tersimpan lokal, namun gagal ke Firestore: ${err?.message || 'Koneksi terputus'}.`
       );
       return false;
     }
@@ -1708,10 +1711,10 @@ export default function App() {
         console.warn('Backend player delete failed:', err);
       }
 
-      // 5. Delete on Supabase
-      await deletePlayerFromSupabase(playerId, pName);
+      // 5. Delete on Firestore
+      await deletePlayerFromFirestore(playerId, pName);
 
-      // 6. Sync updated season to Supabase
+      // 6. Sync updated season to Firestore
       const updatedSeason = {
         ...activeSeason,
         players: activeSeason.players.filter(
@@ -1721,7 +1724,7 @@ export default function App() {
           (p) => p.nickname.toLowerCase() !== pName.toLowerCase()
         ).length,
       };
-      await syncLagaAmalToSupabase(recalculateSeasonStats(updatedSeason));
+      await syncLagaAmalToFirestore(recalculateSeasonStats(updatedSeason));
 
       return true;
     } catch (err: any) {
@@ -1739,7 +1742,7 @@ export default function App() {
     if (!targetPlayer) return null;
 
     try {
-      // Send the player we already have (from Supabase) as a fallback
+      // Send the player we already have (from Firestore) as a fallback
       const topHeroNames = getPlayerTopHeroes(targetPlayer.name, seasonMatches, activeSeason).map((h) => h.hero);
       const res = await fetch(`/api/players/${encodeURIComponent(String(playerId))}/generate-title`, {
         method: 'POST',
@@ -1778,8 +1781,8 @@ export default function App() {
           };
           await handleUpdateSeason(seasonWithNewJulukan);
 
-          // Sync to Supabase
-          await syncPlayerToSupabase(updatedPlayer);
+          // Sync to Firestore
+          await syncPlayerToFirestore(updatedPlayer);
 
           return data.julukan;
         }
@@ -1816,9 +1819,9 @@ export default function App() {
       await handleUpdateSeason(seasonWithFallbackJulukan);
 
       try {
-        await syncPlayerToSupabase(updatedPlayer);
+        await syncPlayerToFirestore(updatedPlayer);
       } catch (syncErr) {
-        console.warn('Error syncing fallback julukan to Supabase:', syncErr);
+        console.warn('Error syncing fallback julukan to Firestore:', syncErr);
       }
 
       return fallbackJulukan;
@@ -2061,7 +2064,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Non-blocking Supabase Banner / Notification */}
+      {/* Non-blocking Firestore Banner / Notification */}
       {syncNotice && (
         <div className="sticky top-[61px] z-30 px-4 py-2 bg-gradient-to-r from-amber-950/95 to-[#2A1D13] border-b border-amber-500/40 text-xs text-[#F2EDE4] flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
@@ -2069,12 +2072,12 @@ export default function App() {
             <span className="font-medium text-amber-200">{syncNotice.message}</span>
             <button
               onClick={() => {
-                const btn = document.getElementById('btn-supabase-status');
+                const btn = document.getElementById('btn-firestore-status');
                 if (btn) btn.click();
               }}
               className="ml-2 text-xs text-amber-300 underline hover:text-amber-200 font-semibold cursor-pointer shrink-0"
             >
-              Status Supabase
+              Status Firestore
             </button>
           </div>
           <button
@@ -2253,7 +2256,7 @@ export default function App() {
           <div className="flex items-center gap-3 text-[11px]">
             <span className="text-emerald-400 font-medium flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block" />
-              Supabase Database Live
+              Firestore Database Live
             </span>
             <span>·</span>
             <span className="text-[#E8B33D]">Season {activeSeason.id.toUpperCase()}</span>

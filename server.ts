@@ -2,7 +2,9 @@ import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { createClient } from '@supabase/supabase-js';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import firebaseConfig from './firebase-applet-config.json';
 import { buildPlayersFromSeason, applyMatchToSeason, recalculateSeasonStats } from './src/utils/seasonCalculations.ts';
 import { MLBB_HEROES } from './src/data/heroes.ts';
 import { Match, Player, Medal, LagaAmalSeasonData } from './src/types.ts';
@@ -11,6 +13,7 @@ import { generateHeuristicPlayerJulukan } from './src/utils/julukan.ts';
 import { teamDisplayName } from './src/utils/teamLabels.ts';
 import { generateTextViaPuter } from './src/utils/puterFallback.ts';
 import { getPlayerDocId } from './src/utils/playerId.ts';
+import { buildMatchRowId } from './src/utils/matchRowId.ts';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { MLBB_OFFICIAL_HERO_ICONS, getRawHeroIconUrl } from './src/constants/mlbbHeroIcons.ts';
 
@@ -20,13 +23,12 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Supabase client setup for server-side store cache
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://pdcqiwptshqeirjqvbvp.supabase.co';
-const SUPABASE_ANON_KEY =
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkY3Fpd3B0c2hxZWlyanF2YnZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2MzE1NzYsImV4cCI6MjEwNTIwNzU3Nn0.R1A4C63LVPy1ONVU1NkUcRCWYtgqODffoMJksKbyb4Y';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Firestore client setup for server-side store cache
+const fbApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const firestore =
+  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? getFirestore(fbApp, firebaseConfig.firestoreDatabaseId)
+    : getFirestore(fbApp);
 
 interface StoreData {
   players: Player[];
@@ -40,34 +42,37 @@ let store: StoreData = {
   lagaAmalSeasons: [],
 };
 
-async function initStoreFromSupabase() {
+async function initStoreFromFirestore() {
   try {
-    const [playersRes, matchesRes, seasonsRes] = await Promise.all([
-      supabase.from('players').select('data'),
-      supabase.from('matches').select('data'),
-      supabase.from('laga_amal_seasons').select('data'),
+    const [playersSnap, matchesSnap, seasonsSnap] = await Promise.all([
+      getDocs(collection(firestore, 'players')),
+      getDocs(collection(firestore, 'matches')),
+      getDocs(collection(firestore, 'laga_amal_seasons')),
     ]);
 
-    if (playersRes.data && playersRes.data.length > 0) {
-      store.players = playersRes.data.map((r: any) => r.data).filter(Boolean);
-    }
-    if (matchesRes.data && matchesRes.data.length > 0) {
-      store.matches = matchesRes.data.map((r: any) => r.data).filter(Boolean);
-    }
-    if (seasonsRes.data && seasonsRes.data.length > 0) {
-      store.lagaAmalSeasons = seasonsRes.data.map((r: any) => r.data).filter(Boolean);
-    }
+    store.players = playersSnap.docs.map((d) => d.data() as Player);
+    // Legacy plain-id docs and season-namespaced docs can describe the same
+    // match — keep one per (season, id), preferring the namespaced doc.
+    const matchMap = new Map<string, Match>();
+    matchesSnap.docs.forEach((d) => {
+      const m = d.data() as Match;
+      const key = buildMatchRowId(m);
+      if (!matchMap.has(key) || d.id.includes('-')) matchMap.set(key, m);
+    });
+    store.matches = Array.from(matchMap.values());
+    store.lagaAmalSeasons = seasonsSnap.docs.map((d) => d.data() as LagaAmalSeasonData);
+
     console.log(
-      `[Supabase Store Sync] Loaded ${store.players.length} players, ${store.matches.length} matches, ${store.lagaAmalSeasons.length} seasons.`
+      `[Firestore Store Sync] Loaded ${store.players.length} players, ${store.matches.length} matches, ${store.lagaAmalSeasons.length} seasons.`
     );
   } catch (err) {
-    console.warn('Could not load store from Supabase on startup:', err);
+    console.warn('Could not load store from Firestore on startup:', err);
   }
 }
 
-// Memory-only store sync helper; actual persistence is handled via Supabase
+// Memory-only store sync helper; actual persistence is handled via Firestore
 function saveStore(_data: StoreData) {
-  // Persistence is now directly handled via Supabase, no local store.json file needed
+  // Persistence is now directly handled via Firestore, no local store.json file needed
 }
 
 // Gemini API lazy initialization
@@ -380,7 +385,7 @@ app.post('/api/players', (req, res) => {
     return res.status(400).json({ error: `Pemain dengan nama '${trimmed}' sudah terdaftar` });
   }
 
-  // Storage-key collision guard — the players table's Supabase row id is a
+  // Storage-key collision guard — the players table's Firestore row id is a
   // slug of the name (see getPlayerDocId), so a name that only differs by
   // spacing/punctuation from an existing player would silently overwrite
   // that player's row. Reject it here too, not just in the UI.
@@ -833,7 +838,7 @@ app.post('/api/matches', async (req, res) => {
 
 // PUT /api/matches/:id (Edit an existing match — best-effort cache update;
 // the client is the source of truth here and has already recalculated
-// season stats and synced to Supabase before calling this. This just keeps
+// season stats and synced to Firestore before calling this. This just keeps
 // this server's own in-memory store from serving stale data on next load.)
 app.put('/api/matches/:id', (req, res) => {
   const matchId = Number(req.params.id);
@@ -841,7 +846,7 @@ app.put('/api/matches/:id', (req, res) => {
   if (idx === -1) {
     // Not known to this server's local store (e.g. saved while this
     // backend was unreachable) — nothing to update locally, but that's
-    // fine since Supabase already has the authoritative copy.
+    // fine since Firestore already has the authoritative copy.
     return res.json({ success: true, updatedLocally: false });
   }
   store.matches[idx] = { ...store.matches[idx], ...req.body };
@@ -903,22 +908,14 @@ app.post('/api/matches/:id/analyze', async (req, res) => {
       saveStore(store);
     }
 
-    if (supabase) {
-      try {
-        const seasonSlug = (seasonToMatch || '')
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '');
-        const rowId = seasonSlug ? `${seasonSlug}-${matchId}` : String(matchId);
-        await supabase.from('matches').upsert({
-          id: rowId,
-          data: match,
-          updated_at: new Date().toISOString(),
-        });
-      } catch (sbErr) {
-        console.warn('[Supabase Server] Error updating match analysis in Supabase:', sbErr);
-      }
+    try {
+      await setDoc(
+        doc(firestore, 'matches', buildMatchRowId({ id: matchId, season: seasonToMatch })),
+        JSON.parse(JSON.stringify(match, (_, v) => (v === undefined ? null : v))),
+        { merge: true }
+      );
+    } catch (fsErr) {
+      console.warn('[Firestore Server] Error updating match analysis in Firestore:', fsErr);
     }
 
     res.json({ id: matchId, season: match.season, ai_analysis: analysis });
@@ -1560,8 +1557,8 @@ app.delete('/api/laga-amal/:id', (req, res) => {
 
 // ----------------- VITE MIDDLEWARE / SPA FALLBACK -----------------
 async function startServer() {
-  // Pre-load current state from Supabase
-  await initStoreFromSupabase();
+  // Pre-load current state from Firestore
+  await initStoreFromFirestore();
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

@@ -2,7 +2,12 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { KeyRound, X, Eye, EyeOff, Check, AlertCircle } from 'lucide-react';
 import { Player, PlayerAuthSession } from '../types';
 import { SearchablePlayerSelect } from '../components/SearchablePlayerSelect';
-import { verifyOrSetPlayerPin, changePlayerPin, checkHasPin } from '../services/chatService';
+import {
+  verifyOrSetPlayerPin,
+  changePlayerPin,
+  checkHasPin,
+  PLAYER_RENAMED_EVENT,
+} from '../services/chatService';
 import { safeSetItem, safeGetItem, safeRemoveItem } from '../utils/storage';
 
 // Session is intentionally kept under the same storage key it always used
@@ -71,6 +76,25 @@ export const PlayerAuthProvider: React.FC<PlayerAuthProviderProps> = ({ players,
       }
     }
   }, [players, session]);
+
+  // If the logged-in player is renamed (by them or an admin), keep the session
+  // on the new name instead of leaving it pointing at a name that no longer exists.
+  useEffect(() => {
+    const onRenamed = (e: Event) => {
+      const { oldName, newName } = (e as CustomEvent).detail || {};
+      if (!oldName || !newName) return;
+      setSession((prev) => {
+        if (!prev || prev.playerName.trim().toLowerCase() !== String(oldName).trim().toLowerCase()) {
+          return prev;
+        }
+        const next = { ...prev, playerName: newName };
+        safeSetItem(AUTH_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+    };
+    window.addEventListener(PLAYER_RENAMED_EVENT, onRenamed);
+    return () => window.removeEventListener(PLAYER_RENAMED_EVENT, onRenamed);
+  }, []);
 
   // --- Login modal state ---
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);

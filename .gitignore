@@ -7,3 +7,6 @@ coverage/
 .env*
 !.env.example
 !src/data/
+
+# Supabase migration backups (contain admin passwords / PINs)
+backup/
