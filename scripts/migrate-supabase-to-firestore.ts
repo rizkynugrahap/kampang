@@ -9,14 +9,18 @@
  * - Writes with { merge: true }: Supabase values win on conflicts, fields that exist
  *   only in Firestore are kept. Nothing is ever deleted from Firestore.
  * - Idempotent: safe to run more than once.
+ * - Firestore docs (players / matches / seasons) that Supabase does not have are always LISTED.
+ *   They are only deleted if you pass --prune together with --apply.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, doc, getDocs, writeBatch } from 'firebase/firestore';
+import { buildMatchRowId } from '../src/utils/matchRowId';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const APPLY = process.argv.includes('--apply');
+const PRUNE = process.argv.includes('--prune');
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
@@ -102,6 +106,7 @@ async function main() {
 
   const backup: Record<string, Row[]> = {};
   const plan: Array<{ col: string; id: string; data: Row }> = [];
+  const orphans: Array<{ col: string; id: string; label: string; duplicate: boolean }> = [];
 
   for (const t of TABLES) {
     const rows = await fetchTable(t.table);
@@ -115,15 +120,29 @@ async function main() {
     (await getDocs(collection(db, t.collection))).forEach((d) => existing.set(d.id, d.data()));
 
     let create = 0, update = 0, same = 0, skipped = 0;
+    const seen = new Set<string>();
+    const seenMatchKeys = new Set<string>();
     for (const r of rows) {
       const m = t.map(r);
       if (!m) { skipped++; continue; }
+      seen.add(m.id);
+      if (t.table === 'matches') seenMatchKeys.add(buildMatchRowId(m.data as any));
       const data = clean(m.data);
       const cur = existing.get(m.id);
       if (!cur) create++;
       else if (stable({ ...cur, ...data }) !== stable(cur)) update++;
       else { same++; continue; }
       plan.push({ col: t.collection, id: m.id, data });
+    }
+    if (['players', 'matches', 'laga_amal_seasons'].includes(t.table)) {
+      existing.forEach((cur, id) => {
+        if (seen.has(id)) return;
+        const label =
+          t.table === 'players' ? `${cur.name}` : t.table === 'matches' ? `#${cur.id} ${cur.season}` : `${cur.title ?? cur.id}`;
+        // a legacy plain-id match whose (season, id) also exists in Supabase is just a duplicate
+        const duplicate = t.table === 'matches' && seenMatchKeys.has(buildMatchRowId(cur as any));
+        orphans.push({ col: t.collection, id, label, duplicate });
+      });
     }
     console.log(
       `${t.table.padEnd(20)} supabase=${String(rows.length).padStart(4)}  firestore=${String(existing.size).padStart(4)}  ` +
@@ -136,8 +155,17 @@ async function main() {
   fs.writeFileSync(file, JSON.stringify(backup, null, 2));
   console.log(`\nSupabase backup saved: ${file}`);
 
+  const real = orphans.filter((o) => !o.duplicate);
+  const dups = orphans.filter((o) => o.duplicate);
+  if (orphans.length) {
+    console.log(`\nIn Firestore but NOT in Supabase (${orphans.length}):`);
+    real.forEach((o) => console.log(`  [${o.col}] ${o.id}  (${o.label})  <- missing in Supabase (deleted/renamed there?)`));
+    if (dups.length) console.log(`  + ${dups.length} legacy plain-id match docs that are only duplicates of a Supabase match`);
+    console.log(PRUNE ? '  --prune: these will be DELETED with --apply.' : '  They are kept. Add --prune to delete them.');
+  }
+
   if (!APPLY) {
-    console.log(`\n${plan.length} document(s) would be written. Re-run with --apply to migrate.`);
+    console.log(`\n${plan.length} document(s) would be written${PRUNE ? `, ${orphans.length} deleted` : ''}. Re-run with --apply to migrate.`);
     process.exit(0);
   }
 
@@ -146,6 +174,14 @@ async function main() {
     plan.slice(i, i + 400).forEach((p) => batch.set(doc(db, p.col, p.id), p.data, { merge: true }));
     await batch.commit();
     console.log(`  wrote ${Math.min(i + 400, plan.length)}/${plan.length}`);
+  }
+  if (PRUNE) {
+    for (let i = 0; i < orphans.length; i += 400) {
+      const batch = writeBatch(db);
+      orphans.slice(i, i + 400).forEach((o) => batch.delete(doc(db, o.col, o.id)));
+      await batch.commit();
+    }
+    console.log(`  deleted ${orphans.length} stale doc(s)`);
   }
   console.log('\nDone. Firestore is now up to date with Supabase.');
   process.exit(0);
