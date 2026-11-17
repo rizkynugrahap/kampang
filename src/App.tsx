@@ -34,6 +34,7 @@ import {
   updateMatchResultSystemMessage,
   removeMatchResultSystemMessage,
   syncAllMatchSystemMessages,
+  migratePlayerIdentity,
 } from './services/chatService';
 import {
   BackgroundSettingsModal,
@@ -77,6 +78,7 @@ import { generateHeuristicMatchAnalysis } from './utils/matchAnalysis';
 import { generateHeuristicPlayerJulukan } from './utils/julukan';
 import { getPlayerTopHeroes } from './utils/stats';
 import { sanitizeMatches } from './utils/matchSequence';
+import { buildMatchRowId } from './utils/matchRowId';
 import { safeSetItem, safeGetItem, safeRemoveItem } from './utils/storage';
 
 type ActiveTab = 'dashboard' | 'matchHistory' | 'lagaAmal' | 'chat' | 'admin' | 'profile' | 'players';
@@ -1420,7 +1422,8 @@ export default function App() {
       // 1. If renaming, update all matches in state where the player participated
       let matchesToSync: Match[] = [];
       if (isRenaming) {
-        const matchMap = new Map<string | number, Match>();
+        // Keyed by season + id: a match number is only unique WITHIN one season.
+        const matchMap = new Map<string, Match>();
         const updatedMatches = matches.map((m) => {
           let changed = false;
           const updatedPohon = (m.pohon || []).map((p) => {
@@ -1464,7 +1467,7 @@ export default function App() {
               ...(updatedLobbyMvp && { lobbyMvp: updatedLobbyMvp }),
               ...(updatedWinnerMvp && { winner_mvp: updatedWinnerMvp }),
             } as Match;
-            matchMap.set(m.id, updatedM);
+            matchMap.set(buildMatchRowId(m), updatedM);
             return updatedM;
           }
           return m;
@@ -1622,6 +1625,11 @@ export default function App() {
       // Save updated matches to Firestore
       if (matchesToSync.length > 0) {
         await syncMatchesBatchToFirestore(matchesToSync);
+      }
+
+      // Carry the player's login PIN, chat history and session over to the new name
+      if (isRenaming) {
+        await migratePlayerIdentity(oldName, newName);
       }
 
       return true;

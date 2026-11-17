@@ -5,6 +5,8 @@ import {
   getDoc,
   deleteDoc,
   getDocs,
+  where,
+  writeBatch,
   onSnapshot,
   query,
   orderBy,
@@ -627,4 +629,65 @@ export async function checkHasPin(playerName: string): Promise<boolean> {
   // 2. Check local
   const localPins = getLocalPins();
   return !!localPins[docId];
+}
+
+// ----------------- PLAYER RENAME: CARRY IDENTITY OVER -----------------
+
+export const PLAYER_RENAMED_EVENT = 'pantos_player_renamed';
+
+/**
+ * A player's login (PIN) is keyed by a slug of their name, and chat messages
+ * store the sender's name. Renaming a player must therefore carry those over,
+ * otherwise the new name looks like a brand-new account (new PIN) while the old
+ * PIN document is left behind.
+ *
+ * - PIN: moved old slug -> new slug. If the new slug already has its own PIN it
+ *   is kept as-is and the old PIN is left untouched (never overwrite a PIN).
+ * - Chat: every message sent under the old name gets the new name.
+ * - Local session: a logged-in session under the old name is renamed too.
+ */
+export async function migratePlayerIdentity(oldName: string, newName: string): Promise<void> {
+  const from = oldName.trim();
+  const to = newName.trim();
+  if (!from || !to || from === to) return;
+
+  const oldId = getPlayerDocId({ name: from });
+  const newId = getPlayerDocId({ name: to });
+
+  if (oldId !== newId) {
+    try {
+      const oldRef = doc(db, 'player_pins', oldId);
+      const newRef = doc(db, 'player_pins', newId);
+      const [oldSnap, newSnap] = await Promise.all([getDoc(oldRef), getDoc(newRef)]);
+      if (oldSnap.exists() && !newSnap.exists()) {
+        await setDoc(newRef, {
+          ...oldSnap.data(),
+          playerName: to,
+          updatedAt: new Date().toISOString(),
+        });
+        await deleteDoc(oldRef);
+      }
+      const pins = getLocalPins();
+      if (pins[oldId] && !pins[newId]) {
+        saveLocalPin(newId, pins[oldId]);
+      }
+    } catch (err) {
+      console.warn('Could not migrate player PIN on rename:', err);
+    }
+  }
+
+  try {
+    const snap = await getDocs(query(collection(db, 'chat_messages'), where('senderName', '==', from)));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => batch.update(d.ref, { senderName: to }));
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('Could not rename chat messages on player rename:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PLAYER_RENAMED_EVENT, { detail: { oldName: from, newName: to } }));
+  }
 }
