@@ -1528,9 +1528,17 @@ export default function App() {
 
         let updatedMatchRows = s.matchRows;
         if (isRenaming && s.matchRows) {
-          updatedMatchRows = s.matchRows.map((mr) =>
-            mr.nickname?.toLowerCase() === oldName.toLowerCase() ? { ...mr, nickname: newName } : mr
-          );
+          // Row ids look like `match-<n>-<nickname>` and are used to find the row
+          // again when a match is reverted/deleted, so the id must follow the rename too.
+          const oldIdSuffix = `-${oldName}`;
+          updatedMatchRows = s.matchRows.map((mr) => {
+            if (mr.nickname?.toLowerCase() !== oldName.toLowerCase()) return mr;
+            const id =
+              typeof mr.id === 'string' && mr.id.endsWith(oldIdSuffix)
+                ? mr.id.slice(0, -oldIdSuffix.length) + `-${newName}`
+                : mr.id;
+            return { ...mr, nickname: newName, id };
+          });
         }
 
         // Top performers rename if they matched old name
