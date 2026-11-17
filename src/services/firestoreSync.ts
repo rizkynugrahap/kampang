@@ -275,29 +275,34 @@ export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[])
   );
 }
 
+/**
+ * Deletes ONE player's document(s) — identified by name only.
+ *
+ * Never match on `player.id`: it is just a position in the roster (idx + 1),
+ * recomputed on every load, so two different players can carry the same id at
+ * different moments. Matching on it used to delete an unrelated player's
+ * document whenever someone was renamed.
+ */
 export async function deletePlayerFromFirestore(
   playerId: string | number,
   playerName?: string
 ): Promise<void> {
-  const slug = (playerName || String(playerId))
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+  const name = (playerName || '').trim();
+  if (!name) {
+    // Without a name there is no safe way to identify the player. Only remove
+    // a legacy document whose key is literally this id AND which has no name.
+    const legacy = await getDoc(doc(db, 'players', String(playerId)));
+    if (legacy.exists() && !(legacy.data() as Partial<Player>)?.name) {
+      await commitInChunks([(b) => b.delete(legacy.ref)]);
+    }
+    return;
+  }
 
-  const ids = new Set<string>([slug, String(playerId)].filter(Boolean));
-  // Also catch docs whose stored id / name matches (e.g. stale keys)
+  const ids = new Set<string>([getPlayerDocId({ name })]);
   const snap = await getDocs(collection(db, 'players'));
   snap.forEach((d) => {
     const p = d.data() as Partial<Player>;
-    if (
-      d.id === slug ||
-      d.id === String(playerId) ||
-      String(p?.id) === String(playerId) ||
-      (playerName && p?.name && p.name.toLowerCase() === playerName.toLowerCase())
-    ) {
-      ids.add(d.id);
-    }
+    if (p?.name && p.name.trim().toLowerCase() === name.toLowerCase()) ids.add(d.id);
   });
   await commitInChunks(Array.from(ids).map((id) => (b) => b.delete(doc(db, 'players', id))));
 }
