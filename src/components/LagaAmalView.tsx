@@ -36,7 +36,7 @@ import {
 import { PlayerAvatar } from './PlayerAvatar';
 import { HeroAvatar } from './HeroAvatar';
 import { recalculateSeasonStats, EMPTY_SEASON, sortSeasonsDescending } from '../utils/seasonCalculations';
-import { syncLagaAmalToSupabase } from '../services/supabaseSync';
+import { syncLagaAmalToFirestore } from '../services/firestoreSync';
 import { teamDisplayName } from '../utils/teamLabels';
 
 type SubTab = 'standings' | 'heroPicks' | 'heroPool' | 'matchLogs';

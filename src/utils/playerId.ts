@@ -1,6 +1,6 @@
 /**
- * The `players` table's row id (and therefore each player's real identity
- * in Supabase) is a slug of their name — not their numeric Player.id — so
+ * The `players` collection's row id (and therefore each player's real identity
+ * in Firestore) is a slug of their name — not their numeric Player.id — so
  * that the app can look a player up by name before it even knows their
  * numeric id. That means two DIFFERENT names that normalize to the same
  * slug (e.g. "Mr. GiL" and "Mr GiL" — punctuation/spacing stripped) would

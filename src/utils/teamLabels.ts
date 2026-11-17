@@ -4,7 +4,7 @@
  * The underlying data model (match.winner, match.pohon / match.lobby,
  * mp.team === 'Pohon' | 'Lobby', TeamName = 'Tim Pohon' | 'Tim Lobby', etc.)
  * intentionally keeps its original internal values. Renaming those would
- * mean every match already saved in Supabase (whose `winner` field
+ * mean every match already saved in Firestore (whose `winner` field
  * literally contains the string "Tim Pohon"/"Tim Lobby") would stop
  * matching any comparison the moment the rename landed, silently breaking
  * win-rate stats, filters, and badges for historical matches.

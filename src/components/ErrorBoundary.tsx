@@ -92,7 +92,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             <p className="text-[10px] text-[#6E655C]">
-              Laga Amal Pantos MLBB • Data Anda di database Supabase tetap aman.
+              Laga Amal Pantos MLBB • Data Anda di database Firestore tetap aman.
             </p>
           </div>
         </div>

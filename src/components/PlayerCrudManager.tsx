@@ -323,7 +323,7 @@ export const PlayerCrudManager: React.FC<PlayerCrudManagerProps> = ({
 
     // Same storage-key collision guard as the Add form — renaming a player
     // to something that slugs the same as another existing player would
-    // silently merge/overwrite their data in Supabase.
+    // silently merge/overwrite their data in Firestore.
     const editedSlug = getPlayerDocId({ name: cleanName, id: 0 } as Player);
     const editedSlugConflict = players.find(
       (p) =>

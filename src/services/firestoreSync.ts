@@ -3,24 +3,28 @@ import {
   doc,
   setDoc,
   getDoc,
-  deleteDoc,
   getDocs,
+  updateDoc,
+  limit,
   query,
-  where,
   onSnapshot,
   writeBatch,
   Unsubscribe,
+  DocumentReference,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Player, Match, LagaAmalSeasonData } from '../types';
+import { getPlayerDocId } from '../utils/playerId';
+import { buildMatchRowId } from '../utils/matchRowId';
+export { getPlayerDocId, buildMatchRowId };
+export type { Unsubscribe };
 
 /**
- * Remove undefined values as Firestore rejects undefined fields
+ * Firestore rejects `undefined` fields (and class instances), so every write
+ * goes through a JSON round-trip that turns undefined into null.
  */
 function sanitizeForFirestore<T>(data: T): T {
-  return JSON.parse(
-    JSON.stringify(data, (_, v) => (v === undefined ? null : v))
-  );
+  return JSON.parse(JSON.stringify(data, (_, v) => (v === undefined ? null : v)));
 }
 
 export interface SyncStatus {
@@ -30,242 +34,156 @@ export interface SyncStatus {
   error: string | null;
 }
 
-// ----------------- SUBSCRIPTIONS (REAL-TIME) -----------------
+// Firestore allows at most 500 operations per batch.
+const BATCH_LIMIT = 400;
+
+async function commitInChunks(
+  ops: Array<(batch: ReturnType<typeof writeBatch>) => void>
+): Promise<void> {
+  for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BATCH_LIMIT).forEach((op) => op(batch));
+    await batch.commit();
+  }
+}
+
+const errOf = (e: unknown) => (e instanceof Error ? e : new Error(String(e)));
+
+// ----------------- SUBSCRIPTIONS (REAL-TIME VIA FIRESTORE) -----------------
 
 export function subscribeToPlayers(
   onUpdate: (players: Player[]) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
-  const colRef = collection(db, 'players');
   return onSnapshot(
-    colRef,
+    collection(db, 'players'),
     (snapshot) => {
-      if (!snapshot.empty) {
-        const playersList: Player[] = [];
-        snapshot.forEach((docSnap) => {
-          playersList.push(docSnap.data() as Player);
-        });
-        playersList.sort((a, b) => Number(a.id) - Number(b.id));
-        onUpdate(playersList);
-      }
+      const list: Player[] = snapshot.docs.map((d) => {
+        const raw = d.data() as Player;
+        return { ...raw, id: raw?.id !== undefined && raw?.id !== null ? raw.id : (d.id as any) };
+      });
+      list.sort((a, b) => Number(a.id) - Number(b.id));
+      onUpdate(list);
     },
     (err) => {
       console.warn('Firestore players snapshot error:', err);
-      if (onError) onError(err);
+      onError?.(errOf(err));
     }
   );
+}
+
+function dedupeMatches(docs: Array<{ id: string; data: Match }>): Match[] {
+  const matchMap = new Map<string, Match>();
+  docs.forEach(({ id, data }) => {
+    const matchObj: Match = {
+      ...data,
+      id: data?.id !== undefined && data?.id !== null ? data.id : Number(id),
+    };
+    const rowKey = buildMatchRowId(matchObj);
+    // Prefer the season-namespaced document if both formats exist
+    if (!matchMap.has(rowKey) || id.includes('-')) matchMap.set(rowKey, matchObj);
+  });
+  const list = Array.from(matchMap.values());
+  list.sort((a, b) => Number(b.id) - Number(a.id));
+  return list;
 }
 
 export function subscribeToMatches(
   onUpdate: (matches: Match[]) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
-  const colRef = collection(db, 'matches');
   return onSnapshot(
-    colRef,
+    collection(db, 'matches'),
     (snapshot) => {
-      const matchesList: Match[] = [];
-      if (!snapshot.empty) {
-        snapshot.forEach((docSnap) => {
-          matchesList.push(docSnap.data() as Match);
-        });
-        matchesList.sort((a, b) => Number(b.id) - Number(a.id));
-      }
-      onUpdate(matchesList);
+      onUpdate(dedupeMatches(snapshot.docs.map((d) => ({ id: d.id, data: d.data() as Match }))));
     },
     (err) => {
       console.warn('Firestore matches snapshot error:', err);
-      if (onError) onError(err);
+      onError?.(errOf(err));
     }
   );
+}
+
+function sortSeasons(list: LagaAmalSeasonData[]): LagaAmalSeasonData[] {
+  const extractNum = (s: LagaAmalSeasonData) => {
+    const m = (s?.title || '').match(/(\d+)/) || (s?.id || '').match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  return list.sort((a, b) => {
+    const numA = extractNum(a);
+    const numB = extractNum(b);
+    if (numA !== numB) return numB - numA;
+    return String(b?.title || b?.id || '').localeCompare(String(a?.title || a?.id || ''));
+  });
 }
 
 export function subscribeToLagaAmal(
   onUpdate: (seasons: LagaAmalSeasonData[]) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
-  const colRef = collection(db, 'laga_amal_seasons');
   return onSnapshot(
-    colRef,
+    collection(db, 'laga_amal_seasons'),
     (snapshot) => {
-      if (!snapshot.empty) {
-        const seasonsList: LagaAmalSeasonData[] = [];
-        snapshot.forEach((docSnap) => {
-          seasonsList.push(docSnap.data() as LagaAmalSeasonData);
-        });
-        onUpdate(seasonsList);
-      }
+      const list = snapshot.docs.map((d) => {
+        const raw = d.data() as LagaAmalSeasonData;
+        return { ...raw, id: raw?.id || d.id };
+      });
+      onUpdate(sortSeasons(list));
     },
     (err) => {
       console.warn('Firestore laga amal snapshot error:', err);
-      if (onError) onError(err);
+      onError?.(errOf(err));
     }
   );
 }
 
-// ----------------- WRITE & MUTATION METHODS -----------------
-
-// Player docs are keyed by a normalized version of their nickname rather
-// than `player.id` — that id is just an array position (idx + 1) computed
-// fresh from the season roster every load, so it can shift whenever the
-// roster order changes (a new player added, roster re-sorted, etc). Keying
-// by id meant a player's admin-set tier/badge could silently get written
-// under a *different* Firestore document than the one it was read from
-// previously, orphaning the old data.
-function getPlayerDocId(player: Player): string {
-  const slug = (player.name || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug || String(player.id);
+/** One-shot read of everything (used as a fallback when the backend API is unreachable). */
+export async function fetchAllOnce(): Promise<{
+  players: Player[];
+  matches: Match[];
+  seasons: LagaAmalSeasonData[];
+}> {
+  const [p, m, s] = await Promise.all([
+    getDocs(collection(db, 'players')),
+    getDocs(collection(db, 'matches')),
+    getDocs(collection(db, 'laga_amal_seasons')),
+  ]);
+  return {
+    players: p.docs.map((d) => d.data() as Player),
+    matches: dedupeMatches(m.docs.map((d) => ({ id: d.id, data: d.data() as Match }))),
+    seasons: sortSeasons(s.docs.map((d) => d.data() as LagaAmalSeasonData)),
+  };
 }
 
-export async function syncPlayerToFirestore(player: Player): Promise<void> {
-  const docRef = doc(db, 'players', getPlayerDocId(player));
-  await setDoc(docRef, sanitizeForFirestore(player), { merge: true });
-}
-
-export async function syncPlayersBatchToFirestore(players: Player[]): Promise<void> {
-  const batch = writeBatch(db);
-  players.forEach((p) => {
-    const docRef = doc(db, 'players', getPlayerDocId(p));
-    batch.set(docRef, sanitizeForFirestore(p), { merge: true });
-  });
-  await batch.commit();
-}
-
-export async function syncMatchToFirestore(match: Match): Promise<void> {
-  const docRef = doc(db, 'matches', String(match.id));
-  await setDoc(docRef, sanitizeForFirestore(match), { merge: true });
-}
-
-export async function syncLagaAmalToFirestore(season: LagaAmalSeasonData): Promise<void> {
-  const docRef = doc(db, 'laga_amal_seasons', String(season.id));
-  await setDoc(docRef, sanitizeForFirestore(season), { merge: true });
-}
-
-export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[]): Promise<void> {
-  const batch = writeBatch(db);
-  seasons.forEach((s) => {
-    const docRef = doc(db, 'laga_amal_seasons', String(s.id));
-    batch.set(docRef, sanitizeForFirestore(s), { merge: true });
-  });
-  await batch.commit();
-}
-
-/**
- * Deletes a whole Laga Amal season/klasemen from Firestore. Admin-only —
- * the caller is responsible for checking permission before calling this.
- */
-export async function deleteLagaAmalFromFirestore(seasonId: string): Promise<void> {
-  const docRef = doc(db, 'laga_amal_seasons', String(seasonId));
-  await deleteDoc(docRef);
-}
-
-/**
- * Deletes a single match from Firestore
- */
-export async function deleteMatchFromFirestore(matchId: string | number): Promise<void> {
-  const docRef = doc(db, 'matches', String(matchId));
-  try {
-    await deleteDoc(docRef);
-  } catch (e) {
-    console.warn('Direct doc delete error:', e);
-  }
-
-  // Also query by numeric or string id in case doc ID differs
-  try {
-    const numId = Number(matchId);
-    const snap = await getDocs(collection(db, 'matches'));
-    if (!snap.empty) {
-      const batch = writeBatch(db);
-      let count = 0;
-      snap.forEach((d) => {
-        const data = d.data();
-        if (
-          String(d.id) === String(matchId) ||
-          String(data.id) === String(matchId) ||
-          (!isNaN(numId) && data.id === numId)
-        ) {
-          batch.delete(d.ref);
-          count++;
-        }
-      });
-      if (count > 0) {
-        await batch.commit();
-      }
-    }
-  } catch (err) {
-    console.warn('Query fallback deleteMatchFromFirestore:', err);
-  }
-}
-
-/**
- * Deletes a batch of matches from Firestore
- */
-export async function deleteMatchesBatchFromFirestore(matchIds: (string | number)[]): Promise<void> {
-  if (!matchIds || matchIds.length === 0) return;
-  const idSet = new Set(matchIds.map((id) => String(id)));
-
-  // Try direct batch deletion
-  try {
-    const batch = writeBatch(db);
-    matchIds.forEach((id) => {
-      const directDocRef = doc(db, 'matches', String(id));
-      batch.delete(directDocRef);
-    });
-    await batch.commit();
-  } catch (e) {
-    console.warn('Batch direct delete error:', e);
-  }
-
-  // Also ensure any matches matching by data.id are deleted
-  try {
-    const snap = await getDocs(collection(db, 'matches'));
-    if (!snap.empty) {
-      const batch = writeBatch(db);
-      let count = 0;
-      snap.forEach((d) => {
-        const data = d.data();
-        if (idSet.has(String(d.id)) || (data.id !== undefined && idSet.has(String(data.id)))) {
-          batch.delete(d.ref);
-          count++;
-        }
-      });
-      if (count > 0) {
-        await batch.commit();
-      }
-    }
-  } catch (err) {
-    console.warn('Batch query delete fallback:', err);
-  }
-}
-
-// ----------------- BACKGROUND SETTINGS (app-wide, Firestore-synced) -----------------
+// ----------------- BACKGROUND & THEME SETTINGS -----------------
 
 export interface BackgroundSettings {
   bgUrl?: string;
   bgOpacity?: number;
+  logoType?: 'text' | 'image';
+  logoUrl?: string;
+  logoText?: string;
+  brandName?: string;
+  slogan?: string;
+  logoSize?: number;
+  logoFit?: 'contain' | 'cover';
+  logoShape?: 'rounded' | 'circle' | 'square' | 'none';
+  headerBgColor?: string;
+  activeButtonColor?: string;
+  activeButtonTextColor?: string;
+  updatedAt?: string;
 }
 
-const BACKGROUND_DOC_ID = 'background_settings';
+export type ThemeSettings = BackgroundSettings;
 
-/**
- * Live-subscribes to the shared background/opacity settings document, so a
- * change made on one device (or by any admin) reflects on every other
- * device in real time — this used to only live in each browser's own
- * localStorage, which is why it never "traveled" between devices.
- */
+const metaRef = (id: string): DocumentReference => doc(db, 'app_meta', id);
+
 export function subscribeToBackgroundSettings(
   callback: (settings: BackgroundSettings | null) => void
 ): Unsubscribe {
-  const docRef = doc(db, 'app_meta', BACKGROUND_DOC_ID);
   return onSnapshot(
-    docRef,
-    (snap) => {
-      callback(snap.exists() ? (snap.data() as BackgroundSettings) : null);
-    },
+    metaRef('background_settings'),
+    (snap) => callback(snap.exists() ? (snap.data() as BackgroundSettings) : null),
     (err) => {
       console.warn('Firestore background settings subscription error:', err);
       callback(null);
@@ -273,17 +191,141 @@ export function subscribeToBackgroundSettings(
   );
 }
 
-/**
- * Persists background/opacity settings to Firestore (merged — passing just
- * one field won't wipe the other) so they're permanent across refreshes
- * and shared across every device, not just the browser that set them.
- */
+/** Merged write — passing just one field won't wipe the others. */
 export async function syncBackgroundSettingsToFirestore(settings: BackgroundSettings): Promise<void> {
-  const docRef = doc(db, 'app_meta', BACKGROUND_DOC_ID);
-  await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
+  await setDoc(
+    metaRef('background_settings'),
+    sanitizeForFirestore({ ...settings, updatedAt: new Date().toISOString() }),
+    { merge: true }
+  );
 }
 
-// ----------------- ADMIN LOGIN (Firestore-only) -----------------
+// ----------------- ACTIVE SEASON SETTINGS -----------------
+
+export interface ActiveSeasonSettings {
+  seasonId: string;
+  updatedAt?: string;
+}
+
+export function subscribeToActiveSeason(callback: (seasonId: string | null) => void): Unsubscribe {
+  return onSnapshot(
+    metaRef('active_season'),
+    (snap) => callback(snap.exists() && snap.data()?.seasonId ? String(snap.data()!.seasonId) : null),
+    (err) => {
+      console.warn('Firestore active season subscription error:', err);
+      callback(null);
+    }
+  );
+}
+
+export async function syncActiveSeasonToFirestore(seasonId: string): Promise<void> {
+  await setDoc(metaRef('active_season'), { seasonId, updatedAt: new Date().toISOString() });
+}
+
+// ----------------- WRITE & MUTATION METHODS -----------------
+
+export async function syncPlayerToFirestore(player: Player): Promise<void> {
+  await setDoc(doc(db, 'players', getPlayerDocId(player)), sanitizeForFirestore(player), {
+    merge: true,
+  });
+}
+
+export async function syncPlayersBatchToFirestore(players: Player[]): Promise<void> {
+  if (!players || players.length === 0) return;
+  const byId = new Map<string, Player>();
+  players.forEach((p) => byId.set(getPlayerDocId(p), p));
+  await commitInChunks(
+    Array.from(byId.entries()).map(([id, p]) => (b) =>
+      b.set(doc(db, 'players', id), sanitizeForFirestore(p), { merge: true })
+    )
+  );
+}
+
+export async function syncMatchToFirestore(match: Match): Promise<void> {
+  await setDoc(doc(db, 'matches', buildMatchRowId(match)), sanitizeForFirestore(match), {
+    merge: true,
+  });
+}
+
+export async function syncMatchesBatchToFirestore(matches: Match[]): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const byId = new Map<string, Match>();
+  matches.forEach((m) => byId.set(buildMatchRowId(m), m));
+  await commitInChunks(
+    Array.from(byId.entries()).map(([id, m]) => (b) =>
+      b.set(doc(db, 'matches', id), sanitizeForFirestore(m), { merge: true })
+    )
+  );
+}
+
+export async function syncLagaAmalToFirestore(season: LagaAmalSeasonData): Promise<void> {
+  await setDoc(doc(db, 'laga_amal_seasons', String(season.id)), sanitizeForFirestore(season), {
+    merge: true,
+  });
+}
+
+export async function syncSeasonsBatchToFirestore(seasons: LagaAmalSeasonData[]): Promise<void> {
+  if (!seasons || seasons.length === 0) return;
+  const byId = new Map<string, LagaAmalSeasonData>();
+  seasons.forEach((s) => byId.set(String(s.id), s));
+  await commitInChunks(
+    Array.from(byId.entries()).map(([id, s]) => (b) =>
+      b.set(doc(db, 'laga_amal_seasons', id), sanitizeForFirestore(s), { merge: true })
+    )
+  );
+}
+
+export async function deletePlayerFromFirestore(
+  playerId: string | number,
+  playerName?: string
+): Promise<void> {
+  const slug = (playerName || String(playerId))
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const ids = new Set<string>([slug, String(playerId)].filter(Boolean));
+  // Also catch docs whose stored id / name matches (e.g. stale keys)
+  const snap = await getDocs(collection(db, 'players'));
+  snap.forEach((d) => {
+    const p = d.data() as Partial<Player>;
+    if (
+      d.id === slug ||
+      d.id === String(playerId) ||
+      String(p?.id) === String(playerId) ||
+      (playerName && p?.name && p.name.toLowerCase() === playerName.toLowerCase())
+    ) {
+      ids.add(d.id);
+    }
+  });
+  await commitInChunks(Array.from(ids).map((id) => (b) => b.delete(doc(db, 'players', id))));
+}
+
+export async function deleteLagaAmalFromFirestore(seasonId: string): Promise<void> {
+  await commitInChunks([(b) => b.delete(doc(db, 'laga_amal_seasons', String(seasonId)))]);
+}
+
+type MatchRef = string | number | { id: number | string; season?: string };
+
+const matchCandidateIds = (m: MatchRef): string[] =>
+  typeof m === 'object' ? [buildMatchRowId(m), String(m.id)] : [String(m)];
+
+/**
+ * Accepts either a bare id (legacy plain-id doc) or a match-like object with a
+ * season (normal case). Deletes whichever of the two possible keys exists.
+ */
+export async function deleteMatchFromFirestore(match: MatchRef): Promise<void> {
+  await deleteMatchesBatchFromFirestore([match]);
+}
+
+export async function deleteMatchesBatchFromFirestore(matches: MatchRef[]): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const ids = Array.from(new Set(matches.flatMap(matchCandidateIds)));
+  await commitInChunks(ids.map((id) => (b) => b.delete(doc(db, 'matches', id))));
+}
+
+// ----------------- ADMIN ACCOUNTS -----------------
 
 export interface AdminAccount {
   email: string;
@@ -297,63 +339,60 @@ const DEFAULT_ADMIN: AdminAccount = {
   name: 'Admin Pantos',
 };
 
-/**
- * Seeds the `admins` collection with a default account the first time the
- * app runs against an empty Firestore, so login keeps working out of the
- * box. Safe to call every load — it's a no-op once at least one admin
- * document exists.
- */
+/** No-op once at least one admin document exists. */
 export async function seedAdminIfEmpty(): Promise<void> {
   try {
-    const snap = await getDocs(collection(db, 'admins'));
+    const snap = await getDocs(query(collection(db, 'admins'), limit(1)));
     if (snap.empty) {
       console.log('Firestore: Seeding default admin account...');
-      const docRef = doc(db, 'admins', DEFAULT_ADMIN.email.toLowerCase());
-      await setDoc(docRef, DEFAULT_ADMIN);
+      await setDoc(doc(db, 'admins', DEFAULT_ADMIN.email.toLowerCase()), {
+        ...DEFAULT_ADMIN,
+        created_at: new Date().toISOString(),
+      });
     }
   } catch (err) {
     console.warn('Firestore admin seeding error:', err);
   }
 }
 
-/**
- * Verifies admin login credentials directly against Firestore — this is
- * now the single source of truth for login, replacing the old hardcoded
- * backend check.
- */
 export async function verifyAdminLogin(
   email: string,
   password: string
 ): Promise<{ success: boolean; admin?: { email: string; name: string }; error?: string }> {
   try {
     const normalizedEmail = (email || DEFAULT_ADMIN.email).trim().toLowerCase();
-
-    // Fast path: the account is stored with its email as the document id.
-    const docSnap = await getDocs(
-      query(collection(db, 'admins'), where('email', '==', normalizedEmail))
-    );
-
-    if (docSnap.empty) {
-      return { success: false, error: 'Akun admin tidak ditemukan di Firestore.' };
+    const snap = await getDoc(doc(db, 'admins', normalizedEmail));
+    if (!snap.exists()) {
+      return { success: false, error: 'Akun admin tidak ditemukan di database Firestore.' };
     }
-
-    const account = docSnap.docs[0].data() as AdminAccount;
+    const account = snap.data() as AdminAccount;
     if (account.password !== password) {
       return { success: false, error: 'Password admin salah.' };
     }
-
-    return { success: true, admin: { email: account.email, name: account.name } };
-  } catch (err) {
+    return {
+      success: true,
+      admin: { email: account.email || normalizedEmail, name: account.name || 'Admin Pantos' },
+    };
+  } catch (err: any) {
     console.error('Firestore admin login error:', err);
-    return { success: false, error: 'Gagal menghubungkan ke Firestore.' };
+    return { success: false, error: 'Gagal login admin: ' + (err?.message || String(err)) };
   }
 }
 
-// ----------------- BULK INITIAL SEEDING -----------------
+// ----------------- BULK SEEDING & SYNC -----------------
 
-/**
- * Force sync all current data to Firestore
- */
+export async function seedPlayersIfEmpty(defaultPlayers: Player[]): Promise<void> {
+  try {
+    const snap = await getDocs(query(collection(db, 'players'), limit(1)));
+    if (snap.empty && defaultPlayers?.length > 0) {
+      console.log('Firestore: Seeding initial players database...');
+      await syncPlayersBatchToFirestore(defaultPlayers);
+    }
+  } catch (err) {
+    console.warn('Firestore players seeding error:', err);
+  }
+}
+
 export async function forceSyncAllToFirestore(data: {
   players: Player[];
   matches: Match[];
@@ -361,18 +400,8 @@ export async function forceSyncAllToFirestore(data: {
 }): Promise<boolean> {
   try {
     await syncPlayersBatchToFirestore(data.players);
-
-    const matchBatch = writeBatch(db);
-    data.matches.forEach((m) => {
-      const docRef = doc(db, 'matches', String(m.id));
-      matchBatch.set(docRef, sanitizeForFirestore(m), { merge: true });
-    });
-    await matchBatch.commit();
-
-    if (data.seasons && data.seasons.length > 0) {
-      await syncSeasonsBatchToFirestore(data.seasons);
-    }
-
+    await syncMatchesBatchToFirestore(data.matches);
+    await syncSeasonsBatchToFirestore(data.seasons);
     return true;
   } catch (err) {
     console.error('Firestore force sync error:', err);
@@ -469,17 +498,18 @@ export async function saveCommentatorAudioToFirestore(params: {
     // Also update match doc in 'matches' collection if matchId is given
     if (params.matchId) {
       try {
+        // Only touch a match doc that already exists (legacy plain-id key) —
+        // never create a stray, half-empty match document. The audio itself is
+        // always retrievable from `commentator_audios`, so this is best-effort.
         const matchRef = doc(db, 'matches', String(params.matchId));
-        const fieldName =
-          params.mode === 'recap' ? 'commentator_audio_recap' : 'commentator_audio_full';
-        await setDoc(
-          matchRef,
-          {
+        if ((await getDoc(matchRef)).exists()) {
+          const fieldName =
+            params.mode === 'recap' ? 'commentator_audio_recap' : 'commentator_audio_full';
+          await updateDoc(matchRef, {
             [fieldName]: params.audioUrl.length <= CHUNK_SIZE ? params.audioUrl : `ref:${docId}`,
             commentator_provider: params.providerName,
-          },
-          { merge: true }
-        );
+          });
+        }
       } catch (mErr) {
         console.warn('Could not update match with audio:', mErr);
       }
